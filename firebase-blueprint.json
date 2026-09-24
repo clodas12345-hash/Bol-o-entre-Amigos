@@ -1,0 +1,172 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Authenticated user profile.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member", "counselor"] },
+        "phone": { "type": "string" },
+        "cpf": { "type": "string" },
+        "quotas": { "type": "number" },
+        "notes": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["Pago", "Pendente"] }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Member": {
+      "title": "Manual Member",
+      "description": "Manually added participant (not necessarily authenticated).",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "cpf": { "type": "string" },
+        "quotas": { "type": "number" },
+        "notes": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["Pago", "Pendente"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName"]
+    },
+    "Pool": {
+      "title": "Lottery Pool",
+      "description": "A specific bolão category (e.g. Monthly, Special).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["monthly", "special", "daily"] },
+        "lotteryType": { "type": "string", "enum": ["lotofacil", "megasena"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "type", "active", "lotteryType"]
+    },
+    "Game": {
+      "title": "Lottery Game",
+      "description": "A registered bet in a pool.",
+      "type": "object",
+      "properties": {
+        "poolId": { "type": "string" },
+        "numbers": { "type": "array", "items": { "type": "number" } },
+        "contest": { "type": "string" },
+        "month": { "type": "string" },
+        "cost": { "type": "number" },
+        "date": { "type": "string" },
+        "receiptURL": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["poolId", "numbers"]
+    },
+    "Payment": {
+      "title": "Payment Transaction",
+      "description": "Payment record for a user/member.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "memberId": { "type": "string" },
+        "poolId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "proofUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "status"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Poll": {
+      "title": "Voting Poll",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "votes": { "type": "object" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Event": {
+      "title": "Calendar Event",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "type": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "Notification": {
+      "title": "Internal Alert",
+      "description": "Push-like internal notification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["prize", "alert", "payment", "info"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "read"]
+    },
+    "LotofacilResult": {
+      "title": "Lotofácil Result",
+      "type": "object",
+      "properties": {
+        "contest": { "type": "number" },
+        "numbers": { "type": "array", "items": { "type": "number" } },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "MegaSenaResult": {
+      "title": "Mega-Sena Result",
+      "type": "object",
+      "properties": {
+        "contest": { "type": "number" },
+        "numbers": { "type": "array", "items": { "type": "number" } },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Setting": {
+      "title": "System Setting",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "Authenticated user profiles." },
+    "/members/{memberId}": { "schema": "Member", "description": "Manual member entries." },
+    "/pools/{poolId}": { "schema": "Pool", "description": "Pool categories." },
+    "/games/{gameId}": { "schema": "Game", "description": "Bets." },
+    "/payments/{paymentId}": { "schema": "Payment", "description": "Financial records." },
+    "/messages/{msgId}": { "schema": "Message", "description": "Chat messages." },
+    "/polls/{pollId}": { "schema": "Poll", "description": "Voting polls." },
+    "/events/{eventId}": { "schema": "Event", "description": "Calendar events." },
+    "/notifications/{notifId}": { "schema": "Notification", "description": "Internal alerts." },
+    "/lotofacil_results/{resId}": { "schema": "LotofacilResult", "description": "Lottery history." },
+    "/megasena_results/{resId}": { "schema": "MegaSenaResult", "description": "Mega-Sena history." },
+    "/settings/{settingId}": { "schema": "Setting", "description": "System settings (PIX, chat, rules)." }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Lotofácil Gestor",
+  "short_name": "Lotofácil Gestor",
+  "description": "App para gestão de grupos da Lotofácil, pagamentos, resultados e comunicação.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb"
+}
