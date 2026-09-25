@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Lotofácil Gestor</string>
-    <string name="title_activity_main">Lotofácil Gestor</string>
+    <string name="app_name">Bolão Amigos</string>
+    <string name="title_activity_main">Bolão Amigos</string>
     <string name="package_name">com.lotofacil.gestor</string>
     <string name="custom_url_scheme">com.lotofacil.gestor</string>
 </resources>

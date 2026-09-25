@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.lotofacil.gestor',
-  appName: 'Bolão',
+  appName: 'Bolão Amigos',
   webDir: 'dist'
 };
 

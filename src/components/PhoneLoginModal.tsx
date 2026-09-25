@@ -29,8 +29,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
 
       // 1. Verifica no admin fixo primeiro para login instantâneo sem depender de banco
       if (
-        cleanPhone === '5511953292570' || cleanPhone.includes('11953292570') ||
-        cleanPhone === '5511983302659' || cleanPhone.includes('11983302659')
+        cleanPhone === '5511953292570' || cleanPhone.includes('11953292570')
       ) {
         matchedMember = {
           uid: 'admin_phone_clodas',

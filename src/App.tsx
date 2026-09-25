@@ -31,7 +31,7 @@ import { PoolProvider, usePool } from './lib/PoolContext';
 import { UploadProvider, useUpload } from './lib/UploadContext';
 import { formatFirstAndLastName } from './lib/formatters';
 
-import logoImg from './assets/images/bolao_logo_app.jpg';
+import logoImg from './assets/images/bolao_logo_app.png';
 
 function BackgroundUploadStatus() {
   const { queue, clearCompleted, isProcessing } = useUpload();
