@@ -3,6 +3,7 @@ import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp }
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { validateGameSchema } from '../lib/formatters';
 import { LOTOFACIL_PRICES, MEGASENA_PRICES, LOTOFACIL_STATS, MEGASENA_STATS } from '../lib/prizes';
 import { PRIME_NUMBERS, FRAME_NUMBERS } from './StatsThermometer';
 
@@ -171,6 +172,12 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
 
     if (selectedNumbers.length < stats.minNumbers) {
       addToast(`Selecione ao menos ${stats.minNumbers} dezenas para registrar a aposta.`, 'error');
+      return;
+    }
+
+    const validation = validateGameSchema({ numbers: selectedNumbers });
+    if (!validation.isValid) {
+      addToast(validation.error || 'Jogo inválido.', 'error');
       return;
     }
 

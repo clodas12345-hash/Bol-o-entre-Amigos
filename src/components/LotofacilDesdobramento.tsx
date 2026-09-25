@@ -6,6 +6,7 @@ import { useToast } from './NotificationManager';
 import { DESDOBRAMENTOS_CATALOG, DesdobramentoScheme, sortNumbers } from '../lib/desdobramentos';
 import { LOTOFACIL_STATS, getGoldenBalancedNumbers, getTopHotNumbers } from '../lib/lotofacilStats';
 import { usePool } from '../lib/PoolContext';
+import { validateGameSchema } from '../lib/formatters';
 
 interface LotofacilDesdobramentoProps {
   onClose?: () => void;
@@ -123,6 +124,12 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
       const contestVal = contestNumber.trim() ? Number(contestNumber.trim()) : null;
 
       for (let i = 0; i < generatedGames.length; i++) {
+        const valRes = validateGameSchema({ numbers: generatedGames[i] });
+        if (!valRes.isValid) {
+          addToast(`Jogo #${i + 1} inválido: ${valRes.error}`, 'error');
+          setIsSaving(false);
+          return;
+        }
         await addDoc(collection(db, 'games'), {
           numbers: generatedGames[i],
           contestNumber: contestVal,

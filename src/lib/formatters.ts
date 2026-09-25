@@ -175,8 +175,8 @@ export function validateGameSchema(game: any): { isValid: boolean; error?: strin
     return { isValid: false, error: 'O jogo deve conter um array de dezenas (numbers).' };
   }
 
-  if (game.numbers.length < 6 || game.numbers.length > 20) {
-    return { isValid: false, error: `Quantidade de dezenas inválida (${game.numbers.length}). Permitido entre 6 e 20 dezenas.` };
+  if (game.numbers.length < 15 || game.numbers.length > 20) {
+    return { isValid: false, error: `Quantidade de dezenas inválida (${game.numbers.length}). A Lotofácil exige entre 15 e 20 dezenas.` };
   }
 
   const unique = new Set(game.numbers);
@@ -185,8 +185,8 @@ export function validateGameSchema(game: any): { isValid: boolean; error?: strin
   }
 
   for (const n of game.numbers) {
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 60) {
-      return { isValid: false, error: `Dezena fora do intervalo válido (1-60): ${n}` };
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 25) {
+      return { isValid: false, error: `Dezena fora do intervalo válido da Lotofácil (1-25): ${n}` };
     }
   }
 
@@ -207,13 +207,13 @@ export function validateContestSchema(contestObj: any): { isValid: boolean; erro
     return { isValid: false, error: 'O concurso deve conter um array de números sorteados.' };
   }
 
-  if (contestObj.numbers.length < 6 || contestObj.numbers.length > 15) {
-    return { isValid: false, error: `Quantidade de números do concurso inválida (${contestObj.numbers.length}).` };
+  if (contestObj.numbers.length !== 15) {
+    return { isValid: false, error: `Quantidade de números do concurso inválida (${contestObj.numbers.length}). A Lotofácil possui exatamente 15 números sorteados.` };
   }
 
   for (const n of contestObj.numbers) {
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 60) {
-      return { isValid: false, error: `Número sorteado inválido: ${n}` };
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 25) {
+      return { isValid: false, error: `Número sorteado inválido da Lotofácil (1-25): ${n}` };
     }
   }
 
