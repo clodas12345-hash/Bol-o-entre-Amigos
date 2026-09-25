@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
-import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, query, where, deleteDoc } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
 import NewGameModal from './components/NewGameModal';
@@ -406,6 +406,121 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Verificação na inicialização: limpa qualquer estado de 'concursos futuros' ou simulados da memória
+    // garantindo que o estado de exibição comece sempre com o concurso vigente real.
+    const sanitizeContestsMemory = async () => {
+      try {
+        const LOTOFACIL_LIMIT = 3788;
+        const MEGASENA_LIMIT = 2780;
+
+        // 1. Limpeza do cache do último resultado na memória local
+        const cachedLatest = localStorage.getItem('bolao_cache_latest_result');
+        if (cachedLatest) {
+          try {
+            const parsed = JSON.parse(cachedLatest);
+            const num = Number(parsed?.contest);
+            if (!num || num >= LOTOFACIL_LIMIT || parsed?.isSimulated || parsed?.isManual) {
+              console.log(`[Memory Sanitizer] Concurso futuro/simulado removido do cache: #${num}`);
+              localStorage.removeItem('bolao_cache_latest_result');
+            }
+          } catch {
+            localStorage.removeItem('bolao_cache_latest_result');
+          }
+        }
+
+        // 2. Limpeza do histórico de resultados na memória local
+        const cachedResults = localStorage.getItem('bolao_cache_results');
+        if (cachedResults) {
+          try {
+            const list = JSON.parse(cachedResults);
+            if (Array.isArray(list)) {
+              const cleaned = list.filter((r: any) => {
+                const cNum = Number(r?.contest);
+                return cNum > 0 && cNum < LOTOFACIL_LIMIT && !r?.isSimulated;
+              });
+              localStorage.setItem('bolao_cache_results', JSON.stringify(cleaned));
+            }
+          } catch {
+            localStorage.removeItem('bolao_cache_results');
+          }
+        }
+
+        // 3. Limpeza do termômetro estatístico na memória local
+        const cachedStats = localStorage.getItem('bolao_cache_stats_results');
+        if (cachedStats) {
+          try {
+            const sList = JSON.parse(cachedStats);
+            if (Array.isArray(sList)) {
+              const cleanedStats = sList.filter((r: any) => {
+                const cNum = Number(r?.contest);
+                return cNum > 0 && cNum < LOTOFACIL_LIMIT && !r?.isSimulated;
+              });
+              localStorage.setItem('bolao_cache_stats_results', JSON.stringify(cleanedStats));
+            }
+          } catch {
+            localStorage.removeItem('bolao_cache_stats_results');
+          }
+        }
+
+        // 4. Limpeza no Firestore de concursos futuros ou simulados gravados indevidamente
+        try {
+          const qFutureLoto = query(
+            collection(db, 'lotofacil_results'),
+            where('contest', '>=', LOTOFACIL_LIMIT)
+          );
+          const snapLoto = await getDocs(qFutureLoto);
+          if (!snapLoto.empty) {
+            for (const d of snapLoto.docs) {
+              await deleteDoc(d.ref).catch(() => {});
+            }
+          }
+
+          const qFutureMega = query(
+            collection(db, 'megasena_results'),
+            where('contest', '>=', MEGASENA_LIMIT)
+          );
+          const snapMega = await getDocs(qFutureMega);
+          if (!snapMega.empty) {
+            for (const d of snapMega.docs) {
+              await deleteDoc(d.ref).catch(() => {});
+            }
+          }
+        } catch (dbErr) {
+          console.warn('[Memory Sanitizer] Verificação no banco:', dbErr);
+        }
+
+        // 5. Garantir que o concurso vigente real seja consultado
+        try {
+          const res = await fetch('/api/lotofacil/results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contest: 'latest' })
+          });
+          const data = await res.json();
+          if (data.success && data.result) {
+            const contestNum = Number(data.result.contest);
+            if (contestNum > 0 && contestNum < LOTOFACIL_LIMIT) {
+              const officialResult = {
+                contest: contestNum,
+                date: data.result.date || new Date().toLocaleDateString('pt-BR'),
+                numbers: data.result.numbers,
+                accumulated: !!data.result.accumulated,
+                createdAt: new Date(),
+                isManual: false
+              };
+              localStorage.setItem('bolao_cache_latest_result', JSON.stringify(officialResult));
+            }
+          }
+        } catch {
+          // Offline ou fallback silencioso
+        }
+      } catch (err) {
+        console.warn('Erro ao sanitizar concursos futuros:', err);
+      }
+    };
+
+    sanitizeContestsMemory();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {

@@ -30,7 +30,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const [latestResult, setLatestResult] = useState<any | null>(() => {
     try {
       const cached = localStorage.getItem('bolao_cache_latest_result');
-      return cached ? JSON.parse(cached) : null;
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const cNum = Number(parsed?.contest);
+        // Garante que o estado inicial nunca carregue concursos futuros (>= 3788) ou simulados
+        if (cNum > 0 && cNum < 3788 && !parsed?.isSimulated) {
+          return parsed;
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -38,7 +46,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const [savedResultsList, setSavedResultsList] = useState<any[]>(() => {
     try {
       const cached = localStorage.getItem('bolao_cache_results');
-      return cached ? JSON.parse(cached) : [];
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(r => {
+            const cNum = Number(r?.contest);
+            return cNum > 0 && cNum < 3788 && !r?.isSimulated;
+          });
+        }
+      }
+      return [];
     } catch {
       return [];
     }
@@ -409,11 +426,22 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       }
       const cached = localStorage.getItem('bolao_cache_results');
       if (cached) {
-        setSavedResultsList(JSON.parse(cached));
+        try {
+          const list = JSON.parse(cached);
+          if (Array.isArray(list)) {
+            setSavedResultsList(list.filter((r: any) => Number(r.contest) < (isMegaSena ? 2780 : 3788) && !r.isSimulated));
+          }
+        } catch {}
       }
       const cachedLatest = localStorage.getItem('bolao_cache_latest_result');
       if (cachedLatest) {
-        setLatestResult(JSON.parse(cachedLatest));
+        try {
+          const parsed = JSON.parse(cachedLatest);
+          const cNum = Number(parsed?.contest);
+          if (cNum > 0 && cNum < (isMegaSena ? 2780 : 3788) && !parsed?.isSimulated) {
+            setLatestResult(parsed);
+          }
+        } catch {}
       }
     });
 
