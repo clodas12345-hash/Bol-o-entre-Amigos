@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
-import { doc, getDoc, collection, getDocs, setDoc, query, where, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, query, where, deleteDoc, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
 import NewGameModal from './components/NewGameModal';
@@ -169,11 +169,31 @@ function BackgroundUploadStatus() {
 }
 
 function Layout({ children, user, onSignOut }: { children: React.ReactNode, user: any, onSignOut: () => void }) {
-  const { isQuotaExceeded } = usePool();
+  const { isQuotaExceeded, activePool } = usePool();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoViewState, setLogoViewState] = useState<'closed' | 'description' | 'full'>('closed');
+  
+  const isMegaSena = activePool?.lotteryType === 'megasena';
+  const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
+  const [currentContest, setCurrentContest] = useState<number | null>(null);
+
+  useEffect(() => {
+    const q = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(1));
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const data = snapshot.docs[0].data();
+        const cNum = Number(data.contest);
+        if (cNum > 0) {
+          setCurrentContest(cNum + 1);
+        }
+      }
+    }, err => {
+      console.warn('Current contest header fetch error:', err);
+    });
+    return () => unsub();
+  }, [resultsCollection]);
 
   if (!user) return <>{children}</>;
 
@@ -288,6 +308,29 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
           </div>
         )}
       </header>
+
+      {/* Sub-header com Concurso Vigente Sincronizado */}
+      <div className="bg-emerald-50 border-b border-emerald-100 py-2 px-3 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-gray-700 font-medium">Concurso Vigente:</span>
+            {currentContest ? (
+              <span className="bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
+                #{currentContest}
+              </span>
+            ) : (
+              <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
+            )}
+          </div>
+          <div className="text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider flex items-center gap-1.5 bg-emerald-100/50 px-2 py-0.5 rounded-md">
+            <span>🟢 Sincronizado com o Servidor</span>
+          </div>
+        </div>
+      </div>
 
       {/* Conteúdo Principal */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5">
