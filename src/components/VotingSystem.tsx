@@ -4,6 +4,7 @@ import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName } from '../lib/formatters';
 import { usePool } from '../lib/PoolContext';
+import { getIsAdmin } from '../lib/authHelpers';
 
 interface PollOption {
   text: string;
@@ -49,7 +50,7 @@ export default function VotingSystem() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentUser = auth.currentUser;
-  const isAdmin = currentUser?.email === 'clodas12345@gmail.com';
+  const isAdmin = getIsAdmin();
   const { addToast } = useToast();
 
   useEffect(() => {

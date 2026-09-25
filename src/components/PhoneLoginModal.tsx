@@ -12,6 +12,8 @@ interface PhoneLoginModalProps {
 
 export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline = false }: PhoneLoginModalProps) {
   const [phoneInput, setPhoneInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isAdminPrompt, setIsAdminPrompt] = useState(false);
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
 
@@ -23,14 +25,27 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
       return;
     }
 
+    const isAdminNumber = cleanPhone === '5511953292570' || cleanPhone.includes('11953292570');
+
+    if (isAdminNumber && !isAdminPrompt) {
+      setIsAdminPrompt(true);
+      addToast('Este número pertence ao Administrador. Por favor, digite a senha de blindagem para prosseguir.', 'info');
+      return;
+    }
+
+    if (isAdminNumber && isAdminPrompt) {
+      if (passwordInput.trim() !== '192506') {
+        addToast('Senha de blindagem incorreta!', 'error');
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       let matchedMember: any = null;
 
       // 1. Verifica no admin fixo primeiro para login instantâneo sem depender de banco
-      if (
-        cleanPhone === '5511953292570' || cleanPhone.includes('11953292570')
-      ) {
+      if (isAdminNumber) {
         matchedMember = {
           uid: 'admin_phone_clodas',
           email: 'clodas12345@gmail.com',
@@ -95,7 +110,13 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
               type="tel"
               placeholder="Ex: 11 95329-2570"
               value={phoneInput}
-              onChange={e => setPhoneInput(e.target.value)}
+              onChange={e => {
+                setPhoneInput(e.target.value);
+                if (isAdminPrompt) {
+                  setIsAdminPrompt(false);
+                  setPasswordInput('');
+                }
+              }}
               className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
               required
               autoFocus
@@ -103,13 +124,28 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             <p className="text-[10px] text-gray-500 mt-1">O número deve estar cadastrado previamente pelo administrador.</p>
           </div>
 
+          {isAdminPrompt && (
+            <div className="text-left animate-in fade-in slide-in-from-top-1 duration-200">
+              <label className="block text-xs font-bold text-red-600 mb-1.5">🔒 Senha de Blindagem Administrativa</label>
+              <input
+                type="password"
+                placeholder="Digite a senha de 6 dígitos"
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                className="w-full border border-red-300 rounded-xl p-3 text-sm font-semibold focus:outline-red-600 bg-red-50/50"
+                required
+                autoFocus
+              />
+            </div>
+          )}
+
           <div className="pt-2">
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Verificando...' : 'Entrar no Bolão'}
+              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar Blindagem' : 'Entrar no Bolão'}
             </button>
           </div>
         </form>
@@ -138,13 +174,34 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
               type="tel"
               placeholder="Ex: 11 95329-2570"
               value={phoneInput}
-              onChange={e => setPhoneInput(e.target.value)}
+              onChange={e => {
+                setPhoneInput(e.target.value);
+                if (isAdminPrompt) {
+                  setIsAdminPrompt(false);
+                  setPasswordInput('');
+                }
+              }}
               className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
               required
               autoFocus
             />
             <p className="text-[10px] text-gray-500 mt-1">O número deve estar cadastrado previamente pelo administrador.</p>
           </div>
+
+          {isAdminPrompt && (
+            <div className="text-left animate-in fade-in slide-in-from-top-1 duration-200">
+              <label className="block text-xs font-bold text-red-600 mb-1.5">🔒 Senha de Blindagem Administrativa</label>
+              <input
+                type="password"
+                placeholder="Digite a senha de 6 dígitos"
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                className="w-full border border-red-300 rounded-xl p-3 text-sm font-semibold focus:outline-red-600 bg-red-50/50"
+                required
+                autoFocus
+              />
+            </div>
+          )}
 
           <div className="flex gap-2 pt-2">
             <button
@@ -159,7 +216,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
               disabled={loading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Verificando...' : 'Entrar no Bolão'}
+              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar' : 'Entrar no Bolão'}
             </button>
           </div>
         </form>
@@ -167,3 +224,4 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
     </div>
   );
 }
+

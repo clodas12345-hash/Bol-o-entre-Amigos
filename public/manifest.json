@@ -1,10 +1,22 @@
 {
-  "name": "Lotofácil Gestor",
-  "short_name": "Lotofácil Gestor",
-  "description": "App para gestão de grupos da Lotofácil, pagamentos, resultados e comunicação.",
+  "name": "Bolão Amigos",
+  "short_name": "Bolão Amigos",
+  "description": "App para gestão de grupos de apostas (bolão), pagamentos, resultados e comunicação.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#ffffff",
-  "theme_color": "#2563eb"
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "/bolao_logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/bolao_logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }

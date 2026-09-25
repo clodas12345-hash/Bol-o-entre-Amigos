@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
+import { getIsAdmin } from '../lib/authHelpers';
 import {
   downloadFullBackup,
   getLastBackupDate,
@@ -45,7 +46,7 @@ export default function BackupManager() {
   const [isAutoBackingUp, setIsAutoBackingUp] = useState(false);
   
   const { addToast } = useToast();
-  const isAdmin = auth.currentUser?.email === 'clodas12345@gmail.com';
+  const isAdmin = getIsAdmin();
 
   useEffect(() => {
     setLastBackup(getLastBackupDate());

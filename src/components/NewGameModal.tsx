@@ -13,6 +13,7 @@ interface NewGameModalProps {
 }
 
 import { useUpload, checkGameDuplicateInFirestore, getExistingSignatures } from '../lib/UploadContext';
+import { triggerNewContestNotification } from '../lib/autoNotificationService';
 
 const parseDateSafely = (dateStr: string): Date => {
   if (!dateStr) return new Date();
@@ -283,6 +284,11 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
           addToast(`✨ ${savedCount} aposta(s) salva(s)! (${duplicateCount} duplicata(s) ignorada(s)).`, 'success');
         } else {
           addToast('✨ Aposta salva com sucesso no bolão!', 'success');
+        }
+
+        // Trigger automatic new contest notification if applicable
+        if (startContestNum > 0) {
+          triggerNewContestNotification(startContestNum);
         }
       } else {
         addToast('ℹ️ Esta aposta já estava cadastrada para este concurso no bolão. Não foi duplicada.', 'info');

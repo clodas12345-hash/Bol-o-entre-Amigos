@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, auth, isQuotaError } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import { PixConfig, DEFAULT_PIX_CONFIG, generatePixPayload, generatePixQrCode } from '../lib/pix';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { getIsAdmin } from '../lib/authHelpers';
 
 interface PixPaymentAreaProps {
   customAmount?: number;
@@ -29,7 +30,7 @@ export default function PixPaymentArea({
   const [copiedPayload, setCopiedPayload] = useState(false);
 
   const { addToast } = useToast();
-  const isAdmin = auth.currentUser?.email === 'clodas12345@gmail.com';
+  const isAdmin = getIsAdmin();
 
   // Formulário de edição da chave pelo Admin
   const [editForm, setEditForm] = useState<PixConfig>(DEFAULT_PIX_CONFIG);

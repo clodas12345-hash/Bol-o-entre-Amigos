@@ -5,6 +5,7 @@ import { formatFirstAndLastName } from '../lib/formatters';
 import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { getIsAdmin } from '../lib/authHelpers';
 
 export default function Chat() {
   const { setIsQuotaExceeded } = usePool();
@@ -16,7 +17,7 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const { addToast } = useToast();
-  const isAdmin = auth.currentUser?.email === 'clodas12345@gmail.com';
+  const isAdmin = getIsAdmin();
 
   useEffect(() => {
     // Limitamos as últimas 100 mensagens para economizar cota e melhorar performance

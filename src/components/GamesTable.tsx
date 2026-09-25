@@ -11,6 +11,7 @@ import StatsThermometer from './StatsThermometer';
 import LottoFlyerGenerator from './LottoFlyerGenerator';
 import VolantesHistoryComparator from './VolantesHistoryComparator';
 import GameHistory, { parseDateSafely } from './GameHistory';
+import { triggerResultNotification } from '../lib/autoNotificationService';
 
 interface GamesTableProps {
   onOpenNewGame?: () => void;
@@ -115,6 +116,12 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       await addDoc(collection(db, resultsCollection), formattedData);
       setLatestResult(formattedData);
       addToast(`Resultado do Concurso ${manualContest} corrigido manualmente com sucesso!`, 'success');
+
+      // Trigger automatic result published notification if applicable
+      if (formattedData.contest > 0) {
+        triggerResultNotification(formattedData.contest);
+      }
+
       setShowManualResultModal(false);
       setManualNumbers([]);
       setManualContest('');
@@ -248,6 +255,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
         if (isOfficialDraw) {
           await addDoc(collection(db, resultsCollection), formatted);
+          // Trigger automatic result published notification
+          triggerResultNotification(formatted.contest);
         }
         setLatestResult(formatted);
       } else {
@@ -292,6 +301,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         const alreadyExists = savedResultsList.some(r => Number(r.contest) === formatted.contest);
         if (!alreadyExists && isOfficialDraw) {
           await addDoc(collection(db, resultsCollection), formatted);
+          // Trigger automatic result published notification
+          triggerResultNotification(formatted.contest);
         }
         setLatestResult(formatted);
       } else {

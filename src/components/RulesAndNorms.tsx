@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db, auth, isQuotaError } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { getIsAdmin } from '../lib/authHelpers';
 
 export default function RulesAndNorms() {
   const { setIsQuotaExceeded } = usePool();
@@ -12,7 +13,7 @@ export default function RulesAndNorms() {
   const [isSaving, setIsSaving] = useState(false);
 
   const { addToast } = useToast();
-  const isAdmin = auth.currentUser?.email === 'clodas12345@gmail.com';
+  const isAdmin = getIsAdmin();
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'rules'), (docSnap) => {
