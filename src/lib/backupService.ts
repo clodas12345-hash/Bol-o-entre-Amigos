@@ -1,4 +1,4 @@
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, orderBy, limit, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 export const COLLECTIONS_TO_BACKUP = [
@@ -180,4 +180,84 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
   recordBackupCompleted();
 
   return { totalRecords, fileName };
+}
+
+export async function saveBackupToFirestore(): Promise<{ id: string; totalRecords: number }> {
+  const backupData: Record<string, any[]> = {
+    _metadata: [
+      {
+        id: 'meta',
+        data: {
+          app: 'Bolão Lotofácil & Mega-Sena Gestor',
+          exportedAt: new Date().toISOString(),
+          version: '2.0',
+          type: 'automatic_monthly'
+        }
+      }
+    ]
+  };
+
+  let totalRecords = 0;
+
+  for (const colName of COLLECTIONS_TO_BACKUP) {
+    try {
+      const snap = await getDocs(collection(db, colName));
+      backupData[colName] = snap.docs.map(docSnap => {
+        const data = docSnap.data();
+        const serializedData = { ...data };
+        
+        // Remove base64 strings heavy assets to fit in Firestore 1MB limit for history documents
+        if (colName === 'games' || colName === 'payments') {
+          delete serializedData.receiptURL;
+          delete serializedData.imageUrl;
+        }
+
+        for (const key in serializedData) {
+          if (serializedData[key]?.toDate && typeof serializedData[key].toDate === 'function') {
+            serializedData[key] = {
+              __type: 'timestamp',
+              seconds: serializedData[key].seconds,
+              nanoseconds: serializedData[key].nanoseconds
+            };
+          } else if (serializedData[key] instanceof Date) {
+            serializedData[key] = {
+              __type: 'date',
+              value: serializedData[key].toISOString()
+            };
+          }
+        }
+        return {
+          id: docSnap.id,
+          data: serializedData
+        };
+      });
+      totalRecords += backupData[colName].length;
+    } catch (e) {
+      console.warn(`Aviso ao arquivar coleção ${colName}:`, e);
+      backupData[colName] = [];
+    }
+  }
+
+  const docRef = await addDoc(collection(db, 'backups_history'), {
+    data: JSON.stringify(backupData),
+    totalRecords,
+    createdAt: serverTimestamp(),
+    monthRef: new Date().toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }),
+    type: 'monthly_automatic'
+  });
+
+  recordBackupCompleted();
+
+  return { id: docRef.id, totalRecords };
+}
+
+export async function getBackupsHistory(): Promise<any[]> {
+  try {
+    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(12));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error('Error fetching backup history:', err);
+    return [];
+  }
 }

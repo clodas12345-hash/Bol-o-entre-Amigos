@@ -6,7 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { usePool } from '../lib/PoolContext';
 
 export default function FinancialDashboard() {
-  const { setIsQuotaExceeded, isQuotaExceeded } = usePool();
+  const { setIsQuotaExceeded, isQuotaExceeded, activePool } = usePool();
   const [payments, setPayments] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
@@ -33,11 +33,22 @@ export default function FinancialDashboard() {
         ]);
 
         const payList = paySnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const gameList = gameSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const allGames = gameSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const resList = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         
+        // Filtra jogos pelo bolão ativo ou retrocompatibilidade
+        const filteredGames = allGames.filter((g: any) => {
+          if (!activePool) return true;
+          if (g.poolId === activePool.id) return true;
+          const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
+            activePool.name?.toLowerCase().includes('principal') || 
+            activePool.name?.toLowerCase().includes('lotofácil');
+          if (!g.poolId && isPrincipalPool) return true;
+          return false;
+        });
+
         setPayments(payList);
-        setGames(gameList);
+        setGames(filteredGames);
         setResults(resList);
         setUsingCache(false);
 
@@ -54,7 +65,7 @@ export default function FinancialDashboard() {
         // Cache successful data
         try {
           localStorage.setItem('bolao_cache_payments', JSON.stringify(payList));
-          localStorage.setItem('bolao_cache_games', JSON.stringify(gameList));
+          localStorage.setItem('bolao_cache_games', JSON.stringify(filteredGames));
           localStorage.setItem('bolao_cache_results', JSON.stringify(resList));
           localStorage.setItem('bolao_cache_members', JSON.stringify(combined));
         } catch (cacheErr) {
@@ -86,7 +97,7 @@ export default function FinancialDashboard() {
 
     // No dashboard financeiro, updates em tempo real são menos críticos que economia de cota.
     // Removendo onSnapshots que ouvem coleções inteiras.
-  }, []);
+  }, [activePool]);
 
   // Soma de pagamentos explícitos na coleção payments
   const paymentsTotal = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -193,11 +204,6 @@ export default function FinancialDashboard() {
 
   return (
     <div className="p-4 sm:p-5 bg-white">
-      {usingCache && (
-        <div className="mb-4 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-800 text-[10px] font-bold uppercase animate-pulse">
-          <span>⚠️ Modo Offline: Limite de cota excedido. Exibindo dados do último acesso salvo.</span>
-        </div>
-      )}
       {/* Cards de Resumo Real */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-4 text-white shadow-xs">
@@ -208,7 +214,6 @@ export default function FinancialDashboard() {
           <div className="text-2xl font-black mt-2">
             R$ {saldoCaixa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <p className="text-[11px] text-emerald-100 mt-1">Disponível para novos jogos do bolão</p>
         </div>
 
         <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-xs">
@@ -219,9 +224,6 @@ export default function FinancialDashboard() {
           <div className="text-2xl font-black mt-2">
             R$ {totalArrecadado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <p className="text-[11px] text-blue-100 mt-1">
-            {members.filter(m => m.paymentStatus === 'Pago').length} participantes com cotas pagas
-          </p>
         </div>
 
         <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl p-4 text-white shadow-xs">
@@ -232,7 +234,6 @@ export default function FinancialDashboard() {
           <div className="text-2xl font-black mt-2">
             R$ {totalPrizesWon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <p className="text-[11px] text-amber-100 mt-1">Somado ao caixa do bolão</p>
         </div>
 
         <div className="bg-gradient-to-br from-purple-500 to-violet-700 rounded-xl p-4 text-white shadow-xs">
@@ -243,7 +244,6 @@ export default function FinancialDashboard() {
           <div className="text-2xl font-black mt-2">
             R$ {totalGastoApostas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <p className="text-[11px] text-purple-100 mt-1">{games.length} jogos registrados na Caixa</p>
         </div>
       </div>
 
@@ -251,7 +251,7 @@ export default function FinancialDashboard() {
       <div>
         <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
           <div>
-            <h3 className="font-bold text-sm text-gray-800">Evolução dos Aportes Mensais</h3>
+            <h3 className="font-bold text-sm text-gray-800">Evolução Mensal</h3>
           </div>
           {availableYears.length > 1 && (
             <select

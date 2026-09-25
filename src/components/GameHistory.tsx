@@ -9,6 +9,8 @@ interface GameHistoryProps {
   members?: any[];
   onClose?: () => void;
   onOpenNewGame?: () => void;
+  onDeleteGame?: (id: string) => void;
+  onDeleteAllArchived?: () => void;
 }
 
 export const parseDateSafely = (dateVal: any): Date => {
@@ -54,7 +56,9 @@ export default function GameHistory({
   savedResultsList = [],
   members = [],
   onClose,
-  onOpenNewGame
+  onOpenNewGame,
+  onDeleteGame,
+  onDeleteAllArchived
 }: GameHistoryProps) {
   const { addToast } = useToast();
 
@@ -65,6 +69,9 @@ export default function GameHistory({
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState<string | null>(null);
   const [splitModalData, setSplitModalData] = useState<{ totalPrize: number; contestName?: string } | null>(null);
   const [expandedContests, setExpandedContests] = useState<Record<string, boolean>>({});
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   // Avaliação dos jogos e filtragem para ARQUIVAMENTO AUTOMÁTICO (apenas datas passadas)
   const processedGames = useMemo(() => {
@@ -342,6 +349,14 @@ export default function GameHistory({
               className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-xl transition cursor-pointer"
             >
               ✕ Fechar
+            </button>
+          )}
+          {archivedGames.length > 0 && onDeleteAllArchived && (
+            <button
+              onClick={() => setShowDeleteAllConfirm(true)}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
+            >
+              <span>🗑️</span> Excluir Tudo
             </button>
           )}
         </div>
@@ -664,6 +679,15 @@ export default function GameHistory({
                                   Ver Bilhete
                                 </button>
                               )}
+
+                              {onDeleteGame && (
+                                <button
+                                  onClick={() => setDeletingId(game.id)}
+                                  className="text-xs text-red-600 hover:text-red-800 font-bold underline cursor-pointer"
+                                >
+                                  Excluir
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -730,6 +754,84 @@ export default function GameHistory({
           })
         )}
       </div>
+      {/* Modais de Confirmação de Exclusão */}
+      {deletingId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
+          <div className="bg-white rounded-2xl max-w-xs w-full p-5 shadow-2xl border border-red-100 text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-xl">
+              🗑️
+            </div>
+            <div>
+              <h3 className="font-black text-gray-900 text-sm">Excluir Jogo do Histórico?</h3>
+              <p className="text-[10px] text-gray-500 mt-1">Esta ação removerá permanentemente esta aposta do arquivo.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeletingId(null)}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-[10px] font-bold rounded-lg transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (onDeleteGame && deletingId) {
+                    await onDeleteGame(deletingId);
+                    setDeletingId(null);
+                  }
+                }}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black rounded-lg transition shadow-xs cursor-pointer"
+              >
+                Sim, Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteAllConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-red-100 text-center space-y-5">
+            <div className="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-3xl shadow-inner">
+              ⚠️
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-gray-900">Limpar TODO o Histórico?</h3>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                Você está prestes a excluir permanentemente <strong className="text-red-600">{archivedGames.length} jogo(s)</strong> arquivados. 
+                Esta ação <strong>NÃO PODE SER DESFEITA</strong>.
+              </p>
+            </div>
+            <div className="bg-red-50 p-3 rounded-xl border border-red-200 text-left">
+              <p className="text-[10px] text-red-900 font-bold leading-relaxed">
+                * Todos os comprovantes e registros de apostas antigas serão removidos do banco de dados do bolão.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowDeleteAllConfirm(false)}
+                disabled={isDeletingAll}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setIsDeletingAll(true);
+                  if (onDeleteAllArchived) {
+                    await onDeleteAllArchived();
+                  }
+                  setIsDeletingAll(false);
+                  setShowDeleteAllConfirm(false);
+                }}
+                disabled={isDeletingAll}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isDeletingAll ? 'Excluindo...' : 'Sim, Excluir Tudo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

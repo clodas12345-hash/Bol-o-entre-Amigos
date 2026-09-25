@@ -346,12 +346,7 @@ export default function DrawAlertsConfig() {
               </span>
             </div>
             <h2 className="text-base sm:text-lg font-black tracking-tight text-white mt-0.5 flex items-center gap-2 flex-wrap">
-              <span>Alertas & Lembretes de Sorteio</span>
-              {nextContestNum && (
-                <span className="text-amber-300 font-extrabold text-sm sm:text-base">
-                  (Concurso #{nextContestNum})
-                </span>
-              )}
+              <span>Alertas de Sorteio</span>
             </h2>
             <p className="text-xs text-blue-200/90 font-medium">
               {nextContestNum ? `Concurso #${nextContestNum} • ` : ''}{nextDrawInfo.text} • <span className="font-bold text-amber-300">{nextDrawInfo.timeLeft}</span>
@@ -483,9 +478,6 @@ export default function DrawAlertsConfig() {
                 <span>🗓️</span> Dias de Sorteio com Alerta:
               </h4>
 
-              <p className="text-[11px] text-blue-200/80">
-                A Lotofácil é sorteada oficialmente de <strong>Segunda a Sábado</strong> pela Caixa Econômica Federal.
-              </p>
 
               <div className="grid grid-cols-6 gap-1.5 pt-1">
                 {DAYS_MAP.filter(d => d.hasDraw).map(day => {

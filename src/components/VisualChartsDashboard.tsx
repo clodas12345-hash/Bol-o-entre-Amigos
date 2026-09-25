@@ -79,23 +79,22 @@ export default function VisualChartsDashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-1">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Arrecadação Total</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Arrecadação</span>
           <h3 className="text-2xl font-black text-emerald-700">R$ {totalArrecadado.toFixed(2).replace('.', ',')}</h3>
-          <p className="text-xs text-gray-500">{totalQuotas} cotas ativas</p>
+          <p className="text-xs text-gray-500">{totalQuotas} cotas</p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-1">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Investimento em Jogos</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Apostas</span>
           <h3 className="text-2xl font-black text-purple-700">R$ {totalInvestedInGames.toFixed(2).replace('.', ',')}</h3>
-          <p className="text-xs text-gray-500">{games.length} apostas registradas</p>
+          <p className="text-xs text-gray-500">{games.length} jogos</p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-1">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Saldo Atual em Caixa</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Saldo</span>
           <h3 className={`text-2xl font-black ${caixaSaldo >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
             R$ {caixaSaldo.toFixed(2).replace('.', ',')}
           </h3>
-          <p className="text-xs text-gray-500">Disponível para novos jogos</p>
         </div>
       </div>
 

@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import {
   downloadFullBackup,
   getLastBackupDate,
   getBackupReminderSettings,
   saveBackupReminderSettings,
-  BackupReminderSettings
+  BackupReminderSettings,
+  saveBackupToFirestore,
+  getBackupsHistory
 } from '../lib/backupService';
 
 interface CollectionStat {
@@ -38,11 +40,50 @@ export default function BackupManager() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [lastBackup, setLastBackup] = useState<Date | null>(null);
   const [settings, setSettings] = useState<BackupReminderSettings>(getBackupReminderSettings());
+  const [backupsHistory, setBackupsHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isAutoBackingUp, setIsAutoBackingUp] = useState(false);
+  
   const { addToast } = useToast();
+  const isAdmin = auth.currentUser?.email === 'clodas12345@gmail.com';
 
   useEffect(() => {
     setLastBackup(getLastBackupDate());
+    loadHistory();
+    checkAndRunAutoBackup();
   }, []);
+
+  const loadHistory = async () => {
+    setIsLoadingHistory(true);
+    const history = await getBackupsHistory();
+    setBackupsHistory(history);
+    setIsLoadingHistory(false);
+  };
+
+  const checkAndRunAutoBackup = async () => {
+    if (!isAdmin) return;
+    
+    const today = new Date();
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const isLastDay = tomorrow.getMonth() !== today.getMonth();
+    
+    if (isLastDay) {
+      const lastBackupDate = getLastBackupDate();
+      if (!lastBackupDate || lastBackupDate.toDateString() !== today.toDateString()) {
+        setIsAutoBackingUp(true);
+        try {
+          await saveBackupToFirestore();
+          setLastBackup(new Date());
+          addToast('📦 Hoje é o último dia do mês! Backup automático de segurança gerado no histórico.', 'success');
+          loadHistory();
+        } catch (err) {
+          console.error('Auto backup error:', err);
+        } finally {
+          setIsAutoBackingUp(false);
+        }
+      }
+    }
+  };
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -174,6 +215,25 @@ export default function BackupManager() {
     return tomorrow.getMonth() !== today.getMonth();
   };
 
+  const downloadHistoryBackup = (historyItem: any) => {
+    try {
+      const data = JSON.parse(historyItem.data);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `backup_historico_${historyItem.monthRef.replace('/', '_')}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      addToast(`Backup de ${historyItem.monthRef} baixado com sucesso!`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Erro ao processar arquivo de histórico.', 'error');
+    }
+  };
+
   return (
     <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -234,41 +294,108 @@ export default function BackupManager() {
         </div>
       </div>
 
-      {/* Opções de Lembrete Automático */}
-      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-        <div className="space-y-1">
-          <p className="font-bold text-slate-800 flex items-center gap-1.5">
-            <span>🔔</span> Lembretes Automáticos de Segurança:
-          </p>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-slate-600">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
+      {/* Opções de Backup Automático */}
+      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+              <span>📅</span> Backup Automático Mensal (Firestore)
+            </h4>
+            <p className="text-[11px] text-slate-500">
+              O sistema gera um snapshot completo dos dados no último dia de cada mês para garantir a prestação de contas.
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
                 checked={settings.remindOnLastDay}
                 onChange={() => toggleSetting('remindOnLastDay')}
-                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                className="sr-only peer" 
               />
-              <span>Lembrar no <strong>último dia de cada mês</strong></span>
-            </label>
-
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.remindOnOpenIfOld}
-                onChange={() => toggleSetting('remindOnOpenIfOld')}
-                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-              />
-              <span>Avisar <strong>ao abrir o aplicativo</strong> se estiver desatualizado</span>
+              <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+              <span className="ms-2 text-[11px] font-bold text-slate-700">Ativado</span>
             </label>
           </div>
         </div>
 
         {isTodayLastDay() && (
-          <span className="text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-lg">
-            📅 Hoje é o último dia do mês!
-          </span>
+          <div className="bg-amber-100 border border-amber-300 rounded-lg p-3 flex items-center justify-between gap-3 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2 text-amber-900">
+              <span className="text-lg">⚡</span>
+              <p className="text-[11px] font-black leading-tight">
+                HOJE É O ÚLTIMO DIA DO MÊS!<br/>
+                <span className="font-normal opacity-80">O backup automático será executado assim que você acessar as configurações.</span>
+              </p>
+            </div>
+            {isAutoBackingUp ? (
+              <span className="text-[10px] font-bold text-indigo-700 animate-pulse flex items-center gap-1">
+                <span className="animate-spin text-sm">⚙️</span> Processando...
+              </span>
+            ) : (
+              <button
+                onClick={checkAndRunAutoBackup}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black px-3 py-1.5 rounded-lg shadow-sm transition"
+              >
+                FORÇAR AGORA
+              </button>
+            )}
+          </div>
         )}
       </div>
+
+      {/* Lembretes de Dispositivo */}
+      <div className="bg-white border border-gray-100 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[11px]">
+        <div className="flex items-center gap-4 text-slate-600">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.remindOnOpenIfOld}
+              onChange={() => toggleSetting('remindOnOpenIfOld')}
+              className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+            />
+            <span>Avisar ao abrir o app se o backup local for antigo ({">"}25 dias)</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Histórico de Snapshots Mensais */}
+      {backupsHistory.length > 0 && (
+        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mt-2">
+          <div className="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
+            <h4 className="text-[11px] font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
+              <span>📜</span> Histórico de Snapshots Mensais (Firestore)
+            </h4>
+            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+              {backupsHistory.length} registros
+            </span>
+          </div>
+          <div className="divide-y divide-gray-50 max-h-48 overflow-y-auto">
+            {backupsHistory.map((item) => (
+              <div key={item.id} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50/50 transition group">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-[10px]">
+                    {item.monthRef}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-800">Backup de {item.monthRef}</p>
+                    <p className="text-[10px] text-gray-400">
+                      Gerado em {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleDateString('pt-BR') : '-'} • {item.totalRecords} registros
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => downloadHistoryBackup(item)}
+                  className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition shadow-2xs group-hover:scale-105"
+                  title="Baixar este snapshot"
+                >
+                  <span className="text-xs">📥</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Barra de Progresso durante a Importação */}
       {isImporting && (

@@ -489,6 +489,24 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       setIsDeletingGroup(false);
     }
   };
+  
+  const handleDeleteAllArchived = async () => {
+    try {
+      const archivedGames = games.filter(g => !isGameActiveOrToday(g));
+      if (archivedGames.length === 0) return;
+
+      const batch = writeBatch(db);
+      archivedGames.forEach(g => {
+        batch.delete(doc(db, 'games', g.id));
+      });
+      await batch.commit();
+      addToast(`${archivedGames.length} apostas arquivadas foram removidas com sucesso.`, 'success');
+    } catch (err) {
+      console.error('Erro ao excluir histórico de apostas:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+      addToast('Erro ao limpar histórico de apostas.', 'error');
+    }
+  };
 
   const extractContestNumber = (contestVal: any): number | null => {
     if (!contestVal) return null;
@@ -893,31 +911,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             savedResultsList={savedResultsList}
             members={members}
             onOpenNewGame={onOpenNewGame}
+            onDeleteGame={handleDeleteGame}
+            onDeleteAllArchived={handleDeleteAllArchived}
           />
         ) : (
           <>
-            {/* Banner de Arquivamento Automático */}
-            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-b border-purple-100 p-2.5 sm:px-4 text-xs flex flex-wrap items-center justify-between gap-2 text-purple-950 font-semibold">
-              <div className="flex items-center gap-2">
-                <span className="text-base">🏛️</span>
-                <span>
-                  <strong>Arquivamento Automático:</strong> Exibindo apenas jogos vigentes (hoje e futuros). Sorteios anteriores são movidos automaticamente para o <strong>Histórico</strong>.
-                </span>
-              </div>
-              {historyGames.length > 0 && (
-                <button
-                  onClick={() => setGamesTab('history')}
-                  className="bg-purple-900 hover:bg-purple-800 text-white text-[11px] font-black px-2.5 py-1 rounded-lg transition shadow-2xs cursor-pointer whitespace-nowrap"
-                >
-                  Ver Arquivo ({historyGames.length}) ➔
-                </button>
-              )}
-            </div>
 
             <div className="p-3 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                  Jogos Ativos / Sorteio do Dia ({filteredGames.length})
+                  Apostas Ativas ({filteredGames.length})
                 </span>
 
                 {availableMonths.length > 0 && (
@@ -996,9 +999,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                   Nenhuma aposta cadastrada para o sorteio de hoje/futuro {selectedMonthFilter !== 'all' ? `no mês ${selectedMonthFilter}` : ''}.
                 </p>
                 <p className="text-gray-500 text-xs mb-4">
-                  {currentTabGames.length > 0 
-                    ? `Existem ${currentTabGames.length} aposta(s) em outros meses neste bolão.` 
-                    : 'Os jogos de concursos anteriores são movidos automaticamente para o Histórico de Jogos.'}
+                  Jogos anteriores ficam no Histórico.
                 </p>
                 <div className="flex items-center justify-center gap-2 flex-wrap">
                   {onOpenNewGame && (
@@ -1286,23 +1287,34 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                             </div>
 
                             {/* Dezenas do Jogo com Destaque de Acertos */}
-                            <div className="flex flex-wrap gap-1.5 items-center mt-2.5">
-                              {game.gameNumbers.sort((a: number, b: number) => a - b).map((num: number) => {
-                                const isHit = !game.isPendingFuture && drawnNumbers.includes(num);
-                                return (
-                                  <span
-                                    key={num}
-                                    title={game.isPendingFuture ? `Número ${num} (Aguardando Sorteio)` : (isHit ? `Número ${num} sorteado!` : `Número ${num}`)}
-                                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-bold text-xs flex items-center justify-center transition shadow-sm ${
-                                      isHit
-                                        ? 'bg-emerald-600 text-white ring-4 ring-emerald-400 font-black scale-110 shadow-lg animate-pulse'
-                                        : 'bg-gray-100 text-gray-700 border border-gray-200'
-                                    }`}
-                                  >
-                                    {String(num).padStart(2, '0')}
-                                  </span>
-                                );
-                              })}
+                            <div className="mt-2.5">
+                              <div className="flex flex-wrap gap-1.5 items-center">
+                                {game.gameNumbers.sort((a: number, b: number) => a - b).map((num: number) => {
+                                  const isHit = !game.isPendingFuture && drawnNumbers.includes(num);
+                                  return (
+                                    <span
+                                      key={num}
+                                      title={game.isPendingFuture ? `Número ${num} (Aguardando Sorteio)` : (isHit ? `Número ${num} sorteado!` : `Número ${num}`)}
+                                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-bold text-xs flex items-center justify-center transition shadow-sm ${
+                                        isHit
+                                          ? 'bg-emerald-600 text-white ring-4 ring-emerald-400 font-black scale-110 shadow-lg animate-pulse'
+                                          : 'bg-gray-100 text-gray-700 border border-gray-200'
+                                      }`}
+                                    >
+                                      {String(num).padStart(2, '0')}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              
+                              {!game.isPendingFuture && drawnNumbers.length > 0 && (
+                                <button
+                                  onClick={() => setShowVolantesComparator(true)}
+                                  className="mt-2.5 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1 rounded-md flex items-center gap-1 transition cursor-pointer"
+                                >
+                                  <span>🔍</span> Detalhar Acertos do Concurso #{game.contestNumber || latestResult?.contest}
+                                </button>
+                              )}
                             </div>
 
                             {/* Detalhamento Completo da Premiação e Números */}

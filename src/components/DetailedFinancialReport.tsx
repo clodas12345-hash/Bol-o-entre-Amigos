@@ -8,7 +8,7 @@ import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { usePool } from '../lib/PoolContext';
 
 export default function DetailedFinancialReport() {
-  const { setIsQuotaExceeded } = usePool();
+  const { setIsQuotaExceeded, activePool } = usePool();
   const [payments, setPayments] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export default function DetailedFinancialReport() {
 
     loadAllData();
     // Removendo onSnapshots de coleções para economizar cota.
-  }, []);
+  }, [activePool]);
 
   const togglePaymentStatus = async (member: any) => {
     const newStatus = member.paymentStatus === 'Pago' ? 'Pendente' : 'Pago';
@@ -146,8 +146,7 @@ export default function DetailedFinancialReport() {
 
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
-          <h3 className="font-bold text-gray-800 text-sm">Extrato e Prestação de Contas Individual</h3>
-          <p className="text-xs text-gray-500">Histórico de arrecadação por participante e status de cotas</p>
+          <h3 className="font-bold text-gray-800 text-sm">Extrato por Participante</h3>
         </div>
 
         {/* Botão de Atalho para Chave PIX */}

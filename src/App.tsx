@@ -28,7 +28,65 @@ import NotificationManager, { useToast } from './components/NotificationManager'
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
 import { PoolProvider, usePool } from './lib/PoolContext';
+import { UploadProvider, useUpload } from './lib/UploadContext';
 import { formatFirstAndLastName } from './lib/formatters';
+
+function BackgroundUploadStatus() {
+  const { queue, clearCompleted, isProcessing } = useUpload();
+  const activeItems = queue.filter(item => item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate');
+  const completedItems = queue.filter(item => item.status === 'success' || item.status === 'error' || item.status === 'duplicate');
+
+  if (queue.length === 0) return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 z-[100] w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-right duration-300">
+      <div className="bg-indigo-900 text-white p-3 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          {isProcessing ? (
+            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          ) : (
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+          )}
+          <span className="text-[11px] font-bold uppercase tracking-wider">
+            {isProcessing ? 'Processando Apostas...' : 'Uploads Concluídos'}
+          </span>
+        </div>
+        {!isProcessing && (
+          <button onClick={clearCompleted} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded-full transition">
+            Limpar
+          </button>
+        )}
+      </div>
+
+      <div className="max-h-60 overflow-y-auto p-2 space-y-1.5 bg-gray-50/50">
+        {queue.map((item) => (
+          <div key={item.id} className="bg-white p-2 rounded-xl border border-gray-100 shadow-3xs flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-gray-800 truncate">{item.name}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex-1 bg-gray-100 rounded-full h-1 overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-300 ${item.status === 'error' ? 'bg-red-500' : 'bg-indigo-600'}`} 
+                    style={{ width: `${item.progress}%` }} 
+                  />
+                </div>
+                <span className={`text-[9px] font-black uppercase ${
+                  item.status === 'error' ? 'text-red-600' : 
+                  item.status === 'success' ? 'text-emerald-600' : 
+                  item.status === 'duplicate' ? 'text-amber-600' : 'text-indigo-600'
+                }`}>
+                  {item.message}
+                </span>
+              </div>
+            </div>
+            {item.status === 'success' && <span className="text-emerald-500 text-xs">✓</span>}
+            {item.status === 'error' && <span className="text-red-500 text-xs">✕</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Layout({ children, user, onSignOut }: { children: React.ReactNode, user: any, onSignOut: () => void }) {
   const { isQuotaExceeded } = usePool();
@@ -74,7 +132,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
                   onClick={() => setLogoViewState('description')}
                   className="font-black text-xs sm:text-base tracking-wide flex items-center gap-1.5 hover:opacity-90 transition cursor-pointer"
                 >
-                  <img src="/bolao_logo.jpg" alt="Logo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
+                  <img src="/bolao_logo.jpg" alt="Logotipo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
                   <span className="hidden xs:inline">Bolão Lotofácil</span>
                 </div>
               </div>
@@ -162,8 +220,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
                   Limite de Cota Atingido (Firestore/AI)
                 </p>
                 <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
-                  O aplicativo atingiu o limite gratuito diário (leitura, escrita ou IA). 
-                  Algumas funções podem estar temporariamente indisponíveis ou dados podem estar desatualizados até que o limite seja reiniciado ou o faturamento seja ativado.
+                  Limite de cota atingido. Algumas funções podem estar temporariamente indisponíveis.
                 </p>
                 <div className="mt-2.5">
                   <a
@@ -172,7 +229,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
                     rel="noopener noreferrer"
                     className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg transition-colors cursor-pointer uppercase shadow-sm"
                   >
-                    Ativar Faturamento / Upgrade ↗
+                    Ativar Faturamento / Upgrade ➔
                   </a>
                 </div>
               </div>
@@ -180,6 +237,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
           </div>
         )}
         {children}
+        <BackgroundUploadStatus />
       </main>
 
       {/* Modal de Descrição do Logo */}
@@ -201,21 +259,12 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
             {logoViewState === 'description' ? (
               <div className="p-6 text-center space-y-4">
                 <div className="flex justify-center">
-                  <img src="/bolao_logo.jpg" alt="Logo" className="w-24 h-24 rounded-2xl shadow-lg border-4 border-blue-50 object-cover cursor-pointer hover:scale-105 transition-transform" />
+                  <img src="/bolao_logo.jpg" alt="Logotipo" className="w-24 h-24 rounded-2xl shadow-lg border-4 border-blue-50 object-cover cursor-pointer hover:scale-105 transition-transform" />
                 </div>
                 <h3 className="text-xl font-black text-blue-900">Bolão Lotofácil Gestor</h3>
                 <div className="text-sm text-gray-600 leading-relaxed space-y-3">
-                  <p>
-                    <strong>Para que serve?</strong><br />
-                    Este aplicativo é uma plataforma profissional para gestão de grupos de apostas lotéricas, focada em transparência, organização e automação.
-                  </p>
-                  <p>
-                    <strong>Como funciona?</strong><br />
-                    O administrador cadastra os jogos e o sistema confere automaticamente os resultados direto da Caixa Econômica. Ele gerencia as cotas de cada membro, controla pagamentos e calcula o rateio exato de prêmios de forma instantânea.
-                  </p>
-                  <p className="text-xs font-bold text-blue-600 animate-pulse">
-                    💡 Clique no logo acima para ampliar!
-                  </p>
+                  <p>Gestão profissional de grupos de apostas, focada em transparência e automação.</p>
+                  <p className="text-[11px] text-blue-600 font-bold animate-pulse">💡 Clique no logotipo para ampliar</p>
                 </div>
                 <button 
                   onClick={() => setLogoViewState('closed')}
@@ -228,7 +277,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
               <div className="relative w-full h-full flex items-center justify-center p-4">
                 <img 
                   src="/bolao_logo.jpg" 
-                  alt="Logo Full" 
+                  alt="Logotipo Ampliado" 
                   className="max-w-full max-h-full rounded-3xl shadow-2xl border-8 border-white/10 animate-in zoom-in-75 duration-300" 
                 />
                 <button 
@@ -307,7 +356,7 @@ export default function App() {
                 uid: currentUser.uid,
                 email: currentUser.email,
                 displayName: currentUser.displayName || 'Participante',
-                role: currentUser.email === 'clodas12345@gmail.com' ? 'admin' : 'participant',
+                role: currentUser.email === 'clodas12345@gmail.com' ? 'admin' : 'participante',
                 approved: true,
                 createdAt: new Date().toISOString()
               };
@@ -334,7 +383,7 @@ export default function App() {
                 uid: currentUser.uid,
                 email: currentUser.email,
                 displayName: currentUser.displayName || 'Participante',
-                role: currentUser.email === 'clodas12345@gmail.com' ? 'admin' : 'participant',
+                role: currentUser.email === 'clodas12345@gmail.com' ? 'admin' : 'participante',
                 approved: true,
                 createdAt: new Date().toISOString()
               };
@@ -378,7 +427,8 @@ export default function App() {
 
   return (
     <PoolProvider>
-      <BrowserRouter>
+      <UploadProvider>
+        <BrowserRouter>
         <Layout user={activeUser} onSignOut={handleSignOut}>
           <Routes>
         <Route path="/" element={
@@ -392,7 +442,7 @@ export default function App() {
                       Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
                     </h1>
                     <p className="text-xs text-gray-500">
-                      Perfil: <span className="font-semibold text-blue-600 uppercase">{activeUserData?.role || 'Participante'}</span>
+                      Perfil: <span className="font-semibold text-blue-600 uppercase">{activeUserData?.role === 'admin' ? 'Administrador' : 'Participante'}</span>
                     </p>
                   </div>
                 </div>
@@ -480,7 +530,7 @@ export default function App() {
                     const memberData = {
                       ...member,
                       approved: true,
-                      role: member.role || 'participant'
+                      role: member.role || 'participante'
                     };
                     setPhoneUser({ sessionUser, memberData });
                     localStorage.setItem('bolao_phone_user', JSON.stringify({ sessionUser, memberData }));
@@ -502,8 +552,9 @@ export default function App() {
         <Route path="/rules" element={activeUser ? <RulesAndNorms /> : <Navigate to="/" />} />
         <Route path="/permissoes" element={activeUser ? <RolesGuide /> : <Navigate to="/" />} />
       </Routes>
-    </Layout>
-  </BrowserRouter>
-  </PoolProvider>
+        </Layout>
+      </BrowserRouter>
+      </UploadProvider>
+    </PoolProvider>
   );
 }

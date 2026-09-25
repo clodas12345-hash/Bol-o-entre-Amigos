@@ -398,16 +398,13 @@ export default function MembersList() {
       {/* Header com Resumo e Ações */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-100">
         <div>
-          <h2 className="font-bold text-lg text-gray-800">👥 Gestão de Membros & Cotas</h2>
+          <h2 className="font-bold text-lg text-gray-800">Membros & Cotas</h2>
           <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 mt-0.5">
-            <span><strong>{totalMembers}</strong> participantes</span>
-            <span>•</span>
             <span className="bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full border border-amber-300">
-              {totalQuotas} cotas totais
+              {totalQuotas} cotas
             </span>
-            <span>•</span>
             <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-              {paidQuotas} cotas em dia (R$ {(paidQuotas * 20).toFixed(2).replace('.', ',')})
+              {paidQuotas} pagas (R$ {(paidQuotas * 20).toFixed(2).replace('.', ',')})
             </span>
           </div>
         </div>
