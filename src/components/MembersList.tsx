@@ -6,6 +6,28 @@ import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, norma
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
 
+// Helpers de persistência local para contornar problemas de limite de cota do Firestore
+const getLocalMembers = (): any[] => {
+  try {
+    const saved = localStorage.getItem('bolao_local_members');
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveLocalMember = (newMember: any) => {
+  try {
+    const current = getLocalMembers();
+    if (!current.some(m => m.id === newMember.id || (newMember.phone && m.phone === newMember.phone))) {
+      current.push(newMember);
+      localStorage.setItem('bolao_local_members', JSON.stringify(current));
+    }
+  } catch (err) {
+    console.error('Failed to save local member:', err);
+  }
+};
+
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
   const { isMobile, compactTableClass } = useResponsiveLayout();
@@ -40,8 +62,8 @@ export default function MembersList() {
   const fetchMembers = async () => {
     try {
       const [usersSnap, membersSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'members'))
+        getDocs(collection(db, 'users')).catch(() => ({ docs: [] })),
+        getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))
       ]);
 
       const usersList: any[] = usersSnap.docs.map(d => ({
@@ -57,7 +79,7 @@ export default function MembersList() {
         ...d.data()
       }));
 
-      // Merge evitando duplicados
+      // Merge de Firestore
       const combined: any[] = [...usersList];
       for (const m of membersList) {
         const alreadyExists = combined.some(u =>
@@ -66,6 +88,15 @@ export default function MembersList() {
         );
         if (!alreadyExists) {
           combined.push(m);
+        }
+      }
+
+      // Adiciona membros salvos localmente
+      const localSaved = getLocalMembers();
+      for (const loc of localSaved) {
+        const alreadyExists = combined.some(c => c.id === loc.id || (loc.phone && c.phone === loc.phone));
+        if (!alreadyExists) {
+          combined.push(loc);
         }
       }
 
@@ -78,14 +109,18 @@ export default function MembersList() {
     } catch (err) {
       console.warn('Error fetching members, loading from local cache:', err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
-      try {
-        const cached = localStorage.getItem('bolao_cache_members');
-        if (cached) {
-          setMembers(JSON.parse(cached));
+      
+      const cached = localStorage.getItem('bolao_cache_members');
+      let combined: any[] = cached ? JSON.parse(cached) : [];
+      
+      const localSaved = getLocalMembers();
+      for (const loc of localSaved) {
+        const alreadyExists = combined.some(c => c.id === loc.id || (loc.phone && c.phone === loc.phone));
+        if (!alreadyExists) {
+          combined.push(loc);
         }
-      } catch (cacheErr) {
-        console.error('Failed to parse cached members in fetchMembers:', cacheErr);
       }
+      setMembers(combined);
     }
   };
 
@@ -110,21 +145,48 @@ export default function MembersList() {
     }
 
     setIsSavingEdit(true);
-    try {
-      const colName = editingMember.collectionName || 'users';
-      const normalizedPhone = editPhone.trim() ? normalizeBrazilianPhoneDigits(editPhone) : '';
-      
-      if (normalizedPhone) {
-        const isDuplicate = members.some(m => m.id !== editingMember.id && normalizeBrazilianPhoneDigits(m.phone || '') === normalizedPhone);
-        if (isDuplicate) {
-          addToast('Este número de celular já está cadastrado para outro participante! 1 número por acesso.', 'error');
-          setIsSavingEdit(false);
-          return;
-        }
+    const normalizedPhone = editPhone.trim() ? normalizeBrazilianPhoneDigits(editPhone) : '';
+    const quotasVal = Math.max(1, Number(editQuotas) || 1);
+
+    if (normalizedPhone) {
+      const isDuplicate = members.some(m => m.id !== editingMember.id && normalizeBrazilianPhoneDigits(m.phone || '') === normalizedPhone);
+      if (isDuplicate) {
+        addToast('Este número de celular já está cadastrado para outro participante!', 'error');
+        setIsSavingEdit(false);
+        return;
       }
+    }
 
-      const quotasVal = Math.max(1, Number(editQuotas) || 1);
+    if (editingMember.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === editingMember.id) {
+            return {
+              ...m,
+              displayName: editName.trim(),
+              phone: normalizedPhone,
+              quotas: quotasVal,
+              role: editRole,
+              notes: editNotes.trim() || null
+            };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`Cadastro local de "${editName.trim()}" atualizado!`, 'success');
+        setEditingMember(null);
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao atualizar cadastro local.', 'error');
+      } finally {
+        setIsSavingEdit(false);
+      }
+      return;
+    }
 
+    try {
+      const colName = editingMember.collectionName || 'members';
       await updateDoc(doc(db, colName, editingMember.id), {
         displayName: editName.trim(),
         phone: normalizedPhone,
@@ -140,7 +202,37 @@ export default function MembersList() {
       console.error('Error updating member:', error);
       if (isQuotaError(error)) {
         setIsQuotaExceeded(true);
-        addToast('Limite de cota atingido no banco.', 'error');
+        // Atualiza no cache local se falhar no banco por limite de cota
+        const local = getLocalMembers();
+        const existing = local.find(m => m.id === editingMember.id);
+        if (!existing) {
+          saveLocalMember({
+            ...editingMember,
+            displayName: editName.trim(),
+            phone: normalizedPhone,
+            quotas: quotasVal,
+            role: editRole,
+            notes: editNotes.trim() || null
+          });
+        } else {
+          const updated = local.map(m => {
+            if (m.id === editingMember.id) {
+              return {
+                ...m,
+                displayName: editName.trim(),
+                phone: normalizedPhone,
+                quotas: quotasVal,
+                role: editRole,
+                notes: editNotes.trim() || null
+              };
+            }
+            return m;
+          });
+          localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        }
+        addToast('Cadastro atualizado localmente devido ao limite de cota do servidor.', 'success');
+        setEditingMember(null);
+        fetchMembers();
       } else {
         addToast('Erro ao atualizar dados do membro.', 'error');
       }
@@ -154,8 +246,26 @@ export default function MembersList() {
     const nextVal = Math.max(1, current + delta);
     if (nextVal === current) return;
 
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, quotas: nextVal };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`${formatFirstAndLastName(member.displayName || 'Participante')} agora possui ${nextVal} cota(s).`, 'info');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao atualizar cotas locais.', 'error');
+      }
+      return;
+    }
+
     try {
-      const colName = member.collectionName || 'users';
+      const colName = member.collectionName || 'members';
       await updateDoc(doc(db, colName, member.id), { quotas: nextVal });
       addToast(`${formatFirstAndLastName(member.displayName || 'Participante')} agora possui ${nextVal} cota(s).`, 'info');
       fetchMembers();
@@ -163,7 +273,17 @@ export default function MembersList() {
       console.error(err);
       if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
-        addToast('Limite de cota atingido.', 'error');
+        // Atualiza localmente se falhar por limite de cota
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, quotas: nextVal };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`${formatFirstAndLastName(member.displayName || 'Participante')} atualizado localmente para ${nextVal} cota(s).`, 'info');
+        fetchMembers();
       } else {
         addToast('Erro ao atualizar cotas.', 'error');
       }
@@ -172,10 +292,46 @@ export default function MembersList() {
 
   const togglePaymentStatus = async (member: any) => {
     const newStatus = member.paymentStatus === 'Pago' ? 'Pendente' : 'Pago';
-    const colName = member.collectionName || 'users';
-    await updateDoc(doc(db, colName, member.id), { paymentStatus: newStatus });
-    addToast(`Status de pagamento alterado para "${newStatus}"`, 'info');
-    fetchMembers();
+
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, paymentStatus: newStatus };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`Status de pagamento local alterado para "${newStatus}"`, 'info');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao atualizar pagamento local.', 'error');
+      }
+      return;
+    }
+
+    try {
+      const colName = member.collectionName || 'members';
+      await updateDoc(doc(db, colName, member.id), { paymentStatus: newStatus });
+      addToast(`Status de pagamento alterado para "${newStatus}"`, 'info');
+      fetchMembers();
+    } catch (err) {
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        // Salva alteração localmente
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, paymentStatus: newStatus };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`Status alterado localmente para "${newStatus}" devido ao limite de cota do servidor.`, 'info');
+        fetchMembers();
+      }
+    }
   };
 
   const sendWhatsApp = (member: any) => {
@@ -186,17 +342,70 @@ export default function MembersList() {
   };
 
   const toggleApproval = async (member: any) => {
-    const colName = member.collectionName || 'users';
-    const nextApproved = !member.approved;
-    await updateDoc(doc(db, colName, member.id), { approved: nextApproved });
-    addToast(nextApproved ? 'Membro aprovado com sucesso!' : 'Aprovação removida.', 'info');
-    fetchMembers();
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, approved: !m.approved };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(member.approved ? 'Aprovação removida do membro local.' : 'Membro local aprovado com sucesso!', 'info');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao aprovar membro local.', 'error');
+      }
+      return;
+    }
+
+    try {
+      const colName = member.collectionName || 'members';
+      const nextApproved = !member.approved;
+      await updateDoc(doc(db, colName, member.id), { approved: nextApproved });
+      addToast(nextApproved ? 'Membro aprovado com sucesso!' : 'Aprovação removida.', 'info');
+      fetchMembers();
+    } catch (err) {
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, approved: !m.approved };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast('Status de aprovação alterado localmente devido ao limite de cota do servidor.', 'info');
+        fetchMembers();
+      }
+    }
   };
 
   const handleApproveQuotaRequest = async (member: any) => {
+    const newQuotasAmount = member.quotaRequest.requestedQuotas;
+
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, quotas: newQuotasAmount, quotaRequest: null };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`Alteração de cotas de "${member.displayName}" aprovada localmente!`, 'success');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao aprovar alteração de cotas local.', 'error');
+      }
+      return;
+    }
+
     try {
-      const colName = member.collectionName || 'users';
-      const newQuotasAmount = member.quotaRequest.requestedQuotas;
+      const colName = member.collectionName || 'members';
       await updateDoc(doc(db, colName, member.id), {
         quotas: newQuotasAmount,
         quotaRequest: null
@@ -209,8 +418,26 @@ export default function MembersList() {
   };
 
   const handleRejectQuotaRequest = async (member: any) => {
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m => {
+          if (m.id === member.id) {
+            return { ...m, quotaRequest: null };
+          }
+          return m;
+        });
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`Solicitação de alteração de cotas recusada localmente.`, 'info');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao recusar alteração local.', 'error');
+      }
+      return;
+    }
+
     try {
-      const colName = member.collectionName || 'users';
+      const colName = member.collectionName || 'members';
       await updateDoc(doc(db, colName, member.id), {
         quotaRequest: null
       });
@@ -222,10 +449,35 @@ export default function MembersList() {
   };
 
   const deleteMember = async (member: any) => {
-    const colName = member.collectionName || 'users';
-    await deleteDoc(doc(db, colName, member.id));
-    addToast('Membro removido com sucesso.', 'info');
-    fetchMembers();
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.filter(m => m.id !== member.id);
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast('Membro local removido com sucesso.', 'info');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao remover membro local.', 'error');
+      }
+      return;
+    }
+
+    try {
+      const colName = member.collectionName || 'members';
+      await deleteDoc(doc(db, colName, member.id));
+      addToast('Membro removido com sucesso.', 'info');
+      fetchMembers();
+    } catch (err) {
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        // Remove do cache local também
+        const local = getLocalMembers();
+        const updated = local.filter(m => m.id !== member.id);
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast('Membro removido localmente devido ao limite de cota do servidor.', 'info');
+        fetchMembers();
+      }
+    }
   };
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -236,21 +488,34 @@ export default function MembersList() {
     }
 
     setIsSubmitting(true);
-    try {
-      const normalizedPhone = newPhone.trim() ? normalizeBrazilianPhoneDigits(newPhone) : '';
-      
-      if (normalizedPhone) {
-        const isDuplicate = members.some(m => normalizeBrazilianPhoneDigits(m.phone || '') === normalizedPhone);
-        if (isDuplicate) {
-          addToast('Este número de celular já está cadastrado para outro participante! 1 número por acesso.', 'error');
-          setIsSubmitting(false);
-          return;
-        }
+    const normalizedPhone = newPhone.trim() ? normalizeBrazilianPhoneDigits(newPhone) : '';
+    const quotasVal = Math.max(1, Number(newQuotas) || 1);
+
+    const localMemberData = {
+      id: 'local_' + Date.now(),
+      displayName: newDisplayName.trim(),
+      phone: normalizedPhone,
+      quotas: quotasVal,
+      role: newRole,
+      notes: newNotes.trim() || null,
+      paymentStatus: newPaymentStatus,
+      createdAt: new Date().toISOString(),
+      approved: true,
+      collectionName: 'members',
+      isLocalOnly: true
+    };
+
+    if (normalizedPhone) {
+      const isDuplicate = members.some(m => normalizeBrazilianPhoneDigits(m.phone || '') === normalizedPhone);
+      if (isDuplicate) {
+        addToast('Este número de celular já está cadastrado para outro participante!', 'error');
+        setIsSubmitting(false);
+        return;
       }
+    }
 
-      const quotasVal = Math.max(1, Number(newQuotas) || 1);
-
-      await addDoc(collection(db, 'users'), {
+    try {
+      await addDoc(collection(db, 'members'), {
         displayName: newDisplayName.trim(),
         phone: normalizedPhone,
         quotas: quotasVal,
@@ -261,6 +526,15 @@ export default function MembersList() {
         approved: true
       });
 
+      addToast(`Participante cadastrado como ${newRole === 'counselor' ? 'Conselheiro' : 'Membro'} com ${quotasVal} cota(s)!`, 'success');
+    } catch (error) {
+      console.warn('Error adding member to Firebase, fallback to local storage:', error);
+      if (isQuotaError(error)) {
+        setIsQuotaExceeded(true);
+      }
+      saveLocalMember(localMemberData);
+      addToast(`Salvo localmente no dispositivo (Modo Offline ativo devido ao limite de cota do servidor)!`, 'success');
+    } finally {
       setNewDisplayName('');
       setNewPhone('');
       setNewQuotas(1);
@@ -268,23 +542,11 @@ export default function MembersList() {
       setNewNotes('');
       setNewPaymentStatus('Pendente');
       setShowAddForm(false);
-
-      addToast(`Participante cadastrado como ${newRole === 'counselor' ? 'Conselheiro' : 'Membro'} com ${quotasVal} cota(s)!`, 'success');
-      fetchMembers();
-    } catch (error) {
-      console.error('Error adding member:', error);
-      if (isQuotaError(error)) {
-        setIsQuotaExceeded(true);
-        addToast('Limite de cota atingido no banco.', 'error');
-      } else {
-        addToast('Erro ao cadastrar membro.', 'error');
-      }
-    } finally {
       setIsSubmitting(false);
+      fetchMembers();
     }
   };
 
-  // Separação de Listas de Membros, Entrada Pendente e Quotas Pendentes
   const approvedMembers = members.filter(m => m.approved === true);
   const pendingJoinRequests = members.filter(m => m.approved === false);
   const pendingQuotaRequests = members.filter(m => m.approved === true && m.quotaRequest && m.quotaRequest.status === 'Pendente');
@@ -296,7 +558,6 @@ export default function MembersList() {
 
   return (
     <div className="bg-white p-4 space-y-6 rounded-2xl border border-gray-150 shadow-xs">
-      {/* Modal de Confirmação */}
       {confirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-5 rounded-lg shadow-xl max-w-sm w-full">
@@ -310,8 +571,11 @@ export default function MembersList() {
                 Cancelar
               </button>
               <button 
-                onClick={() => { confirmation.action(); setConfirmation(null); }} 
-                className="px-3 py-1.5 rounded text-sm text-white bg-blue-600 hover:bg-blue-700 transition font-medium"
+                onClick={() => {
+                  confirmation.action();
+                  setConfirmation(null);
+                }} 
+                className="px-4 py-1.5 rounded text-sm text-white bg-red-600 hover:bg-red-700 transition"
               >
                 Confirmar
               </button>
@@ -320,112 +584,9 @@ export default function MembersList() {
         </div>
       )}
 
-      {/* Modal Completo de Edição de Cadastro */}
-      {editingMember && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 z-50 overflow-y-auto animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 my-4 overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-base">✏️ Editar Participante</h3>
-                <p className="text-xs text-emerald-100">Altere informações cadastrais básicas e cotas</p>
-              </div>
-              <button onClick={handleCloseEdit} className="text-white/80 hover:text-white text-xl font-bold p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="p-4 sm:p-5 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Nome Completo *</label>
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-xs font-semibold focus:outline-emerald-600"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">WhatsApp / Telefone</label>
-                <input
-                  type="tel"
-                  value={editPhone}
-                  onChange={e => setEditPhone(e.target.value)}
-                  placeholder="11 99999-8888"
-                  className="w-full border border-gray-300 rounded-lg p-2 text-xs focus:outline-emerald-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200">
-                  <label className="block text-xs font-bold text-amber-900 mb-1">
-                    Número de Cotas *
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={editQuotas}
-                      onChange={e => setEditQuotas(Math.max(1, Number(e.target.value)))}
-                      className="w-full border border-amber-300 rounded-lg p-1.5 text-xs font-black text-amber-950 bg-white focus:outline-amber-600"
-                      required
-                    />
-                    <span className="text-[11px] font-bold text-amber-800 whitespace-nowrap">
-                      = R$ {(editQuotas * 20).toFixed(2).replace('.', ',')}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Função no Grupo *</label>
-                  <select
-                    value={editRole}
-                    onChange={(e: any) => setEditRole(e.target.value)}
-                    className="border border-gray-300 bg-white p-2 rounded-lg text-xs w-full focus:outline-emerald-600 font-semibold"
-                  >
-                    <option value="participant">👥 Membro</option>
-                    <option value="counselor">🛡️ Conselheiro</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Observações</label>
-                <textarea
-                  rows={2}
-                  value={editNotes}
-                  onChange={e => setEditNotes(e.target.value)}
-                  placeholder="Ex: Paga via Pix..."
-                  className="w-full border border-gray-300 rounded-lg p-2 text-xs focus:outline-emerald-600"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={handleCloseEdit}
-                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 rounded-xl text-xs transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingEdit}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-xs disabled:opacity-50"
-                >
-                  {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* SEÇÃO 1: Solicitações de Entrada Pendentes (Aguardando Aprovação) */}
       {pendingJoinRequests.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3 animate-pulse-slow">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center gap-2 border-b border-red-100 pb-2">
             <span className="text-xl">📢</span>
             <div>
@@ -537,7 +698,7 @@ export default function MembersList() {
         </div>
       </div>
 
-      {/* Formulário Completo de Cadastro de Membro (Sem CPF, Sem E-mail, Com Role) */}
+      {/* Formulário Completo de Cadastro de Membro */}
       {showAddForm && (
         <form onSubmit={handleAddMember} className="bg-gradient-to-br from-gray-50 to-emerald-50/20 p-4 rounded-xl border border-emerald-200 mb-4 transition-all space-y-3 animate-in slide-in-from-top-2 duration-200">
           <div className="flex justify-between items-center border-b pb-2 border-emerald-100">
@@ -566,7 +727,7 @@ export default function MembersList() {
                 </span>
                 <input
                   type="tel"
-                  placeholder="DDD + Telefone (ex: 11 99999-8888)"
+                  placeholder="ex: 11 99999-8888"
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
                   className="border border-gray-300 bg-white p-2 rounded-r-lg text-xs w-full focus:outline-emerald-600"
@@ -680,6 +841,11 @@ export default function MembersList() {
                     <td className="p-3">
                       <div className="font-bold text-gray-900">
                         {member.displayName || 'Sem Nome'}
+                        {member.isLocalOnly && (
+                          <span className="ml-1.5 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full uppercase">
+                            Dispositivo
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-gray-500 font-medium">
                         {formatPhoneDisplay(member.phone || '')}
@@ -728,28 +894,32 @@ export default function MembersList() {
                     <td className="p-3 text-center">
                       <button
                         onClick={() => togglePaymentStatus(member)}
-                        className={`px-3 py-1 rounded-full text-[10px] font-black tracking-wide border cursor-pointer shadow-3xs transition-all ${
+                        className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
                           isPaid
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                            : 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100'
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
                         }`}
                       >
-                        {isPaid ? '✓ PAGO' : '⚠️ PENDENTE'}
+                        {member.paymentStatus || 'Pendente'}
                       </button>
                     </td>
 
-                    <td className="p-3 text-center">
-                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-black text-[9px] rounded-full">
-                        Ativo
+                    <td className="p-3 text-center font-bold">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                        member.approved 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                          : 'bg-amber-50 text-amber-700 border border-amber-100'
+                      }`}>
+                        {member.approved ? 'Ativo' : 'Pendente'}
                       </span>
                     </td>
 
-                    <td className="p-3 text-center">
+                    <td className="p-3">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => handleOpenEdit(member)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                          title="Editar Cadastro Completo"
+                          className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                          title="Editar Cadastro"
                         >
                           ✏️
                         </button>
@@ -764,10 +934,10 @@ export default function MembersList() {
                           onClick={() => {
                             setConfirmation({
                               action: () => deleteMember(member),
-                              message: `Tem certeza que deseja excluir permanentemente o cadastro de ${member.displayName}? Todos os dados de cotas dele serão removidos.`
+                              message: `Excluir definitivamente o participante ${member.displayName}?`
                             });
                           }}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
                           title="Remover"
                         >
                           🗑️
@@ -781,6 +951,95 @@ export default function MembersList() {
           </tbody>
         </table>
       </div>
+
+      {/* Modal de Edição */}
+      {editingMember && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100 space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-black text-gray-900 text-sm">✏️ Editar Cadastro de Contato</h3>
+              <button onClick={handleCloseEdit} className="text-gray-400 hover:text-gray-700 font-bold text-lg p-1 cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Nome Completo *</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-xs font-semibold focus:outline-emerald-600 bg-gray-50"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">WhatsApp / Telefone</label>
+                <input
+                  type="tel"
+                  placeholder="ex: 11 99999-8888"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-xs focus:outline-emerald-600 bg-gray-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Cotas Cadastradas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editQuotas}
+                    onChange={(e) => setEditQuotas(Math.max(1, Number(e.target.value)))}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs font-black focus:outline-emerald-600 bg-gray-50"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Função no Grupo</label>
+                  <select
+                    value={editRole}
+                    onChange={(e: any) => setEditRole(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs font-semibold focus:outline-emerald-600 bg-gray-50"
+                  >
+                    <option value="participant">👥 Membro</option>
+                    <option value="counselor">🛡️ Conselheiro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Observações (Opcional)</label>
+                <input
+                  type="text"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-xs focus:outline-emerald-600 bg-gray-50"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={handleCloseEdit}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-xs font-bold transition cursor-pointer"
+                >
+                  Voltar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

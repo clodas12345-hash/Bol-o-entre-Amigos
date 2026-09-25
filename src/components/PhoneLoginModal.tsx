@@ -89,6 +89,22 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
         }
       }
 
+      // 3. Busca nos membros locais caso o banco esteja fora de cota ou offline
+      if (!matchedMember) {
+        try {
+          const localSaved = localStorage.getItem('bolao_local_members');
+          if (localSaved) {
+            const parsed = JSON.parse(localSaved);
+            const found = parsed.find((m: any) => normalizeBrazilianPhoneDigits(m.phone || '') === cleanPhone);
+            if (found) {
+              matchedMember = { ...found };
+            }
+          }
+        } catch (err) {
+          console.warn('Error reading local members in login:', err);
+        }
+      }
+
       // Se não encontrou o celular cadastrado, abrimos o formulário para digitar o Nome
       if (!matchedMember) {
         if (!showRegisterPrompt) {
@@ -105,28 +121,61 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
         }
 
         // Cadastra como solicitação pendente (approved: false)
-        const docRef = await addDoc(collection(db, 'users'), {
+        let docId = 'local_' + Date.now();
+        let wasSavedLocally = false;
+
+        try {
+          const docRef = await addDoc(collection(db, 'users'), {
+            displayName: newDisplayName.trim(),
+            phone: cleanPhone,
+            approved: false,
+            role: 'participant',
+            quotas: 1,
+            paymentStatus: 'Pendente',
+            createdAt: new Date().toISOString()
+          });
+          docId = docRef.id;
+          addToast('Solicitação de entrada enviada com sucesso! Aguarde a aprovação do administrador.', 'success');
+        } catch (dbErr) {
+          console.warn('DB error, saving registration locally', dbErr);
+          wasSavedLocally = true;
+          
+          const localMember = {
+            id: docId,
+            displayName: newDisplayName.trim(),
+            phone: cleanPhone,
+            approved: false,
+            role: 'participant',
+            quotas: 1,
+            paymentStatus: 'Pendente',
+            createdAt: new Date().toISOString(),
+            isLocalOnly: true,
+            collectionName: 'members'
+          };
+          
+          try {
+            const currentLocal = localStorage.getItem('bolao_local_members');
+            const parsed = currentLocal ? JSON.parse(currentLocal) : [];
+            parsed.push(localMember);
+            localStorage.setItem('bolao_local_members', JSON.stringify(parsed));
+          } catch (e) {
+            console.error('Failed to save registration in local storage:', e);
+          }
+          
+          addToast('Solicitação salva localmente devido ao limite de cota do servidor! Aguarde a aprovação do administrador.', 'success');
+        }
+
+        matchedMember = {
+          id: docId,
+          uid: docId,
           displayName: newDisplayName.trim(),
           phone: cleanPhone,
           approved: false,
           role: 'participant',
           quotas: 1,
           paymentStatus: 'Pendente',
-          createdAt: new Date().toISOString()
-        });
-
-        matchedMember = {
-          id: docRef.id,
-          uid: docRef.id,
-          displayName: newDisplayName.trim(),
-          phone: cleanPhone,
-          approved: false,
-          role: 'participant',
-          quotas: 1,
-          paymentStatus: 'Pendente'
+          isLocalOnly: wasSavedLocally
         };
-
-        addToast('Solicitação de entrada enviada com sucesso! Aguarde a aprovação do administrador.', 'success');
       }
 
       if (matchedMember) {
