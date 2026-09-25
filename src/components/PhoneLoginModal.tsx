@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { normalizeBrazilianPhoneDigits } from '../lib/formatters';
 import { useToast } from './NotificationManager';
@@ -14,6 +14,11 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
   const [phoneInput, setPhoneInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [isAdminPrompt, setIsAdminPrompt] = useState(false);
+  
+  // Solicitação de Cadastro de Novo Membro
+  const [showRegisterPrompt, setShowRegisterPrompt] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState('');
+
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
 
@@ -84,17 +89,55 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
         }
       }
 
+      // Se não encontrou o celular cadastrado, abrimos o formulário para digitar o Nome
       if (!matchedMember) {
-        addToast('Número de celular não encontrado na lista de participantes. Peça ao administrador para cadastrar seu número.', 'error');
-        setLoading(false);
-        return;
+        if (!showRegisterPrompt) {
+          setShowRegisterPrompt(true);
+          setLoading(false);
+          addToast('Celular não cadastrado. Insira seu Nome Completo para enviar uma solicitação de entrada ao bolão!', 'info');
+          return;
+        }
+
+        if (!newDisplayName.trim()) {
+          addToast('Por favor, preencha seu nome completo para prosseguir.', 'error');
+          setLoading(false);
+          return;
+        }
+
+        // Cadastra como solicitação pendente (approved: false)
+        const docRef = await addDoc(collection(db, 'users'), {
+          displayName: newDisplayName.trim(),
+          phone: cleanPhone,
+          approved: false,
+          role: 'participant',
+          quotas: 1,
+          paymentStatus: 'Pendente',
+          createdAt: new Date().toISOString()
+        });
+
+        matchedMember = {
+          id: docRef.id,
+          uid: docRef.id,
+          displayName: newDisplayName.trim(),
+          phone: cleanPhone,
+          approved: false,
+          role: 'participant',
+          quotas: 1,
+          paymentStatus: 'Pendente'
+        };
+
+        addToast('Solicitação de entrada enviada com sucesso! Aguarde a aprovação do administrador.', 'success');
       }
 
-      addToast(`Bem-vindo(a), ${matchedMember.displayName || matchedMember.email || 'Participante'}!`, 'success');
-      onPhoneLoginSuccess(matchedMember);
+      if (matchedMember) {
+        if (matchedMember.approved) {
+          addToast(`Bem-vindo(a) de volta, ${matchedMember.displayName || 'Participante'}!`, 'success');
+        }
+        onPhoneLoginSuccess(matchedMember);
+      }
     } catch (err) {
       console.error('Erro ao autenticar por telefone:', err);
-      addToast('Erro ao validar número de celular.', 'error');
+      addToast('Erro ao validar número de celular ou cadastrar solicitação.', 'error');
     } finally {
       setLoading(false);
     }
@@ -115,6 +158,10 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
                 if (isAdminPrompt) {
                   setIsAdminPrompt(false);
                   setPasswordInput('');
+                }
+                if (showRegisterPrompt) {
+                  setShowRegisterPrompt(false);
+                  setNewDisplayName('');
                 }
               }}
               className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
@@ -139,13 +186,32 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             </div>
           )}
 
+          {showRegisterPrompt && (
+            <div className="text-left animate-in fade-in slide-in-from-top-1 duration-200 space-y-2 bg-emerald-50/30 p-3 rounded-xl border border-emerald-100">
+              <h4 className="text-xs font-black text-emerald-950">📋 Solicitar Entrada no Bolão</h4>
+              <p className="text-[10px] text-emerald-700 leading-normal">Seu celular ainda não está cadastrado. Insira seu nome completo abaixo para que o administrador aprove o seu acesso.</p>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 mb-1">Seu Nome Completo *</label>
+                <input
+                  type="text"
+                  placeholder="Nome e Sobrenome"
+                  value={newDisplayName}
+                  onChange={e => setNewDisplayName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl p-2.5 text-xs font-semibold focus:outline-emerald-600 bg-white"
+                  required
+                  autoFocus
+                />
+              </div>
+            </div>
+          )}
+
           <div className="pt-2">
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar Blindagem' : 'Entrar no Bolão'}
+              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar Blindagem' : showRegisterPrompt ? 'Enviar Solicitação de Entrada' : 'Entrar no Bolão'}
             </button>
           </div>
         </form>
@@ -180,6 +246,10 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
                   setIsAdminPrompt(false);
                   setPasswordInput('');
                 }
+                if (showRegisterPrompt) {
+                  setShowRegisterPrompt(false);
+                  setNewDisplayName('');
+                }
               }}
               className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
               required
@@ -203,6 +273,25 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             </div>
           )}
 
+          {showRegisterPrompt && (
+            <div className="text-left animate-in fade-in slide-in-from-top-1 duration-200 space-y-2 bg-emerald-50/30 p-3 rounded-xl border border-emerald-100">
+              <h4 className="text-xs font-black text-emerald-950">📋 Solicitar Entrada no Bolão</h4>
+              <p className="text-[10px] text-emerald-700 leading-normal">Seu celular ainda não está cadastrado. Insira seu nome completo abaixo para que o administrador aprove o seu acesso.</p>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 mb-1">Seu Nome Completo *</label>
+                <input
+                  type="text"
+                  placeholder="Nome e Sobrenome"
+                  value={newDisplayName}
+                  onChange={e => setNewDisplayName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl p-2.5 text-xs font-semibold focus:outline-emerald-600 bg-white"
+                  required
+                  autoFocus
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 pt-2">
             <button
               type="button"
@@ -216,7 +305,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
               disabled={loading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar' : 'Entrar no Bolão'}
+              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar' : showRegisterPrompt ? 'Solicitar Entrada' : 'Entrar no Bolão'}
             </button>
           </div>
         </form>
@@ -224,4 +313,3 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
     </div>
   );
 }
-

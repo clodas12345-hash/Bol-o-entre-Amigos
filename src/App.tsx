@@ -231,6 +231,7 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
 
   const navLinks = [
     { to: '/', label: 'Início', icon: '🏠' },
+    { to: '/contatos', label: 'Contatos', icon: '👥' },
     { to: '/chat', label: 'Chat', icon: '💬' },
     { to: '/whatsapp', label: 'WhatsApp', icon: '📢' },
     { to: '/desdobramentos', label: 'Desdobramentos', icon: '🎯' },
@@ -813,9 +814,6 @@ export default function App() {
                   <FinancialDashboard />
                 </div>
 
-                {/* 3. Lista de Membros e Cotas */}
-                <MembersList />
-
                 {/* 4. Gráficos Visuais Avançados */}
                 <VisualChartsDashboard />
 
@@ -853,7 +851,7 @@ export default function App() {
                     };
                     const memberData = {
                       ...member,
-                      approved: true,
+                      approved: member.approved !== undefined ? member.approved : true,
                       role: member.role || 'participante'
                     };
                     setPhoneUser({ sessionUser, memberData });
@@ -864,6 +862,7 @@ export default function App() {
             </div>
           )
         } />
+        <Route path="/contatos" element={activeUser ? <MembersList /> : <Navigate to="/" />} />
         <Route path="/chat" element={activeUser ? <Chat /> : <Navigate to="/" />} />
         <Route path="/whatsapp" element={activeUser ? <WhatsAppHub /> : <Navigate to="/" />} />
         <Route path="/desdobramentos" element={activeUser ? <LotofacilDesdobramento /> : <Navigate to="/" />} />

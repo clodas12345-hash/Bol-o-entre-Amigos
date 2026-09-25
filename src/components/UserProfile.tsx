@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, getDocs, orderBy, limit, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName } from '../lib/formatters';
@@ -11,6 +11,7 @@ import PoolManager from './PoolManager';
 import BackupManager from './BackupManager';
 import DetailedFinancialReport from './DetailedFinancialReport';
 import { usePool } from '../lib/PoolContext';
+import { useToast } from './NotificationManager';
 
 export default function UserProfile() {
   const { isQuotaExceeded, setIsQuotaExceeded } = usePool();
@@ -25,7 +26,38 @@ export default function UserProfile() {
   const [showThermometer, setShowThermometer] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
-  const currentUser = auth.currentUser;
+  // Solicitação de Alteração de Cotas
+  const [requestQuotasVal, setRequestQuotasVal] = useState<number>(1);
+  const [isSubmittingQuotaRequest, setIsSubmittingQuotaRequest] = useState(false);
+
+  const { addToast } = useToast();
+
+  // Função para pegar o usuário ativo (seja logado via Google ou celular)
+  const getActiveUser = () => {
+    if (auth.currentUser) {
+      return {
+        uid: auth.currentUser.uid,
+        displayName: auth.currentUser.displayName || 'Participante',
+        email: auth.currentUser.email || ''
+      };
+    }
+    try {
+      const saved = localStorage.getItem('bolao_phone_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.sessionUser) {
+          return {
+            uid: parsed.sessionUser.uid,
+            displayName: parsed.sessionUser.displayName || parsed.memberData?.displayName || 'Participante',
+            email: parsed.sessionUser.email || ''
+          };
+        }
+      }
+    } catch {}
+    return null;
+  };
+
+  const activeUser = getActiveUser();
 
   const parseDateSafely = (dateVal: any): Date => {
     if (!dateVal) return new Date();
@@ -66,7 +98,7 @@ export default function UserProfile() {
   };
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!activeUser) return;
 
     const checkQuotaError = (err: any) => {
       if (isQuotaError(err)) {
@@ -75,7 +107,7 @@ export default function UserProfile() {
     };
 
     // Escuta pagamentos do usuário
-    const q = query(collection(db, 'payments'), where('userId', '==', currentUser.uid));
+    const q = query(collection(db, 'payments'), where('userId', '==', activeUser.uid));
     const unsubPayments = onSnapshot(q, (snapshot) => {
       setPayments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, err => {
@@ -84,25 +116,35 @@ export default function UserProfile() {
     });
 
     // Escuta dados do perfil no Firestore (específico do usuário)
-    const userDocRef = doc(db, 'users', currentUser.uid);
+    const userDocRef = doc(db, 'users', activeUser.uid);
     const unsubUser = onSnapshot(userDocRef, (docSnap: any) => {
       if (docSnap.exists()) {
-        setUserProfile({ id: docSnap.id, ...docSnap.data() });
+        const profileData: any = { id: docSnap.id, collectionName: 'users', ...docSnap.data() };
+        setUserProfile(profileData);
+        setRequestQuotasVal(Number(profileData.quotas) || 1);
       } else {
-        // Tenta buscar por email caso o UID não seja o ID do documento
-        getDocs(query(collection(db, 'users'), where('email', '==', currentUser.email), limit(1))).then(snap => {
-          if (!snap.empty) {
-            setUserProfile({ id: snap.docs[0].id, ...snap.docs[0].data() });
-          }
-        }).catch(checkQuotaError);
+        const memberRef = doc(db, 'members', activeUser.uid);
+        getDocSnap(memberRef);
       }
     }, (err: any) => {
       console.warn('User profile snapshot error:', err);
       checkQuotaError(err);
     });
 
-    // Escuta jogos para apurar prêmios (Usar getDocs para economizar cota, ou manter onSnapshot se for crítico)
-    // Aqui usaremos getDocs para carregar uma vez ao abrir o perfil
+    const getDocSnap = async (ref: any) => {
+      try {
+        const snap = await getDocs(query(collection(db, 'members'), where('phone', '==', activeUser.uid), limit(1)));
+        if (!snap.empty) {
+          const profileData: any = { id: snap.docs[0].id, collectionName: 'members', ...snap.docs[0].data() };
+          setUserProfile(profileData);
+          setRequestQuotasVal(Number(profileData.quotas) || 1);
+        }
+      } catch (err) {
+        checkQuotaError(err);
+      }
+    };
+
+    // Escuta jogos para apurar prêmios
     const loadGames = async () => {
       try {
         const snap = await getDocs(collection(db, 'games'));
@@ -114,7 +156,7 @@ export default function UserProfile() {
     };
     loadGames();
 
-    // Carrega resultados uma vez (getDocs) em vez de onSnapshot para economizar cota
+    // Carrega resultados uma vez
     const loadResults = async () => {
       try {
         const [snapL, snapM] = await Promise.all([
@@ -132,7 +174,7 @@ export default function UserProfile() {
         });
         
         const combined = [...listL, ...listM].sort((a, b) => Number(b.contest) - Number(a.contest));
-        setSavedResultsList(combined);
+        savedResultsList && setSavedResultsList(combined);
         if (listL.length > 0) setLatestResult(listL[0]);
       } catch (err) {
         console.warn('Results load error:', err);
@@ -156,7 +198,7 @@ export default function UserProfile() {
           }
         });
         const paidCotas = list
-          .filter(m => m.paymentStatus === 'Pago')
+          .filter(m => m.paymentStatus === 'Pago' && m.approved !== false)
           .reduce((sum, m) => sum + (Number(m.quotas) > 0 ? Number(m.quotas) : 1), 0);
         setTotalPaidQuotas(paidCotas > 0 ? paidCotas : 1);
       } catch (e: any) {
@@ -167,7 +209,7 @@ export default function UserProfile() {
           if (cached) {
             const list = JSON.parse(cached);
             const paidCotas = list
-              .filter((m: any) => m.paymentStatus === 'Pago')
+              .filter((m: any) => m.paymentStatus === 'Pago' && m.approved !== false)
               .reduce((sum: number, m: any) => sum + (Number(m.quotas) > 0 ? Number(m.quotas) : 1), 0);
             setTotalPaidQuotas(paidCotas > 0 ? paidCotas : 1);
           }
@@ -182,7 +224,7 @@ export default function UserProfile() {
       unsubPayments();
       unsubUser();
     };
-  }, [currentUser]);
+  }, [activeUser?.uid]);
 
   const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
@@ -226,12 +268,32 @@ export default function UserProfile() {
   // Rateio proporcional: (Prêmio Total / Total de Cotas Pagas) * Minhas Cotas
   const myPrizeShare = isUserPaid ? (myQuotas * (totalPrize / totalPaidQuotas)) : 0;
 
+  const handleSendQuotaRequest = async () => {
+    if (!activeUser?.uid || !userProfile?.id) return;
+    setIsSubmittingQuotaRequest(true);
+    try {
+      const colName = userProfile.collectionName || 'users';
+      await updateDoc(doc(db, colName, userProfile.id), {
+        quotaRequest: {
+          status: 'Pendente',
+          requestedQuotas: requestQuotasVal,
+          createdAt: new Date().toISOString()
+        }
+      });
+      addToast('Solicitação de alteração de cotas enviada ao administrador!', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Erro ao enviar solicitação de alteração de cotas.', 'error');
+    } finally {
+      setIsSubmittingQuotaRequest(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      {/* Botões de Voltar e Fechar Página */}
       <PageHeader
-        title="Configurações"
-        subtitle="Backup, importação, relatórios, gestão de bolões e preferências da conta"
+        title="Minha Conta"
+        subtitle="Auditoria, comprovantes, relatórios financeiros e gestão de cotas pessoais"
         icon="⚙️"
       />
 
@@ -243,7 +305,7 @@ export default function UserProfile() {
               <h3 className="font-bold text-gray-800 text-sm">Comprovante do Depósito</h3>
               <button
                 onClick={() => setSelectedReceipt(null)}
-                className="text-gray-500 hover:text-gray-800 font-bold p-1 text-sm"
+                className="text-gray-500 hover:text-gray-800 font-bold p-1 text-sm cursor-pointer"
               >
                 ✕ Fechar
               </button>
@@ -262,17 +324,19 @@ export default function UserProfile() {
       {/* Status da Cota e Resumo */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-black">
-            {(currentUser?.displayName || currentUser?.email || 'U')[0].toUpperCase()}
+          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-black">
+            {(activeUser?.displayName || 'U')[0].toUpperCase()}
           </div>
           <div>
             <h2 className="font-bold text-base text-gray-800">
-              {formatFirstAndLastName(currentUser?.displayName || currentUser?.email)}
+              {formatFirstAndLastName(activeUser?.displayName)}
             </h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
-              <span className="text-xs text-gray-500">{currentUser?.email}</span>
-              <span className="bg-amber-100 text-amber-900 font-black text-xs px-2 py-0.5 rounded-full border border-amber-300">
+              <span className="bg-amber-100 text-amber-900 font-black text-[10px] px-2.5 py-0.5 rounded-full border border-amber-300 uppercase">
                 🎟️ {myQuotas} {myQuotas === 1 ? 'Cota' : 'Cotas'} (R$ {myMonthlyAmount.toFixed(2).replace('.', ',')})
+              </span>
+              <span className="bg-purple-100 text-purple-900 font-black text-[10px] px-2.5 py-0.5 rounded-full border border-purple-300 uppercase">
+                {userProfile?.role === 'counselor' ? '🛡️ Conselheiro' : '👥 Membro'}
               </span>
             </div>
           </div>
@@ -280,7 +344,7 @@ export default function UserProfile() {
 
         <div className="flex items-center gap-2">
           <span
-            className={`px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
+            className={`px-3 py-1.5 rounded-full text-xs font-black shadow-2xs ${
               isUserPaid
                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                 : 'bg-red-100 text-red-800 border border-red-300'
@@ -297,6 +361,64 @@ export default function UserProfile() {
             <span>📱</span> {showPixSection ? 'Ocultar PIX' : `Pagar R$ ${myMonthlyAmount.toFixed(2).replace('.', ',')} via PIX`}
           </button>
         </div>
+      </div>
+
+      {/* SOLICITAR ALTERAÇÃO DE COTAS (Aumentar ou Diminuir) */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-3">
+        <div>
+          <h3 className="font-bold text-sm text-gray-800">🎟️ Pedir Alteração de Cotas (Aumentar ou Diminuir)</h3>
+          <p className="text-xs text-gray-500">Envie uma solicitação para alterar sua quantidade de cotas no bolão para o administrador aprovar.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-gray-50 rounded-xl border border-gray-150">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-gray-700">Desejo ter:</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRequestQuotasVal(Math.max(1, requestQuotasVal - 1))}
+                className="w-8 h-8 bg-white hover:bg-gray-100 border text-gray-700 rounded-lg font-black text-sm flex items-center justify-center cursor-pointer shadow-3xs"
+              >
+                -
+              </button>
+              <span className="font-black text-base text-gray-900 min-w-6 text-center">
+                {requestQuotasVal}
+              </span>
+              <button
+                type="button"
+                onClick={() => setRequestQuotasVal(requestQuotasVal + 1)}
+                className="w-8 h-8 bg-white hover:bg-gray-100 border text-gray-700 rounded-lg font-black text-sm flex items-center justify-center cursor-pointer shadow-3xs"
+              >
+                +
+              </button>
+            </div>
+            <span className="text-xs text-amber-700 font-bold bg-amber-100/50 px-2.5 py-1 rounded-lg border border-amber-200">
+              = R$ {(requestQuotasVal * 20).toFixed(2).replace('.', ',')} / mês
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isSubmittingQuotaRequest || requestQuotasVal === myQuotas}
+              onClick={handleSendQuotaRequest}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl transition disabled:opacity-40 cursor-pointer shadow-sm"
+            >
+              {isSubmittingQuotaRequest ? 'Enviando...' : 'Enviar Pedido de Cotas'}
+            </button>
+          </div>
+        </div>
+
+        {userProfile?.quotaRequest && (
+          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between text-xs animate-pulse-slow">
+            <p className="text-amber-900 font-medium">
+              ⏳ <strong>Pedido em análise:</strong> Alterar para <strong>{userProfile.quotaRequest.requestedQuotas}</strong> cota(s) (Aguardando o Administrador aprovar)
+            </p>
+            <span className="bg-amber-100 text-amber-800 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300 uppercase">
+              Pendente
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Área Expansível do PIX para o usuário com o valor exato de suas cotas */}
@@ -504,7 +626,7 @@ Bolão Lotofácil Gestor — Setembro de 2026`}
                       {p.receiptURL ? (
                         <button
                           onClick={() => setSelectedReceipt(p.receiptURL)}
-                          className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                          className="text-xs text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer"
                         >
                           Ver Comprovante
                         </button>
