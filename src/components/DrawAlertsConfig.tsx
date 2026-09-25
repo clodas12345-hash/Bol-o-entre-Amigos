@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { doc, updateDoc, getDoc, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 
@@ -31,7 +31,7 @@ const DAYS_MAP = [
 ];
 
 export default function DrawAlertsConfig() {
-  const { activePool } = usePool();
+  const { activePool, setIsQuotaExceeded } = usePool();
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
 
@@ -73,7 +73,10 @@ export default function DrawAlertsConfig() {
           setNextContestNum(cNum + 1);
         }
       }
-    }, err => console.warn('Next contest fetch error:', err));
+    }, err => {
+      console.warn('Next contest fetch error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    });
     return () => unsub();
   }, [resultsCollection]);
 
@@ -99,6 +102,7 @@ export default function DrawAlertsConfig() {
         }
       } catch (err) {
         console.warn('Não foi possível carregar preferências do Firestore:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
       }
     };
     loadUserPreferences();
@@ -180,6 +184,7 @@ export default function DrawAlertsConfig() {
         await updateDoc(userRef, { alertPreferences: updated });
       } catch (e) {
         console.warn('Erro ao salvar preferências no Firestore:', e);
+        if (isQuotaError(e)) setIsQuotaExceeded(true);
       }
     }
   };

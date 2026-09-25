@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName } from '../lib/formatters';
+import { usePool } from '../lib/PoolContext';
 
 interface PollOption {
   text: string;
@@ -39,6 +40,7 @@ const PRESET_POLLS = [
 ];
 
 export default function VotingSystem() {
+  const { setIsQuotaExceeded } = usePool();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -79,7 +81,10 @@ export default function VotingSystem() {
         } as Poll;
       });
       setPolls(list);
-    }, err => console.warn('Polls snapshot error:', err));
+    }, err => {
+      console.warn('Polls snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    });
     return unsub;
   }, []);
 
@@ -141,6 +146,7 @@ export default function VotingSystem() {
       setNewOptions(['', '']);
     } catch (err) {
       console.error('Erro ao criar enquete:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao criar enquete.', 'error');
     } finally {
       setIsSubmitting(false);
@@ -176,6 +182,7 @@ export default function VotingSystem() {
       addToast('Seu voto foi registrado!', 'success');
     } catch (err) {
       console.error('Erro ao votar:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao registrar voto.', 'error');
     }
   };
@@ -187,6 +194,7 @@ export default function VotingSystem() {
       addToast(`Votação ${newStatus === 'active' ? 'reaberta' : 'encerrada'} com sucesso!`, 'info');
     } catch (err) {
       console.error(err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao atualizar status da enquete.', 'error');
     }
   };
@@ -198,6 +206,7 @@ export default function VotingSystem() {
       addToast('Votação excluída com sucesso.', 'info');
     } catch (err) {
       console.error(err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao excluir votação.', 'error');
     }
   };

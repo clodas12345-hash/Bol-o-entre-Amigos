@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import PageHeader from './PageHeader';
+import { usePool } from '../lib/PoolContext';
 
 export default function VisualChartsDashboard() {
+  const { setIsQuotaExceeded } = usePool();
   const [games, setGames] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +42,7 @@ export default function VisualChartsDashboard() {
         }
       } catch (e) {
         console.warn('Failed to fetch data in VisualChartsDashboard, trying cached backups:', e);
+        if (isQuotaError(e)) setIsQuotaExceeded(true);
         try {
           const cachedGames = localStorage.getItem('bolao_cache_games');
           if (cachedGames) {

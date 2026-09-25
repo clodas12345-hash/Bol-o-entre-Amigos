@@ -27,13 +27,15 @@ import DrawAlertsConfig from './components/DrawAlertsConfig';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
-import { PoolProvider } from './lib/PoolContext';
+import { PoolProvider, usePool } from './lib/PoolContext';
 import { formatFirstAndLastName } from './lib/formatters';
 
 function Layout({ children, user, onSignOut }: { children: React.ReactNode, user: any, onSignOut: () => void }) {
+  const { isQuotaExceeded } = usePool();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [logoViewState, setLogoViewState] = useState<'closed' | 'description' | 'full'>('closed');
 
   if (!user) return <>{children}</>;
 
@@ -51,28 +53,31 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
   ];
 
   return (
-    <PoolProvider>
-      <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
-        <NotificationManager />
-          
-          {/* Barra de Navegação Superior */}
+    <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
+      <NotificationManager />
+        
+        {/* Barra de Navegação Superior */}
         <header className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-md sticky top-0 z-40">
           <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-2">
             {/* Logo & Botão Voltar */}
-            <div className="flex items-center gap-2">
-              {!isHome && (
-                <button
-                  onClick={() => navigate(-1)}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
-                  title="Voltar"
+              <div className="flex items-center gap-2">
+                {!isHome && (
+                  <button
+                    onClick={() => navigate(-1)}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                    title="Voltar"
+                  >
+                    <span>←</span>
+                  </button>
+                )}
+                <div 
+                  onClick={() => setLogoViewState('description')}
+                  className="font-black text-xs sm:text-base tracking-wide flex items-center gap-1.5 hover:opacity-90 transition cursor-pointer"
                 >
-                  <span>←</span>
-                </button>
-              )}
-              <Link to="/" className="font-black text-xs sm:text-base tracking-wide flex items-center gap-1.5 hover:opacity-90 transition">
-                <span>🍀</span> <span className="hidden xs:inline">Bolão Lotofácil</span>
-              </Link>
-            </div>
+                  <img src="/bolao_logo.jpg" alt="Logo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
+                  <span className="hidden xs:inline">Bolão Lotofácil</span>
+                </div>
+              </div>
 
             {/* Seleção de Bolão & Notificações */}
             <div className="flex items-center gap-1 sm:gap-2">
@@ -148,14 +153,103 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
 
       {/* Conteúdo Principal */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5">
+        {isQuotaExceeded && (
+          <div className="mb-4 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-xs animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex">
+              <div className="flex-shrink-0 text-xl">⚠️</div>
+              <div className="ml-3">
+                <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">
+                  Limite de Cota Atingido (Firestore/AI)
+                </p>
+                <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                  O aplicativo atingiu o limite gratuito diário (leitura, escrita ou IA). 
+                  Algumas funções podem estar temporariamente indisponíveis ou dados podem estar desatualizados até que o limite seja reiniciado ou o faturamento seja ativado.
+                </p>
+                <div className="mt-2.5">
+                  <a
+                    href="https://console.firebase.google.com/project/adept-figure-463322-r2/firestore/databases/ai-studio-a00d8821-22d9-4161-874f-6ffa6eabd8cf/data?openUpgradeDialog=true"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg transition-colors cursor-pointer uppercase shadow-sm"
+                  >
+                    Ativar Faturamento / Upgrade ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {children}
       </main>
+
+      {/* Modal de Descrição do Logo */}
+      {logoViewState !== 'closed' && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-all duration-300"
+          onClick={() => setLogoViewState('closed')}
+        >
+          <div 
+            className={`bg-white rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 transform ${
+              logoViewState === 'full' ? 'w-[90vw] h-[90vh] flex items-center justify-center bg-transparent shadow-none' : 'max-w-md w-full animate-in zoom-in-95'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (logoViewState === 'description') setLogoViewState('full');
+              else setLogoViewState('closed');
+            }}
+          >
+            {logoViewState === 'description' ? (
+              <div className="p-6 text-center space-y-4">
+                <div className="flex justify-center">
+                  <img src="/bolao_logo.jpg" alt="Logo" className="w-24 h-24 rounded-2xl shadow-lg border-4 border-blue-50 object-cover cursor-pointer hover:scale-105 transition-transform" />
+                </div>
+                <h3 className="text-xl font-black text-blue-900">Bolão Lotofácil Gestor</h3>
+                <div className="text-sm text-gray-600 leading-relaxed space-y-3">
+                  <p>
+                    <strong>Para que serve?</strong><br />
+                    Este aplicativo é uma plataforma profissional para gestão de grupos de apostas lotéricas, focada em transparência, organização e automação.
+                  </p>
+                  <p>
+                    <strong>Como funciona?</strong><br />
+                    O administrador cadastra os jogos e o sistema confere automaticamente os resultados direto da Caixa Econômica. Ele gerencia as cotas de cada membro, controla pagamentos e calcula o rateio exato de prêmios de forma instantânea.
+                  </p>
+                  <p className="text-xs font-bold text-blue-600 animate-pulse">
+                    💡 Clique no logo acima para ampliar!
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setLogoViewState('closed')}
+                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition text-xs"
+                >
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <div className="relative w-full h-full flex items-center justify-center p-4">
+                <img 
+                  src="/bolao_logo.jpg" 
+                  alt="Logo Full" 
+                  className="max-w-full max-h-full rounded-3xl shadow-2xl border-8 border-white/10 animate-in zoom-in-75 duration-300" 
+                />
+                <button 
+                  className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white w-10 h-10 rounded-full flex items-center justify-center font-bold backdrop-blur-md transition shadow-lg"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLogoViewState('closed');
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <footer className="text-center py-4 text-[11px] text-gray-500 border-t bg-white mt-auto">
         Bolão Lotofácil Gestor &copy; {new Date().getFullYear()} — Todos os direitos reservados.
       </footer>
     </div>
-    </PoolProvider>
   );
 }
 
@@ -275,16 +369,18 @@ export default function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600 text-sm font-semibold">
         <div className="flex items-center gap-2">
-          <span className="animate-spin text-xl">🍀</span> Carregando Bolão Lotofácil...
+          <img src="/bolao_logo.jpg" alt="Logo" className="w-8 h-8 rounded-lg animate-pulse object-cover border border-gray-200 shadow-xs" />
+          <span>Carregando Bolão Lotofácil...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <BrowserRouter>
-      <Layout user={activeUser} onSignOut={handleSignOut}>
-        <Routes>
+    <PoolProvider>
+      <BrowserRouter>
+        <Layout user={activeUser} onSignOut={handleSignOut}>
+          <Routes>
         <Route path="/" element={
           activeUser ? (
             activeUserData?.approved ? (
@@ -349,7 +445,9 @@ export default function App() {
           ) : (
             <div className="min-h-[80vh] flex items-center justify-center bg-gray-100 p-4">
               <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 border border-gray-100">
-                <span className="text-4xl">🍀</span>
+                <div className="flex justify-center">
+                  <img src="/bolao_logo.jpg" alt="Logo" className="w-24 h-24 rounded-2xl shadow-md object-cover border border-gray-100" />
+                </div>
                 <h1 className="text-xl font-black text-gray-950">Bolão Lotofácil Gestor</h1>
                 <p className="text-xs text-gray-500">Escolha como deseja acessar o aplicativo de forma rápida e segura</p>
 
@@ -406,5 +504,6 @@ export default function App() {
       </Routes>
     </Layout>
   </BrowserRouter>
+  </PoolProvider>
   );
 }

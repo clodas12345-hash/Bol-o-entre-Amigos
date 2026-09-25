@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth, db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName } from '../lib/formatters';
 import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
+import { usePool } from '../lib/PoolContext';
 
 export default function Chat() {
+  const { setIsQuotaExceeded } = usePool();
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -20,7 +22,10 @@ export default function Chat() {
     const q = query(collection(db, 'messages'), orderBy('createdAt', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, err => console.warn('Messages snapshot error:', err));
+    }, err => {
+      console.warn('Messages snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    });
     return unsubscribe;
   }, []);
 
@@ -29,7 +34,10 @@ export default function Chat() {
       if (docSnap.exists()) {
         setIsChatLocked(!!docSnap.data().locked);
       }
-    }, err => console.warn('ChatStatus snapshot error:', err));
+    }, err => {
+      console.warn('ChatStatus snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    });
     return unsub;
   }, []);
 
@@ -45,6 +53,7 @@ export default function Chat() {
       addToast(newStatus ? 'Chat trancado pelo administrador.' : 'Chat aberto para todos.', 'info');
     } catch (err) {
       console.error(err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao alterar status do chat.', 'error');
     }
   };
@@ -81,6 +90,7 @@ export default function Chat() {
       addToast('Foto enviada com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao enviar imagem:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao enviar foto no chat.', 'error');
     } finally {
       setIsSending(false);
@@ -107,6 +117,7 @@ export default function Chat() {
       setNewMessage('');
     } catch (err) {
       console.error('Erro ao enviar mensagem:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao enviar mensagem.', 'error');
     } finally {
       setIsSending(false);

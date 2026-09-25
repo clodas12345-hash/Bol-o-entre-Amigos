@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import { calculateGamePrize } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+import { usePool } from '../lib/PoolContext';
 
 export default function FinancialDashboard() {
+  const { setIsQuotaExceeded } = usePool();
   const [payments, setPayments] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
@@ -12,24 +14,28 @@ export default function FinancialDashboard() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
 
   useEffect(() => {
-    const unsubPayments = onSnapshot(collection(db, 'payments'), snapshot => {
-      setPayments(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => console.warn('Payments snapshot error:', err));
+    const checkQuotaError = (err: any) => {
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    };
 
-    const unsubGames = onSnapshot(collection(db, 'games'), snapshot => {
-      setGames(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => console.warn('Games snapshot error:', err));
-
-    const unsubResults = onSnapshot(collection(db, 'lotofacil_results'), snapshot => {
-      setResults(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => console.warn('Results snapshot error:', err));
-
-    const fetchMembers = async () => {
+    const loadData = async () => {
       try {
-        const [usersSnap, membersSnap] = await Promise.all([
+        const [paySnap, gameSnap, resSnap, usersSnap, membersSnap] = await Promise.all([
+          getDocs(collection(db, 'payments')),
+          getDocs(collection(db, 'games')),
+          getDocs(collection(db, 'lotofacil_results')),
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'members'))
         ]);
+
+        const payList = paySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const gameList = gameSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const resList = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        setPayments(payList);
+        setGames(gameList);
+        setResults(resList);
+
         const uList: any[] = usersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
         const mList: any[] = membersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
         const combined = [...uList];
@@ -39,22 +45,40 @@ export default function FinancialDashboard() {
           }
         }
         setMembers(combined);
+
+        // Cache successful data
+        try {
+          localStorage.setItem('bolao_cache_payments', JSON.stringify(payList));
+          localStorage.setItem('bolao_cache_games', JSON.stringify(gameList));
+          localStorage.setItem('bolao_cache_results', JSON.stringify(resList));
+          localStorage.setItem('bolao_cache_members', JSON.stringify(combined));
+        } catch (cacheErr) {
+          console.warn('Failed to cache financial data:', cacheErr);
+        }
       } catch (e) {
-        console.error(e);
+        console.error('FinancialDashboard load error:', e);
+        checkQuotaError(e);
+        
+        // Try to load from cache
+        try {
+          const cachedPay = localStorage.getItem('bolao_cache_payments');
+          const cachedGames = localStorage.getItem('bolao_cache_games');
+          const cachedResults = localStorage.getItem('bolao_cache_results');
+          const cachedMembers = localStorage.getItem('bolao_cache_members');
+          
+          if (cachedPay) setPayments(JSON.parse(cachedPay));
+          if (cachedGames) setGames(JSON.parse(cachedGames));
+          if (cachedResults) setResults(JSON.parse(cachedResults));
+          if (cachedMembers) setMembers(JSON.parse(cachedMembers));
+        } catch (cacheErr) {
+          console.warn('Failed to load from financial cache:', cacheErr);
+        }
       }
     };
-    fetchMembers();
+    loadData();
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), () => fetchMembers(), err => console.warn('Users snapshot error:', err));
-    const unsubMem = onSnapshot(collection(db, 'members'), () => fetchMembers(), err => console.warn('Members snapshot error:', err));
-
-    return () => {
-      unsubPayments();
-      unsubGames();
-      unsubResults();
-      unsubUsers();
-      unsubMem();
-    };
+    // No dashboard financeiro, updates em tempo real são menos críticos que economia de cota.
+    // Removendo onSnapshots que ouvem coleções inteiras.
   }, []);
 
   // Soma de pagamentos explícitos na coleção payments

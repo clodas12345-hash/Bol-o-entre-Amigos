@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db, isQuotaError } from '../lib/firebase';
+import { usePool } from '../lib/PoolContext';
 
 // Números primos da Lotofácil (entre 1 e 25)
 export const PRIME_NUMBERS = [2, 3, 5, 7, 11, 13, 17, 19, 23];
@@ -20,19 +21,48 @@ export interface NumberStat {
 }
 
 export default function StatsThermometer({ onSelectNumber }: { onSelectNumber?: (num: number) => void }) {
-  const [results, setResults] = useState<any[]>([]);
+  const { setIsQuotaExceeded } = usePool();
+  const [results, setResults] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_stats_results');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [stats, setStats] = useState<NumberStat[]>([]);
   const [activeTab, setActiveTab] = useState<'grid' | 'ranking' | 'patterns'>('grid');
 
   useEffect(() => {
-    // Busca até 50 concursos para calcular estatísticas robustas
-    const q = query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(50));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(d => d.data());
-      setResults(list);
-      calculateStats(list);
-    }, err => console.warn('Lotofacil results snapshot error:', err));
-    return unsub;
+    const loadStats = async () => {
+      try {
+        const q = query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(50));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map(d => d.data());
+        setResults(list);
+        calculateStats(list);
+        
+        try {
+          localStorage.setItem('bolao_cache_stats_results', JSON.stringify(list));
+        } catch (cacheErr) {
+          console.warn('Failed to cache stats results:', cacheErr);
+        }
+      } catch (err) {
+        console.warn('Stats load error:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
+        
+        const cached = localStorage.getItem('bolao_cache_stats_results');
+        if (cached) {
+          try {
+            const list = JSON.parse(cached);
+            setResults(list);
+            calculateStats(list);
+          } catch {}
+        }
+      }
+    };
+    
+    loadStats();
   }, []);
 
   const calculateStats = (contestList: any[]) => {

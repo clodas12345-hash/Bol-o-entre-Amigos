@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from '../lib/formatters';
 import { calculateGamePrize } from '../lib/prizes';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { useToast } from './NotificationManager';
+import { usePool } from '../lib/PoolContext';
 
 interface WhatsAppHubProps {
   onClose?: () => void;
 }
 
 export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
+  const { setIsQuotaExceeded } = usePool();
   const [activeTemplate, setActiveTemplate] = useState<string>('pix_reminder');
   const [customMessage, setCustomMessage] = useState<string>('');
   const [members, setMembers] = useState<any[]>([]);
@@ -23,53 +25,41 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
   const { addToast } = useToast();
 
   useEffect(() => {
-    // Carrega membros
-    const loadMembers = async () => {
+    // Carrega todos os dados necessários uma vez
+    const loadAllData = async () => {
       try {
-        const [usersSnap, membersSnap] = await Promise.all([
+        const [usersSnap, membersSnap, gamesSnap, resultSnap, pollSnap] = await Promise.all([
           getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'members'))
+          getDocs(collection(db, 'members')),
+          getDocs(collection(db, 'games')),
+          getDocs(query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(1))),
+          getDocs(query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(1)))
         ]);
-        const list: any[] = usersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
-        membersSnap.docs.forEach(d => {
-          const data = d.data();
-          if (!list.some(u => u.id === d.id || (data.email && u.email === data.email))) {
-            list.push({ id: d.id, quotas: 1, ...data });
+
+        // Processa Membros
+        const uList: any[] = usersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
+        const mList: any[] = membersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
+        const combined = [...uList];
+        for (const m of mList) {
+          if (!combined.some(u => u.id === m.id || (u.email && m.email && u.email === m.email))) {
+            combined.push(m);
           }
-        });
-        setMembers(list);
+        }
+        setMembers(combined);
+
+        // Processa outros dados
+        setGames(gamesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        if (!resultSnap.empty) setLatestResult(resultSnap.docs[0].data());
+        if (!pollSnap.empty) setLatestPoll({ id: pollSnap.docs[0].id, ...pollSnap.docs[0].data() });
+
       } catch (e) {
-        console.error(e);
+        console.error('WhatsAppHub load error:', e);
+        if (isQuotaError(e)) setIsQuotaExceeded(true);
       }
     };
-    loadMembers();
 
-    // Carrega jogos
-    const unsubGames = onSnapshot(collection(db, 'games'), (snap) => {
-      setGames(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => console.warn('Games WhatsApp snapshot error:', err));
-
-    // Carrega último resultado
-    const qResult = query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(1));
-    const unsubResult = onSnapshot(qResult, (snap) => {
-      if (!snap.empty) {
-        setLatestResult(snap.docs[0].data());
-      }
-    }, err => console.warn('Result WhatsApp snapshot error:', err));
-
-    // Carrega última enquete
-    const qPoll = query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(1));
-    const unsubPoll = onSnapshot(qPoll, (snap) => {
-      if (!snap.empty) {
-        setLatestPoll({ id: snap.docs[0].id, ...snap.docs[0].data() });
-      }
-    }, err => console.warn('Poll WhatsApp snapshot error:', err));
-
-    return () => {
-      unsubGames();
-      unsubResult();
-      unsubPoll();
-    };
+    loadAllData();
+    // Removendo onSnapshots para economizar cota.
   }, []);
 
   // Cálculos do Bolão

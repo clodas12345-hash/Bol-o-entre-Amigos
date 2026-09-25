@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isQuotaError } from '../lib/firebase';
 import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
 import DrawAlertsConfig from './DrawAlertsConfig';
+import { usePool } from '../lib/PoolContext';
 
 export default function CalendarAgenda() {
+  const { setIsQuotaExceeded } = usePool();
   const [events, setEvents] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [title, setTitle] = useState('');
@@ -21,7 +23,10 @@ export default function CalendarAgenda() {
     const q = query(collection(db, 'events'), orderBy('date', 'asc'));
     const unsub = onSnapshot(q, (snapshot) => {
       setEvents(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => console.warn('Events snapshot error:', err));
+    }, err => {
+      console.warn('Events snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    });
     return unsub;
   }, []);
 
@@ -48,7 +53,12 @@ export default function CalendarAgenda() {
       setShowModal(false);
     } catch (err) {
       console.error('Erro ao agendar evento:', err);
-      addToast('Erro ao agendar evento.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota diária atingido.', 'error');
+      } else {
+        addToast('Erro ao agendar evento.', 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }

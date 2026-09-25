@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, formatCPF } from '../lib/formatters';
+import { usePool } from '../lib/PoolContext';
 
 export default function MembersList() {
+  const { setIsQuotaExceeded } = usePool();
   const [members, setMembers] = useState<any[]>([]);
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -76,6 +78,7 @@ export default function MembersList() {
       }
     } catch (err) {
       console.warn('Error fetching members, loading from local cache:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       try {
         const cached = localStorage.getItem('bolao_cache_members');
         if (cached) {
@@ -128,7 +131,12 @@ export default function MembersList() {
       fetchMembers();
     } catch (error) {
       console.error('Error updating member:', error);
-      addToast('Erro ao atualizar dados do membro.', 'error');
+      if (isQuotaError(error)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota atingido no banco.', 'error');
+      } else {
+        addToast('Erro ao atualizar dados do membro.', 'error');
+      }
     } finally {
       setIsSavingEdit(false);
     }
@@ -146,7 +154,12 @@ export default function MembersList() {
       fetchMembers();
     } catch (err) {
       console.error(err);
-      addToast('Erro ao atualizar cotas.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota atingido.', 'error');
+      } else {
+        addToast('Erro ao atualizar cotas.', 'error');
+      }
     }
   };
 
@@ -225,7 +238,12 @@ export default function MembersList() {
       fetchMembers();
     } catch (error) {
       console.error('Error adding member:', error);
-      addToast('Erro ao cadastrar membro.', 'error');
+      if (isQuotaError(error)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota atingido no banco.', 'error');
+      } else {
+        addToast('Erro ao cadastrar membro.', 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }

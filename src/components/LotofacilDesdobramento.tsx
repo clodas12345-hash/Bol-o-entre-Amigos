@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './NotificationManager';
 import { DESDOBRAMENTOS_CATALOG, DesdobramentoScheme, sortNumbers } from '../lib/desdobramentos';
 import { LOTOFACIL_STATS, getGoldenBalancedNumbers, getTopHotNumbers } from '../lib/lotofacilStats';
+import { usePool } from '../lib/PoolContext';
 
 interface LotofacilDesdobramentoProps {
   onClose?: () => void;
@@ -12,6 +13,7 @@ interface LotofacilDesdobramentoProps {
 }
 
 export default function LotofacilDesdobramento({ onClose, onGamesSaved }: LotofacilDesdobramentoProps) {
+  const { setIsQuotaExceeded } = usePool();
   const navigate = useNavigate();
   const [selectedScheme, setSelectedScheme] = useState<DesdobramentoScheme>(DESDOBRAMENTOS_CATALOG[0]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
@@ -140,7 +142,12 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
       }
     } catch (err) {
       console.error('Erro ao salvar jogos do desdobramento:', err);
-      addToast('Erro ao salvar jogos no banco de dados.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota diária atingido no banco de dados.', 'error');
+      } else {
+        addToast('Erro ao salvar jogos no banco de dados.', 'error');
+      }
     } finally {
       setIsSaving(false);
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { LOTOFACIL_PRICES, MEGASENA_PRICES, LOTOFACIL_STATS, MEGASENA_STATS } from '../lib/prizes';
@@ -127,7 +127,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { addToast } = useToast();
-  const { pools, activePool } = usePool();
+  const { pools, activePool, setIsQuotaExceeded } = usePool();
 
   const [selectedPoolId, setSelectedPoolId] = useState<string>(activePool?.id || '');
 
@@ -467,7 +467,12 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
 
     } catch (err: any) {
       console.warn('Erro na fila de uploads:', err);
-      addToast('Erro ao processar fila de uploads.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota diária (Escrita/IA) atingido.', 'error');
+      } else {
+        addToast('Erro ao processar fila de uploads.', 'error');
+      }
     } finally {
       setIsProcessingQueue(false);
     }
@@ -607,8 +612,14 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
       // Nota: Removido navigate('/') para garantir que o usuário não seja removido da página atual!
     } catch (err: any) {
       console.error(err);
-      setSubmitError(err.message || 'Erro ao registrar aposta.');
-      addToast('Erro ao salvar o jogo. Verifique sua conexão.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        setSubmitError('Limite de cota atingido no banco de dados.');
+        addToast('Limite de cota diária atingido.', 'error');
+      } else {
+        setSubmitError(err.message || 'Erro ao registrar aposta.');
+        addToast('Erro ao salvar o jogo. Verifique sua conexão.', 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }

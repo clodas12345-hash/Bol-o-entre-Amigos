@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isQuotaError } from '../lib/firebase';
 import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
+import { usePool } from '../lib/PoolContext';
 
 export default function RulesAndNorms() {
+  const { setIsQuotaExceeded } = usePool();
   const [rules, setRules] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -17,7 +19,10 @@ export default function RulesAndNorms() {
       if (docSnap.exists()) {
         setRules(docSnap.data().text || '');
       }
-    }, err => console.warn('Rules settings snapshot error:', err));
+    }, err => {
+      console.warn('Rules settings snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+    });
     return unsub;
   }, []);
 
@@ -29,7 +34,12 @@ export default function RulesAndNorms() {
       addToast('Regras e normas salvas com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao salvar regras:', err);
-      addToast('Erro ao salvar regras.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota atingido no banco.', 'error');
+      } else {
+        addToast('Erro ao salvar regras.', 'error');
+      }
     } finally {
       setIsSaving(false);
     }

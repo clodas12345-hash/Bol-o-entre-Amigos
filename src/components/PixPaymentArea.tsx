@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isQuotaError } from '../lib/firebase';
 import { PixConfig, DEFAULT_PIX_CONFIG, generatePixPayload, generatePixQrCode } from '../lib/pix';
 import { useToast } from './NotificationManager';
+import { usePool } from '../lib/PoolContext';
 
 interface PixPaymentAreaProps {
   customAmount?: number;
@@ -17,6 +18,7 @@ export default function PixPaymentArea({
   onClose,
   title = 'Pagamento via PIX'
 }: PixPaymentAreaProps) {
+  const { setIsQuotaExceeded } = usePool();
   const [config, setConfig] = useState<PixConfig>(DEFAULT_PIX_CONFIG);
   const [selectedAmount, setSelectedAmount] = useState<number>(customAmount || 20.00);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
@@ -44,6 +46,7 @@ export default function PixPaymentArea({
       }
     }, (err) => {
       console.warn('Pix settings snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
     });
     return unsub;
   }, [customAmount]);
@@ -83,7 +86,12 @@ export default function PixPaymentArea({
       addToast('Configurações da Chave PIX salvas com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao salvar chave PIX:', err);
-      addToast('Erro ao salvar dados do PIX.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota atingido no banco.', 'error');
+      } else {
+        addToast('Erro ao salvar dados do PIX.', 'error');
+      }
     } finally {
       setIsSaving(false);
     }

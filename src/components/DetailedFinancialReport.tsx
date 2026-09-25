@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, onSnapshot, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl } from '../lib/formatters';
 import { useToast } from './NotificationManager';
 import PixPaymentArea from './PixPaymentArea';
 import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
+import { usePool } from '../lib/PoolContext';
 
 export default function DetailedFinancialReport() {
+  const { setIsQuotaExceeded } = usePool();
   const [payments, setPayments] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
@@ -17,98 +19,56 @@ export default function DetailedFinancialReport() {
   const { addToast } = useToast();
 
   useEffect(() => {
-    const unsubPayments = onSnapshot(collection(db, 'payments'), snapshot => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPayments(list);
+    const loadAllData = async () => {
       try {
-        localStorage.setItem('bolao_cache_payments', JSON.stringify(list));
-      } catch (cacheErr) {
-        console.warn('Failed to cache payments in DetailedFinancialReport:', cacheErr);
-      }
-    }, err => {
-      console.warn('Payments snapshot error:', err);
-      try {
-        const cached = localStorage.getItem('bolao_cache_payments');
-        if (cached) {
-          setPayments(JSON.parse(cached));
-        }
-      } catch (cacheErr) {
-        console.error('Failed to parse cached payments in DetailedFinancialReport:', cacheErr);
-      }
-    });
-
-    const unsubPix = onSnapshot(doc(db, 'settings', 'pix'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as PixConfig;
-        setPixConfig(data);
-        try {
-          localStorage.setItem('bolao_cache_pix_config', JSON.stringify(data));
-        } catch (cacheErr) {
-          console.warn('Failed to cache pix config:', cacheErr);
-        }
-      }
-    }, err => {
-      console.warn('Pix settings snapshot error, loading cache:', err);
-      try {
-        const cached = localStorage.getItem('bolao_cache_pix_config');
-        if (cached) {
-          setPixConfig(JSON.parse(cached));
-        }
-      } catch (cacheErr) {
-        console.error('Failed to parse cached pix config:', cacheErr);
-      }
-    });
-
-    const loadAllMembers = async () => {
-      try {
-        const [usersSnap, membersSnap] = await Promise.all([
+        const [paySnap, pixSnap, usersSnap, membersSnap] = await Promise.all([
+          getDocs(collection(db, 'payments')),
+          getDoc(doc(db, 'settings', 'pix')),
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'members'))
         ]);
 
+        // Processa Pagamentos
+        const payList = paySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setPayments(payList);
+        try { localStorage.setItem('bolao_cache_payments', JSON.stringify(payList)); } catch {}
+
+        // Processa Pix Config
+        if (pixSnap.exists()) {
+          const pData = pixSnap.data() as PixConfig;
+          setPixConfig(pData);
+          try { localStorage.setItem('bolao_cache_pix_config', JSON.stringify(pData)); } catch {}
+        }
+
+        // Processa Membros
         const usersList: any[] = usersSnap.docs.map(doc => ({ id: doc.id, collectionName: 'users', quotas: 1, ...doc.data() }));
         const membersList: any[] = membersSnap.docs.map(doc => ({ id: doc.id, collectionName: 'members', quotas: 1, ...doc.data() }));
-
         const combined: any[] = [...usersList];
         for (const m of membersList) {
-          const alreadyExists = combined.some(u => 
-            u.id === m.id || 
-            (m.email && u.email && u.email.toLowerCase() === m.email.toLowerCase()) ||
-            (m.displayName && u.displayName && u.displayName.toLowerCase() === m.displayName.toLowerCase())
-          );
-          if (!alreadyExists) {
+          if (!combined.some(u => u.id === m.id || (m.email && u.email && u.email.toLowerCase() === m.email.toLowerCase()))) {
             combined.push(m);
           }
         }
         setMembers(combined);
-        try {
-          localStorage.setItem('bolao_cache_members', JSON.stringify(combined));
-        } catch (cacheErr) {
-          console.warn('Failed to cache members in DetailedFinancialReport loadAllMembers:', cacheErr);
-        }
+        try { localStorage.setItem('bolao_cache_members', JSON.stringify(combined)); } catch {}
+
       } catch (err) {
-        console.warn('Error loading report members, loading from local cache:', err);
+        console.warn('DetailedFinancialReport load error:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
+        // Tenta carregar do cache
         try {
-          const cached = localStorage.getItem('bolao_cache_members');
-          if (cached) {
-            setMembers(JSON.parse(cached));
-          }
-        } catch (cacheErr) {
-          console.error('Failed to parse cached members in DetailedFinancialReport loadAllMembers:', cacheErr);
-        }
+          const cPay = localStorage.getItem('bolao_cache_payments');
+          if (cPay) setPayments(JSON.parse(cPay));
+          const cPix = localStorage.getItem('bolao_cache_pix_config');
+          if (cPix) setPixConfig(JSON.parse(cPix));
+          const cMem = localStorage.getItem('bolao_cache_members');
+          if (cMem) setMembers(JSON.parse(cMem));
+        } catch {}
       }
     };
 
-    loadAllMembers();
-    const unsubUsers = onSnapshot(collection(db, 'users'), () => loadAllMembers(), err => console.warn('Users snap error in report:', err));
-    const unsubMembers = onSnapshot(collection(db, 'members'), () => loadAllMembers(), err => console.warn('Members snap error in report:', err));
-
-    return () => {
-      unsubPayments();
-      unsubPix();
-      unsubUsers();
-      unsubMembers();
-    };
+    loadAllData();
+    // Removendo onSnapshots de coleções para economizar cota.
   }, []);
 
   const togglePaymentStatus = async (member: any) => {
@@ -122,7 +82,12 @@ export default function DetailedFinancialReport() {
       addToast(`Status de ${formatFirstAndLastName(member.displayName || member.email)} alterado para ${newStatus}!`, 'info');
     } catch (err) {
       console.error('Erro ao atualizar status:', err);
-      addToast('Erro ao atualizar status.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota atingido no banco.', 'error');
+      } else {
+        addToast('Erro ao atualizar status.', 'error');
+      }
     } finally {
       setIsUpdatingStatus(null);
     }

@@ -1,9 +1,18 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit, writeBatch } from 'firebase/firestore';
+import { db, auth, isQuotaError } from '../lib/firebase';
+import { usePool } from '../lib/PoolContext';
 
 export default function NotificationBell() {
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const { setIsQuotaExceeded } = usePool();
+  const [notifications, setNotifications] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_notifications');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isOpen, setIsOpen] = useState(false);
   const currentUser = auth.currentUser;
 
@@ -19,8 +28,22 @@ export default function NotificationBell() {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, err => console.warn('Notifications snapshot error:', err));
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setNotifications(list);
+      try {
+        localStorage.setItem('bolao_cache_notifications', JSON.stringify(list));
+      } catch (cacheErr) {
+        console.warn('Failed to cache notifications:', cacheErr);
+      }
+    }, err => {
+      console.warn('Notifications snapshot error:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
+      
+      const cached = localStorage.getItem('bolao_cache_notifications');
+      if (cached) {
+        try { setNotifications(JSON.parse(cached)); } catch {}
+      }
+    });
 
     return () => unsubscribe();
   }, [currentUser]);
@@ -29,8 +52,17 @@ export default function NotificationBell() {
 
   const markAllAsRead = async () => {
     const unread = notifications.filter(n => !n.read);
-    for (const n of unread) {
-      await updateDoc(doc(db, 'notifications', n.id), { read: true });
+    if (unread.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      unread.forEach(n => {
+        batch.update(doc(db, 'notifications', n.id), { read: true });
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error('Error marking all as read:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
     }
   };
 

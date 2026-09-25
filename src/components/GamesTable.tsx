@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, getDocs, addDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, getDocs, addDoc, writeBatch } from 'firebase/firestore';
+import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { calculateGamePrize, MEGASENA_STATS, LOTOFACIL_STATS } from '../lib/prizes';
@@ -17,7 +17,7 @@ interface GamesTableProps {
 
 export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const { addToast } = useToast();
-  const { activePool } = usePool();
+  const { activePool, isQuotaExceeded, setIsQuotaExceeded } = usePool();
 
   const [games, setGames] = useState<any[]>(() => {
     try {
@@ -65,7 +65,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const [manualContest, setManualContest] = useState('');
   const [manualNumbers, setManualNumbers] = useState<number[]>([]);
   const [jumpContestInput, setJumpContestInput] = useState('');
-  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const stats = isMegaSena ? MEGASENA_STATS : LOTOFACIL_STATS;
@@ -103,6 +102,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       setManualContest('');
     } catch (err) {
       console.error(err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao salvar correção manual.', 'error');
     } finally {
       setIsUpdatingResult(false);
@@ -231,6 +231,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       }
     } catch (err: any) {
       console.error("Erro ao buscar concurso:", err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast(`Erro ao carregar Concurso #${targetNum}.`, 'error');
     } finally {
       setIsUpdatingResult(false);
@@ -277,6 +278,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       }
     } catch (err: any) {
       console.error("Erro ao buscar resultado da Caixa:", err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast(`Erro ao atualizar resultado: ${err.message || 'Tente novamente.'}`, 'error');
     } finally {
       setIsUpdatingResult(false);
@@ -315,7 +317,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       }
     }, err => {
       console.warn('Games snapshot error, loading cache:', err);
-      if (err && (err.message?.includes('Quota exceeded') || err.message?.includes('quota') || (err as any).code === 'resource-exhausted')) {
+      if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
       }
       const cached = localStorage.getItem('bolao_cache_games');
@@ -326,6 +328,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
     // Função para limpar qualquer resultado futuro simulado que possa ter ficado gravado no Firestore
     const cleanFutureResults = async () => {
+      // Evita rodar múltiplas vezes na mesma sessão para economizar cota de escrita
+      if (sessionStorage.getItem('bolao_cleanup_done')) return;
+
       try {
         const limitContest = isMegaSena ? 2780 : 3788;
         const qFuture = query(
@@ -333,13 +338,19 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
           where('contest', '>=', limitContest)
         );
         const snap = await getDocs(qFuture);
-        snap.forEach(async (d) => {
-          await deleteDoc(d.ref);
-          console.log(`[Database Cleanup] Deletado concurso futuro simulado: #${d.data().contest}`);
-        });
+        
+        if (!snap.empty) {
+          const batch = writeBatch(db);
+          snap.forEach((d) => {
+            batch.delete(d.ref);
+            console.log(`[Database Cleanup] Agendado para deletar concurso futuro simulado: #${d.data().contest}`);
+          });
+          await batch.commit();
+        }
+        sessionStorage.setItem('bolao_cleanup_done', 'true');
       } catch (err: any) {
         console.warn('Erro ao limpar resultados futuros do banco:', err);
-        if (err && (err.message?.includes('Quota exceeded') || err.message?.includes('quota') || err.code === 'resource-exhausted')) {
+        if (isQuotaError(err)) {
           setIsQuotaExceeded(true);
         }
       }
@@ -386,7 +397,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       }
     }, err => {
       console.warn('Results snapshot error, loading cache:', err);
-      if (err && (err.message?.includes('Quota exceeded') || err.message?.includes('quota') || (err as any).code === 'resource-exhausted')) {
+      if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
       }
       const cached = localStorage.getItem('bolao_cache_results');
@@ -449,6 +460,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       setDeletingId(null);
     } catch (err) {
       console.error('Erro ao deletar jogo:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao remover aposta.', 'error');
     }
   };
@@ -470,6 +482,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       setGroupToDelete(null);
     } catch (err) {
       console.error('Erro ao excluir grupo de apostas:', err);
+      if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao excluir apostas do concurso.', 'error');
     } finally {
       setIsDeletingGroup(false);
@@ -713,34 +726,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
   return (
     <div className="space-y-4">
-      {isQuotaExceeded && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-xs">
-          <div className="flex">
-            <div className="flex-shrink-0 text-xl">⚠️</div>
-            <div className="ml-3">
-              <p className="text-xs font-bold text-amber-800">
-                Limite de Cota do Banco de Dados Atingido (Firestore Quota Exceeded)
-              </p>
-              <p className="text-[11px] text-amber-700 mt-1">
-                O aplicativo atingiu o limite gratuito diário de leitura do banco de dados Firestore (Spark Plan). 
-                Para continuar utilizando sem interrupções ou limites de cotas, ative o faturamento (upgrade para o plano Blaze/Enterprise) no console do Firebase. 
-                Seu limite será reiniciado automaticamente no próximo ciclo diário.
-              </p>
-              <div className="mt-2.5">
-                <a
-                  href="https://console.firebase.google.com/project/adept-figure-463322-r2/firestore/databases/ai-studio-a00d8821-22d9-4161-874f-6ffa6eabd8cf/data?openUpgradeDialog=true"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                >
-                  Fazer Upgrade no Console do Firebase ↗
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Auditoria e Comparação Automática com Histórico */}
       {showVolantesComparator && (
         <VolantesHistoryComparator

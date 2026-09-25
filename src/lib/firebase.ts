@@ -21,6 +21,22 @@ try {
   dbInstance = getFirestore(app, databaseId);
 }
 
+export const isQuotaError = (err: any): boolean => {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = (err.code || '').toLowerCase();
+  return (
+    msg.includes('quota') || 
+    msg.includes('limit exceeded') || 
+    msg.includes('resource-exhausted') ||
+    msg.includes('exhausted') ||
+    code === 'resource-exhausted' ||
+    code === '429' ||
+    (code === 'permission-denied' && msg.includes('quota')) ||
+    msg.includes('write stream exhausted')
+  );
+};
+
 export const db = dbInstance;
 export const auth = getAuth(app);
 export const storage = getStorage(app);

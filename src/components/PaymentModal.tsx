@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../lib/firebase';
+import { db, storage, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName } from '../lib/formatters';
 import PixPaymentArea from './PixPaymentArea';
+import { usePool } from '../lib/PoolContext';
 
 export default function PaymentModal({ onClose }: { onClose: () => void }) {
+  const { setIsQuotaExceeded } = usePool();
   const [activeTab, setActiveTab] = useState<'form' | 'pix'>('form');
   const [users, setUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState('');
@@ -52,6 +54,7 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
         setUsers(combined);
       } catch (err) {
         console.error('Error fetching users for payment modal:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
       }
     };
 
@@ -111,7 +114,12 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
       onClose();
     } catch (err) {
       console.error('Erro ao salvar pagamento:', err);
-      addToast('Erro ao salvar pagamento. Tente novamente.', 'error');
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        addToast('Limite de cota diária atingido.', 'error');
+      } else {
+        addToast('Erro ao salvar pagamento. Tente novamente.', 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }

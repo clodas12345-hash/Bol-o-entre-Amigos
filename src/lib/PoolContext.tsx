@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, isQuotaError } from './firebase';
 
 export interface Pool {
   id: string;
@@ -18,6 +18,8 @@ interface PoolContextType {
   setActivePoolId: (id: string) => void;
   loading: boolean;
   ensureDefaultPool: () => Promise<string>;
+  isQuotaExceeded: boolean;
+  setIsQuotaExceeded: (val: boolean) => void;
 }
 
 const DEFAULT_POOL: Pool = {
@@ -36,6 +38,7 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
   const [pools, setPools] = useState<Pool[]>([]);
   const [activePoolId, setActivePoolId] = useState<string | null>(localStorage.getItem('activePoolId'));
   const [loading, setLoading] = useState(true);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   // Helper para criar ou garantir bolão inicial caso não haja nenhum no banco
   const ensureDefaultPool = async (): Promise<string> => {
@@ -53,6 +56,7 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
       return docRef.id;
     } catch (e) {
       console.warn('Erro ao criar bolão padrão no Firestore:', e);
+      if (isQuotaError(e)) setIsQuotaExceeded(true);
       return DEFAULT_POOL.id;
     }
   };
@@ -78,6 +82,7 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }, (error) => {
       console.warn('Erro ao escutar coleção de pools:', error);
+      if (isQuotaError(error)) setIsQuotaExceeded(true);
       setLoading(false);
     });
 
@@ -97,7 +102,7 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
     DEFAULT_POOL;
 
   return (
-    <PoolContext.Provider value={{ pools, activePool, setActivePoolId: handleSetActivePoolId, loading, ensureDefaultPool }}>
+    <PoolContext.Provider value={{ pools, activePool, setActivePoolId: handleSetActivePoolId, loading, ensureDefaultPool, isQuotaExceeded, setIsQuotaExceeded }}>
       {children}
     </PoolContext.Provider>
   );

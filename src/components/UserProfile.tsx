@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, orderBy, limit, doc } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
-import { auth, db } from '../lib/firebase';
+import { auth, db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName } from '../lib/formatters';
 import { calculateGamePrize } from '../lib/prizes';
 import PageHeader from './PageHeader';
@@ -9,8 +9,10 @@ import PixPaymentArea from './PixPaymentArea';
 import StatsThermometer from './StatsThermometer';
 import PoolManager from './PoolManager';
 import BackupManager from './BackupManager';
+import { usePool } from '../lib/PoolContext';
 
 export default function UserProfile() {
+  const { isQuotaExceeded, setIsQuotaExceeded } = usePool();
   const [payments, setPayments] = useState<any[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
@@ -21,7 +23,6 @@ export default function UserProfile() {
   const [showPixSection, setShowPixSection] = useState(false);
   const [showThermometer, setShowThermometer] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   const currentUser = auth.currentUser;
 
@@ -67,7 +68,7 @@ export default function UserProfile() {
     if (!currentUser) return;
 
     const checkQuotaError = (err: any) => {
-      if (err && (err.message?.includes('Quota exceeded') || err.message?.includes('quota') || err.code === 'resource-exhausted')) {
+      if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
       }
     };
@@ -81,61 +82,63 @@ export default function UserProfile() {
       checkQuotaError(err);
     });
 
-    // Escuta dados do perfil no Firestore (users ou members)
-    const unsubUser = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const uDoc = snapshot.docs.find(d => d.id === currentUser.uid || d.data().email === currentUser.email);
-      if (uDoc) {
-        setUserProfile({ id: uDoc.id, ...uDoc.data() });
+    // Escuta dados do perfil no Firestore (específico do usuário)
+    const userDocRef = doc(db, 'users', currentUser.uid);
+    const unsubUser = onSnapshot(userDocRef, (docSnap: any) => {
+      if (docSnap.exists()) {
+        setUserProfile({ id: docSnap.id, ...docSnap.data() });
+      } else {
+        // Tenta buscar por email caso o UID não seja o ID do documento
+        getDocs(query(collection(db, 'users'), where('email', '==', currentUser.email), limit(1))).then(snap => {
+          if (!snap.empty) {
+            setUserProfile({ id: snap.docs[0].id, ...snap.docs[0].data() });
+          }
+        }).catch(checkQuotaError);
       }
-    }, err => {
+    }, (err: any) => {
       console.warn('User profile snapshot error:', err);
       checkQuotaError(err);
     });
 
-    // Escuta jogos para apurar prêmios
-    const unsubGames = onSnapshot(collection(db, 'games'), (snapshot) => {
-      setGames(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => {
-      console.warn('Games user snapshot error:', err);
-      checkQuotaError(err);
-    });
-
-    // Escuta resultados de lotofacil
-    const qResultsL = query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(150));
-    const unsubResultsL = onSnapshot(qResultsL, (snapshot) => {
-      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data(), lotteryType: 'lotofacil' }));
-      setSavedResultsList(prev => {
-        const filteredPrev = prev.filter(r => r.lotteryType !== 'lotofacil');
-        return [...filteredPrev, ...list].sort((a, b) => Number(b.contest) - Number(a.contest));
-      });
-    }, err => {
-      console.warn('Lotofacil results snapshot error:', err);
-      checkQuotaError(err);
-    });
-
-    // Escuta resultados de megasena
-    const qResultsM = query(collection(db, 'megasena_results'), orderBy('createdAt', 'desc'), limit(150));
-    const unsubResultsM = onSnapshot(qResultsM, (snapshot) => {
-      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data(), lotteryType: 'megasena' }));
-      setSavedResultsList(prev => {
-        const filteredPrev = prev.filter(r => r.lotteryType !== 'megasena');
-        return [...filteredPrev, ...list].sort((a, b) => Number(b.contest) - Number(a.contest));
-      });
-    }, err => {
-      console.warn('Megasena results snapshot error:', err);
-      checkQuotaError(err);
-    });
-
-    // Escuta último sorteio geral (Lotofácil por padrão ou o mais recente)
-    const qResult = query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(1));
-    const unsubResult = onSnapshot(qResult, (snapshot) => {
-      if (!snapshot.empty) {
-        setLatestResult(snapshot.docs[0].data());
+    // Escuta jogos para apurar prêmios (Usar getDocs para economizar cota, ou manter onSnapshot se for crítico)
+    // Aqui usaremos getDocs para carregar uma vez ao abrir o perfil
+    const loadGames = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'games'));
+        setGames(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.warn('Games load error:', err);
+        checkQuotaError(err);
       }
-    }, err => {
-      console.warn('Result user snapshot error:', err);
-      checkQuotaError(err);
-    });
+    };
+    loadGames();
+
+    // Carrega resultados uma vez (getDocs) em vez de onSnapshot para economizar cota
+    const loadResults = async () => {
+      try {
+        const [snapL, snapM] = await Promise.all([
+          getDocs(query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(150))),
+          getDocs(query(collection(db, 'megasena_results'), orderBy('createdAt', 'desc'), limit(150)))
+        ]);
+
+        const listL = snapL.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, contest: data.contest, ...data, lotteryType: 'lotofacil' };
+        });
+        const listM = snapM.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, contest: data.contest, ...data, lotteryType: 'megasena' };
+        });
+        
+        const combined = [...listL, ...listM].sort((a, b) => Number(b.contest) - Number(a.contest));
+        setSavedResultsList(combined);
+        if (listL.length > 0) setLatestResult(listL[0]);
+      } catch (err) {
+        console.warn('Results load error:', err);
+        checkQuotaError(err);
+      }
+    };
+    loadResults();
 
     // Conta total de cotas ativas (Pagas)
     const loadTotalQuotas = async () => {
@@ -177,10 +180,6 @@ export default function UserProfile() {
     return () => {
       unsubPayments();
       unsubUser();
-      unsubGames();
-      unsubResultsL();
-      unsubResultsM();
-      unsubResult();
     };
   }, [currentUser]);
 
@@ -234,34 +233,6 @@ export default function UserProfile() {
         subtitle={`Dados de ${formatFirstAndLastName(currentUser?.displayName || currentUser?.email)}`}
         icon="👤"
       />
-
-      {isQuotaExceeded && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-xs">
-          <div className="flex">
-            <div className="flex-shrink-0 text-xl">⚠️</div>
-            <div className="ml-3">
-              <p className="text-xs font-bold text-amber-800">
-                Limite de Cota do Banco de Dados Atingido (Firestore Quota Exceeded)
-              </p>
-              <p className="text-[11px] text-amber-700 mt-1">
-                O aplicativo atingiu o limite gratuito diário de leitura do banco de dados Firestore (Spark Plan). 
-                Para continuar utilizando sem interrupções ou limites de cotas, ative o faturamento (upgrade para o plano Blaze/Enterprise) no console do Firebase. 
-                Seu limite será reiniciado automaticamente no próximo ciclo diário.
-              </p>
-              <div className="mt-2.5">
-                <a
-                  href="https://console.firebase.google.com/project/adept-figure-463322-r2/firestore/databases/ai-studio-a00d8821-22d9-4161-874f-6ffa6eabd8cf/data?openUpgradeDialog=true"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                >
-                  Fazer Upgrade no Console do Firebase ↗
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal de Comprovante */}
       {selectedReceipt && (
