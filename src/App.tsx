@@ -31,6 +31,8 @@ import { PoolProvider, usePool } from './lib/PoolContext';
 import { UploadProvider, useUpload } from './lib/UploadContext';
 import { formatFirstAndLastName } from './lib/formatters';
 
+import logoImg from './assets/images/bolao_logo_app.jpg';
+
 function BackgroundUploadStatus() {
   const { queue, clearCompleted, isProcessing } = useUpload();
   const [minimized, setMinimized] = useState(false);
@@ -232,8 +234,8 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
                   onClick={() => setLogoViewState('description')}
                   className="font-black text-xs sm:text-base tracking-wide flex items-center gap-1.5 hover:opacity-90 transition cursor-pointer"
                 >
-                  <img src="/bolao_logo.jpg" alt="Logotipo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
-                  <span className="hidden xs:inline">Bolão</span>
+                  <img src={logoImg} alt="Logotipo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
+                  <span className="hidden xs:inline">Bolão Amigos</span>
                 </div>
               </div>
 
@@ -382,9 +384,9 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
             {logoViewState === 'description' ? (
               <div className="p-6 text-center space-y-4">
                 <div className="flex justify-center">
-                  <img src="/bolao_logo.jpg" alt="Logotipo" className="w-24 h-24 rounded-2xl shadow-lg border-4 border-blue-50 object-cover cursor-pointer hover:scale-105 transition-transform" />
+                  <img src={logoImg} alt="Logotipo" className="w-24 h-24 rounded-2xl shadow-lg border-4 border-blue-50 object-cover cursor-pointer hover:scale-105 transition-transform" />
                 </div>
-                <h3 className="text-xl font-black text-blue-900">Bolão Gestor</h3>
+                <h3 className="text-xl font-black text-blue-900">Bolão Amigos</h3>
                 <div className="text-sm text-gray-600 leading-relaxed space-y-3">
                   <p>Gestão profissional de grupos de apostas, focada em transparência e automação.</p>
                   <p className="text-[11px] text-blue-600 font-bold animate-pulse">💡 Clique no logotipo para ampliar</p>
@@ -399,7 +401,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
             ) : (
               <div className="relative w-full h-full flex items-center justify-center p-4">
                 <img 
-                  src="/bolao_logo.jpg" 
+                  src={logoImg} 
                   alt="Logotipo Ampliado" 
                   className="max-w-full max-h-full rounded-3xl shadow-2xl border-8 border-white/10 animate-in zoom-in-75 duration-300" 
                 />
@@ -419,7 +421,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
       )}
 
       <footer className="text-center py-4 text-[11px] text-gray-500 border-t bg-white mt-auto">
-        Bolão Gestor &copy; {new Date().getFullYear()} — Todos os direitos reservados.
+        Bolão Amigos &copy; {new Date().getFullYear()} — Todos os direitos reservados.
       </footer>
     </div>
   );
@@ -653,8 +655,8 @@ export default function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600 text-sm font-semibold">
         <div className="flex items-center gap-2">
-          <img src="/bolao_logo.jpg" alt="Logo" className="w-8 h-8 rounded-lg animate-pulse object-cover border border-gray-200 shadow-xs" />
-          <span>Carregando Bolão...</span>
+          <img src={logoImg} alt="Logo" className="w-8 h-8 rounded-lg animate-pulse object-cover border border-gray-200 shadow-xs" />
+          <span>Carregando Bolão Amigos...</span>
         </div>
       </div>
     );
@@ -729,33 +731,14 @@ export default function App() {
             )
           ) : (
             <div className="min-h-[80vh] flex items-center justify-center bg-gray-100 p-4">
-              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 border border-gray-100">
+              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4 border border-gray-100">
                 <div className="flex justify-center">
-                  <img src="/bolao_logo.jpg" alt="Logo" className="w-24 h-24 rounded-2xl shadow-md object-cover border border-gray-100" />
+                  <img src={logoImg} alt="Logo" className="w-24 h-24 rounded-2xl shadow-md object-cover border border-gray-100 animate-pulse" />
                 </div>
-                <h1 className="text-xl font-black text-gray-950">Bolão</h1>
-                <p className="text-xs text-gray-500">Escolha como deseja acessar o aplicativo de forma rápida e segura</p>
-
-                <div className="space-y-2.5 pt-2">
-                  <button 
-                    onClick={handleLogin}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <span>🌐</span> Entrar com Conta Google
-                  </button>
-
-                  <button 
-                    onClick={() => setShowPhoneModal(true)}
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <span>📱</span> Entrar com Número de Celular
-                  </button>
-                </div>
-              </div>
-
-              {showPhoneModal && (
+                <h1 className="text-xl font-black text-gray-950 text-center">Bolão Amigos</h1>
+                
                 <PhoneLoginModal
-                  onClose={() => setShowPhoneModal(false)}
+                  isInline={true}
                   onPhoneLoginSuccess={(member) => {
                     const sessionUser = {
                       uid: member.id || 'phone_user',
@@ -769,10 +752,9 @@ export default function App() {
                     };
                     setPhoneUser({ sessionUser, memberData });
                     localStorage.setItem('bolao_phone_user', JSON.stringify({ sessionUser, memberData }));
-                    setShowPhoneModal(false);
                   }}
                 />
-              )}
+              </div>
             </div>
           )
         } />

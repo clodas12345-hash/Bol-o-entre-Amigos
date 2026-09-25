@@ -6,10 +6,11 @@ import { useToast } from './NotificationManager';
 
 interface PhoneLoginModalProps {
   onPhoneLoginSuccess: (memberData: any) => void;
-  onClose: () => void;
+  onClose?: () => void;
+  isInline?: boolean;
 }
 
-export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose }: PhoneLoginModalProps) {
+export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline = false }: PhoneLoginModalProps) {
   const [phoneInput, setPhoneInput] = useState('');
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
@@ -24,16 +25,10 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose }: PhoneL
 
     setLoading(true);
     try {
-      // Busca nas coleções users e members por telefone correspondente
-      const [usersSnap, membersSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'members'))
-      ]);
-
       let matchedMember: any = null;
 
-      // Verifica no admin fixo
-      if (cleanPhone.includes('11953292570') || cleanPhone === '11953292570') {
+      // 1. Verifica no admin fixo primeiro para login instantâneo sem depender de banco
+      if (cleanPhone === '5511953292570' || cleanPhone.includes('11953292570')) {
         matchedMember = {
           uid: 'admin_phone_clodas',
           email: 'clodas12345@gmail.com',
@@ -44,24 +39,32 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose }: PhoneL
         };
       }
 
+      // 2. Busca nas coleções do Firestore caso não seja o admin principal
       if (!matchedMember) {
-        usersSnap.docs.forEach(d => {
-          const data = d.data();
-          const p = normalizeBrazilianPhoneDigits(data.phone || '');
-          if (p && p === cleanPhone) {
-            matchedMember = { id: d.id, ...data };
-          }
-        });
-      }
+        const [usersSnap, membersSnap] = await Promise.all([
+          getDocs(collection(db, 'users')).catch(() => ({ docs: [] })),
+          getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))
+        ]);
 
-      if (!matchedMember) {
-        membersSnap.docs.forEach(d => {
-          const data = d.data();
-          const p = normalizeBrazilianPhoneDigits(data.phone || '');
-          if (p && p === cleanPhone) {
-            matchedMember = { id: d.id, ...data };
-          }
-        });
+        if (usersSnap && usersSnap.docs) {
+          usersSnap.docs.forEach(d => {
+            const data = d.data();
+            const p = normalizeBrazilianPhoneDigits(data.phone || '');
+            if (p && p === cleanPhone) {
+              matchedMember = { id: d.id, ...data };
+            }
+          });
+        }
+
+        if (!matchedMember && membersSnap && membersSnap.docs) {
+          membersSnap.docs.forEach(d => {
+            const data = d.data();
+            const p = normalizeBrazilianPhoneDigits(data.phone || '');
+            if (p && p === cleanPhone) {
+              matchedMember = { id: d.id, ...data };
+            }
+          });
+        }
       }
 
       if (!matchedMember) {
@@ -79,6 +82,48 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose }: PhoneL
       setLoading(false);
     }
   };
+
+  if (isInline) {
+    return (
+      <div className="bg-white rounded-2xl p-2 space-y-5">
+        <div className="flex justify-between items-center border-b pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">📱</span>
+            <div className="text-left">
+              <h3 className="font-black text-gray-900 text-sm">Acesso por Celular</h3>
+              <p className="text-[11px] text-gray-500">Entre sem precisar de senha ou Google</p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handlePhoneLogin} className="space-y-4">
+          <div className="text-left">
+            <label className="block text-xs font-bold text-gray-700 mb-1.5">Número do WhatsApp / Celular (com DDD)</label>
+            <input
+              type="tel"
+              placeholder="Ex: 11 95329-2570"
+              value={phoneInput}
+              onChange={e => setPhoneInput(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
+              required
+              autoFocus
+            />
+            <p className="text-[10px] text-gray-500 mt-1">O número deve estar cadastrado previamente pelo administrador.</p>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
+            >
+              {loading ? 'Verificando...' : 'Entrar no Bolão'}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
