@@ -150,3 +150,82 @@ export function useResponsiveLayout(breakpoint = 640) {
     compactTableClass: isMobile ? 'text-[11px] p-1.5' : 'text-sm p-3',
   };
 }
+
+export interface GameDataSchema {
+  numbers: number[];
+  contest?: number | string;
+  cost?: number;
+  userId?: string;
+  [key: string]: any;
+}
+
+export interface ContestDataSchema {
+  contest: number | string;
+  numbers: number[];
+  date?: string;
+  [key: string]: any;
+}
+
+export function validateGameSchema(game: any): { isValid: boolean; error?: string } {
+  if (!game || typeof game !== 'object') {
+    return { isValid: false, error: 'Objeto de jogo inválido ou nulo.' };
+  }
+  
+  if (!Array.isArray(game.numbers)) {
+    return { isValid: false, error: 'O jogo deve conter um array de dezenas (numbers).' };
+  }
+
+  if (game.numbers.length < 6 || game.numbers.length > 20) {
+    return { isValid: false, error: `Quantidade de dezenas inválida (${game.numbers.length}). Permitido entre 6 e 20 dezenas.` };
+  }
+
+  const unique = new Set(game.numbers);
+  if (unique.size !== game.numbers.length) {
+    return { isValid: false, error: 'O jogo contém dezenas duplicadas.' };
+  }
+
+  for (const n of game.numbers) {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 60) {
+      return { isValid: false, error: `Dezena fora do intervalo válido (1-60): ${n}` };
+    }
+  }
+
+  return { isValid: true };
+}
+
+export function validateContestSchema(contestObj: any): { isValid: boolean; error?: string } {
+  if (!contestObj || typeof contestObj !== 'object') {
+    return { isValid: false, error: 'Objeto de concurso inválido ou nulo.' };
+  }
+
+  const contestNum = Number(contestObj.contest);
+  if (isNaN(contestNum) || contestNum <= 0) {
+    return { isValid: false, error: `Numeração de concurso inválida: ${contestObj.contest}` };
+  }
+
+  if (!Array.isArray(contestObj.numbers)) {
+    return { isValid: false, error: 'O concurso deve conter um array de números sorteados.' };
+  }
+
+  if (contestObj.numbers.length < 6 || contestObj.numbers.length > 15) {
+    return { isValid: false, error: `Quantidade de números do concurso inválida (${contestObj.numbers.length}).` };
+  }
+
+  for (const n of contestObj.numbers) {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 60) {
+      return { isValid: false, error: `Número sorteado inválido: ${n}` };
+    }
+  }
+
+  return { isValid: true };
+}
+
+export function validateDataSchema(data: any, type: 'game' | 'contest'): { isValid: boolean; error?: string } {
+  if (type === 'game') {
+    return validateGameSchema(data);
+  } else if (type === 'contest') {
+    return validateContestSchema(data);
+  }
+  return { isValid: false, error: 'Tipo de validação desconhecido.' };
+}
+
