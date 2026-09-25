@@ -4,10 +4,11 @@ import { db, isQuotaError } from '../lib/firebase';
 import { calculateGamePrize } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import { usePool } from '../lib/PoolContext';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 export default function FinancialDashboard() {
   const { setIsQuotaExceeded, isQuotaExceeded, activePool } = usePool();
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const { isMobile, compactCardClass } = useResponsiveLayout();
   const [payments, setPayments] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);

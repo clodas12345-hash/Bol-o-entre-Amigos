@@ -4,9 +4,11 @@ import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, formatCPF } from '../lib/formatters';
 import { usePool } from '../lib/PoolContext';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
+  const { isMobile, compactTableClass } = useResponsiveLayout();
   const [members, setMembers] = useState<any[]>([]);
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
