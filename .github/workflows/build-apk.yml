@@ -37,6 +37,7 @@ jobs:
         env:
           CI: false
           NODE_OPTIONS: "--max-old-space-size=4096"
+          VITE_CWD: ${{ github.workspace }}
         run: npm run build
 
       - name: Sync Capacitor
