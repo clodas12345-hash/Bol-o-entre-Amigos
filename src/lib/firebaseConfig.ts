@@ -9,7 +9,7 @@ export const firebaseConfig = {
   messagingSenderId: "743166930754",
   measurementId: "",
   oAuthClientId: "743166930754-mal7g9429dc0v7aou9svl0sc1ptvd287.apps.googleusercontent.com",
-  recaptchaSiteKey: ""
+  recaptchaSiteKey": ""
 };
 
 export default firebaseConfig;
