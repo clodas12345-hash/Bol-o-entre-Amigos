@@ -19,7 +19,9 @@ service cloud.firestore {
     function isValidGame(data) {
       return data.keys().hasAll(['poolId', 'numbers']) &&
              data.poolId is string &&
-             data.numbers is list;
+             data.numbers is list &&
+             (!data.keys().contains('numbersKey') || data.numbersKey is string) &&
+             (!data.keys().contains('contestNumber') || data.contestNumber is number || data.contestNumber == null);
     }
 
     // Rules

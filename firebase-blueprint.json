@@ -55,7 +55,9 @@
       "properties": {
         "poolId": { "type": "string" },
         "numbers": { "type": "array", "items": { "type": "number" } },
+        "numbersKey": { "type": "string", "description": "Sorted dash-separated string of numbers for uniqueness check." },
         "contest": { "type": "string" },
+        "contestNumber": { "type": "number", "description": "Numeric contest ID for faster queries." },
         "month": { "type": "string" },
         "cost": { "type": "number" },
         "date": { "type": "string" },

@@ -220,7 +220,7 @@ export default function BackupManager() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `backup_historico_${historyItem.monthRef.replace('/', '_')}.json`;
+      link.download = `backup_bolao_historico_${historyItem.monthRef.replace('/', '_')}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

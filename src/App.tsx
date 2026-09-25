@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
 import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 
@@ -33,57 +33,137 @@ import { formatFirstAndLastName } from './lib/formatters';
 
 function BackgroundUploadStatus() {
   const { queue, clearCompleted, isProcessing } = useUpload();
-  const activeItems = queue.filter(item => item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate');
-  const completedItems = queue.filter(item => item.status === 'success' || item.status === 'error' || item.status === 'duplicate');
-
+  const [minimized, setMinimized] = useState(false);
+  
   if (queue.length === 0) return null;
 
-  return (
-    <div className="fixed bottom-4 right-4 z-[100] w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-right duration-300">
-      <div className="bg-indigo-900 text-white p-3 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          {isProcessing ? (
-            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          ) : (
-            <div className="w-2 h-2 rounded-full bg-emerald-400" />
-          )}
-          <span className="text-[11px] font-bold uppercase tracking-wider">
-            {isProcessing ? 'Processando Apostas...' : 'Uploads Concluídos'}
-          </span>
-        </div>
-        {!isProcessing && (
-          <button onClick={clearCompleted} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded-full transition">
-            Limpar
-          </button>
-        )}
-      </div>
+  const totalItems = queue.length;
+  const completedItems = queue.filter(item => item.status === 'success' || item.status === 'error' || item.status === 'duplicate').length;
+  const failedItems = queue.filter(item => item.status === 'error').length;
+  const isCurrentlyAnalyzing = queue.some(item => item.status === 'ocr');
 
-      <div className="max-h-60 overflow-y-auto p-2 space-y-1.5 bg-gray-50/50">
-        {queue.map((item) => (
-          <div key={item.id} className="bg-white p-2 rounded-xl border border-gray-100 shadow-3xs flex items-center justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-gray-800 truncate">{item.name}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <div className="flex-1 bg-gray-100 rounded-full h-1 overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-300 ${item.status === 'error' ? 'bg-red-500' : 'bg-indigo-600'}`} 
-                    style={{ width: `${item.progress}%` }} 
-                  />
-                </div>
-                <span className={`text-[9px] font-black uppercase ${
-                  item.status === 'error' ? 'text-red-600' : 
-                  item.status === 'success' ? 'text-emerald-600' : 
-                  item.status === 'duplicate' ? 'text-amber-600' : 'text-indigo-600'
-                }`}>
-                  {item.message}
+  return (
+    <div className={`fixed bottom-4 right-4 z-[100] transition-all duration-500 ease-in-out ${minimized ? 'w-12 h-12' : 'w-72 sm:w-80'}`}>
+      {minimized ? (
+        <button 
+          onClick={() => setMinimized(false)}
+          className="w-12 h-12 bg-indigo-900 text-white rounded-full shadow-2xl flex items-center justify-center relative overflow-hidden group animate-bounce-slow cursor-pointer"
+        >
+          {isProcessing ? (
+            <div className="absolute inset-0 bg-indigo-600 animate-pulse opacity-50" />
+          ) : null}
+          <span className="relative z-10 text-lg">
+            {isCurrentlyAnalyzing ? '🔍' : '📤'}
+          </span>
+          {isProcessing && (
+            <div className="absolute top-0 right-0 w-3 h-3 bg-amber-400 rounded-full border-2 border-white" />
+          )}
+        </button>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-gray-100 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white p-3.5 flex justify-between items-center">
+            <div className="flex items-center gap-2.5">
+              <div className="relative">
+                {isProcessing ? (
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping absolute inset-0" />
+                ) : null}
+                <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
+              </div>
+              <div>
+                <span className="text-[11px] font-black uppercase tracking-widest block leading-none">
+                  {isProcessing ? (isCurrentlyAnalyzing ? 'Analisando Bilhetes...' : 'Processando Fila') : 'Concluído'}
+                </span>
+                <span className="text-[9px] text-blue-200 font-bold opacity-80">
+                  {completedItems} de {totalItems} processados
                 </span>
               </div>
             </div>
-            {item.status === 'success' && <span className="text-emerald-500 text-xs">✓</span>}
-            {item.status === 'error' && <span className="text-red-500 text-xs">✕</span>}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setMinimized(true)}
+                className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer"
+                title="Minimizar"
+              >
+                <span className="text-xs">➖</span>
+              </button>
+              {!isProcessing && (
+                <button 
+                  onClick={clearCompleted} 
+                  className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
           </div>
-        ))}
-      </div>
+
+          {/* List */}
+          <div className="max-h-64 overflow-y-auto p-2.5 space-y-2 bg-gray-50/30">
+            {queue.map((item) => (
+              <div key={item.id} className={`p-2.5 rounded-2xl border transition-all duration-300 ${
+                item.status === 'success' ? 'bg-emerald-50/50 border-emerald-100' : 
+                item.status === 'error' ? 'bg-red-50/50 border-red-100' :
+                item.status === 'duplicate' ? 'bg-amber-50/50 border-amber-100' :
+                'bg-white border-gray-100 shadow-sm'
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className="text-[10px] font-bold text-gray-800 truncate flex items-center gap-1.5">
+                        <span className="opacity-60">📄</span> {item.name}
+                      </p>
+                      <span className={`text-[9px] font-black uppercase shrink-0 ${
+                        item.status === 'error' ? 'text-red-600' : 
+                        item.status === 'success' ? 'text-emerald-600' : 
+                        item.status === 'duplicate' ? 'text-amber-600' : 
+                        'text-indigo-600 animate-pulse'
+                      }`}>
+                        {item.status === 'ocr' ? '🔍 Analisando...' : item.message}
+                      </span>
+                    </div>
+                    
+                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-500 ease-out ${
+                          item.status === 'error' ? 'bg-red-500' : 
+                          item.status === 'success' ? 'bg-emerald-500' : 
+                          item.status === 'duplicate' ? 'bg-amber-500' : 
+                          'bg-indigo-600'
+                        }`} 
+                        style={{ width: `${item.progress}%` }} 
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="shrink-0 flex items-center justify-center w-6">
+                    {item.status === 'success' && (
+                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</div>
+                    )}
+                    {item.status === 'error' && (
+                      <div className="w-6 h-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-[10px] font-black">✕</div>
+                    )}
+                    {item.status === 'duplicate' && (
+                      <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">!</div>
+                    )}
+                    {(item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate') && (
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {isProcessing && (
+            <div className="px-3.5 py-2 bg-indigo-50 border-t border-indigo-100">
+              <p className="text-[9px] text-indigo-700 font-bold flex items-center gap-1.5">
+                <span className="animate-bounce">💡</span> Você pode navegar normalmente enquanto a IA trabalha.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -133,7 +213,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
                   className="font-black text-xs sm:text-base tracking-wide flex items-center gap-1.5 hover:opacity-90 transition cursor-pointer"
                 >
                   <img src="/bolao_logo.jpg" alt="Logotipo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
-                  <span className="hidden xs:inline">Bolão Lotofácil</span>
+                  <span className="hidden xs:inline">Bolão</span>
                 </div>
               </div>
 
@@ -261,7 +341,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
                 <div className="flex justify-center">
                   <img src="/bolao_logo.jpg" alt="Logotipo" className="w-24 h-24 rounded-2xl shadow-lg border-4 border-blue-50 object-cover cursor-pointer hover:scale-105 transition-transform" />
                 </div>
-                <h3 className="text-xl font-black text-blue-900">Bolão Lotofácil Gestor</h3>
+                <h3 className="text-xl font-black text-blue-900">Bolão Gestor</h3>
                 <div className="text-sm text-gray-600 leading-relaxed space-y-3">
                   <p>Gestão profissional de grupos de apostas, focada em transparência e automação.</p>
                   <p className="text-[11px] text-blue-600 font-bold animate-pulse">💡 Clique no logotipo para ampliar</p>
@@ -296,7 +376,7 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
       )}
 
       <footer className="text-center py-4 text-[11px] text-gray-500 border-t bg-white mt-auto">
-        Bolão Lotofácil Gestor &copy; {new Date().getFullYear()} — Todos os direitos reservados.
+        Bolão Gestor &copy; {new Date().getFullYear()} — Todos os direitos reservados.
       </footer>
     </div>
   );
@@ -402,7 +482,6 @@ export default function App() {
 
   const handleLogin = async () => {
     try {
-      const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       addToast('Login realizado com sucesso!', 'success');
@@ -417,7 +496,7 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600 text-sm font-semibold">
         <div className="flex items-center gap-2">
           <img src="/bolao_logo.jpg" alt="Logo" className="w-8 h-8 rounded-lg animate-pulse object-cover border border-gray-200 shadow-xs" />
-          <span>Carregando Bolão Lotofácil...</span>
+          <span>Carregando Bolão...</span>
         </div>
       </div>
     );
@@ -496,7 +575,7 @@ export default function App() {
                 <div className="flex justify-center">
                   <img src="/bolao_logo.jpg" alt="Logo" className="w-24 h-24 rounded-2xl shadow-md object-cover border border-gray-100" />
                 </div>
-                <h1 className="text-xl font-black text-gray-950">Bolão Lotofácil Gestor</h1>
+                <h1 className="text-xl font-black text-gray-950">Bolão</h1>
                 <p className="text-xs text-gray-500">Escolha como deseja acessar o aplicativo de forma rápida e segura</p>
 
                 <div className="space-y-2.5 pt-2">

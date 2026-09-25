@@ -1,6 +1,6 @@
 {
-  "name": "Lotofácil Gestor",
-  "description": "App para gestão de grupos da Lotofácil, pagamentos, resultados e comunicação.",
+  "name": "Bolão",
+  "description": "App para gestão de grupos de apostas (bolão), pagamentos, resultados e comunicação.",
   "requestFramePermissions": ["camera", "microphone", "geolocation", "notifications"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -50,10 +50,11 @@ const formatDateToMonthRef = (date: Date): string => {
   return `${mm}/${yyyy}`;
 };
 
-const getExistingSignatures = async (poolId: string): Promise<Set<string>> => {
+const getExistingSignatures = async (): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
-    const q = query(collection(db, 'games'), where('poolId', '==', poolId));
+    // Busca em todos os jogos (ativos e arquivados) para evitar duplicatas globais
+    const q = query(collection(db, 'games'));
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();
@@ -90,7 +91,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     setQueue(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   };
 
-  const processQueueItem = async (item: QueueItem, options: any) => {
+  const processQueueItem = async (item: QueueItem, options: any, existingSigs: Set<string>) => {
     const { poolId, contest, gameDate, monthRef, isTeimosinha, teimosinhaCount } = options;
     const startTime = Date.now();
     const currentPool = pools.find(p => p.id === poolId);
@@ -128,7 +129,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       if (!compressed.base64) throw new Error('Falha ao processar arquivo');
 
-      updateItem(item.id, { status: 'ocr', progress: 50, message: 'Lendo dezenas...' });
+      updateItem(item.id, { status: 'ocr', progress: 40, message: 'Analisando bilhete...' });
 
       const res = await fetch('/api/lotofacil/ocr-receipt', {
         method: 'POST',
@@ -137,11 +138,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       });
 
       const data = await res.json();
-      if (!res.ok || !data.success || !data.games?.length) throw new Error(data.message || 'IA não encontrou jogos');
+      if (!res.ok || !data.success || !data.games?.length) throw new Error(data.message || 'IA não encontrou jogos legíveis');
 
-      updateItem(item.id, { status: 'saving', progress: 80, message: 'Salvando...' });
+      updateItem(item.id, { status: 'saving', progress: 75, message: 'Gravando dados...' });
 
-      const existingSigs = await getExistingSignatures(poolId);
       const receiptURL = compressed.base64;
       const parsedDate = data.date ? parseDateSafely(data.date) : parseDateSafely(gameDate);
       const contestStr = data.contest ? String(data.contest).trim() : (contest || '').trim();
@@ -181,7 +181,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               await addDoc(collection(db, 'games'), {
                 poolId,
                 numbers: gameNums,
+                numbersKey,
                 contest: `Concurso #${currentContestNum}${gameLabel} (Teimosinha ${k + 1}/${teimCount})`,
+                contestNumber: currentContestNum,
                 month: currentMonth,
                 cost: unitTotal,
                 date: Timestamp.fromDate(new Date(currDate)),
@@ -201,7 +203,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             await addDoc(collection(db, 'games'), {
               poolId,
               numbers: gameNums,
+              numbersKey,
               contest: contestLabel,
+              contestNumber: startContestNum > 0 ? startContestNum : null,
               month: currentMonth,
               cost: isTeim ? unitTotal * teimCount : unitTotal,
               date: Timestamp.fromDate(parsedDate),
@@ -262,9 +266,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     setQueue(prev => [...prev, ...newItems]);
 
+    // Pre-fetch signatures once for the batch to ensure consistency and performance
+    const poolId = options.poolId || 'default_lotofacil_pool';
+    const existingSigs = await getExistingSignatures();
+
     // Process items sequentially in background
     for (const item of newItems) {
-      await processQueueItem(item, options);
+      await processQueueItem(item, options, existingSigs);
     }
   }, [pools, setIsQuotaExceeded]);
 

@@ -14,10 +14,10 @@ interface NewGameModalProps {
 import { useUpload } from '../lib/UploadContext';
 
 // Utilitário para consultar jogos já cadastrados no bolão e impedir duplicidades
-const getExistingSignatures = async (poolId: string): Promise<Set<string>> => {
+const getExistingSignatures = async (): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
-    const q = query(collection(db, 'games'), where('poolId', '==', poolId));
+    const q = query(collection(db, 'games'));
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();
@@ -219,7 +219,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
     setSubmitError(null);
     try {
       const targetPoolId = selectedPoolId || activePool?.id || 'default_lotofacil_pool';
-      const existingSigs = await getExistingSignatures(targetPoolId);
+      const existingSigs = await getExistingSignatures();
 
       const receiptURL = null;
       const parsedDate = parseDateSafely(gameDate);
@@ -250,7 +250,9 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             writePromises.push(addDoc(collection(db, 'games'), {
               poolId: targetPoolId,
               numbers: selectedNumbers,
+              numbersKey,
               contest: `Concurso #${currentContestNum} (Teimosinha ${i + 1}/${teimosinhaCount})`,
+              contestNumber: currentContestNum,
               month: monthRef.trim(),
               cost: unitTotal,
               date: Timestamp.fromDate(new Date(currDate)),
@@ -274,7 +276,9 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
           writePromises.push(addDoc(collection(db, 'games'), {
             poolId: targetPoolId,
             numbers: selectedNumbers,
+            numbersKey,
             contest: contestLabel,
+            contestNumber: startContestNum > 0 ? startContestNum : null,
             month: monthRef.trim(),
             cost: isTeimosinha ? unitTotal * teimosinhaCount : unitTotal,
             date: Timestamp.fromDate(parsedDate),

@@ -84,7 +84,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     
     setIsUpdatingResult(true);
     try {
-      const { addDoc } = await import('firebase/firestore');
       const formattedData = {
         contest: Number(manualContest) || 0,
         date: new Date().toLocaleDateString('pt-BR'),

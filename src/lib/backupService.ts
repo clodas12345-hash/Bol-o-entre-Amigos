@@ -167,7 +167,11 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
   const jsonString = JSON.stringify(backupData, null, 2);
   const blob = new Blob([jsonString], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const fileName = `backup_bolao_${new Date().toISOString().split('T')[0]}.json`;
+  const now = new Date();
+  const dia = String(now.getDate()).padStart(2, '0');
+  const mes = String(now.getMonth() + 1).padStart(2, '0');
+  const ano = now.getFullYear();
+  const fileName = `backup_bolao_data.${dia}.${mes}.${ano}.json`;
   
   const link = document.createElement('a');
   link.href = url;
