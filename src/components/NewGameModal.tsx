@@ -11,48 +11,7 @@ interface NewGameModalProps {
   onGameAdded?: () => void;
 }
 
-import { useUpload } from '../lib/UploadContext';
-
-// Utilitário para consultar jogos já cadastrados no bolão e impedir duplicidades
-const getExistingSignatures = async (): Promise<Set<string>> => {
-  const signatures = new Set<string>();
-  try {
-    const q = query(collection(db, 'games'));
-    const snap = await getDocs(q);
-    snap.docs.forEach((doc) => {
-      const data = doc.data();
-      let cNum = '';
-      if (data.contest) {
-        const match = String(data.contest).match(/\b(\d{3,5})\b/);
-        cNum = match ? match[1] : '';
-      }
-      let dateStr = '';
-      if (data.date) {
-        if (typeof data.date.toDate === 'function') {
-          dateStr = data.date.toDate().toISOString().split('T')[0];
-        } else if (data.date instanceof Date) {
-          dateStr = data.date.toISOString().split('T')[0];
-        } else if (typeof data.date === 'string') {
-          dateStr = data.date.split('T')[0];
-        }
-      }
-      const numbers = Array.isArray(data.numbers)
-        ? data.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b)
-        : [];
-      const numbersKey = numbers.join('-');
-      if (numbersKey) {
-        if (cNum) {
-          signatures.add(`contest::${cNum}::${numbersKey}`);
-        } else if (dateStr) {
-          signatures.add(`date::${dateStr}::${numbersKey}`);
-        }
-      }
-    });
-  } catch (err) {
-    console.warn('Aviso: Não foi possível obter histórico de duplicatas prévio:', err);
-  }
-  return signatures;
-};
+import { useUpload, checkGameDuplicateInFirestore, getExistingSignatures } from '../lib/UploadContext';
 
 const parseDateSafely = (dateStr: string): Date => {
   if (!dateStr) return new Date();
@@ -240,11 +199,21 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             currDate.setDate(currDate.getDate() + 1);
           }
           const currentContestNum = startContestNum + i;
-          const sig = `contest::${currentContestNum}::${numbersKey}`;
+          const dateStr = currDate.toISOString().split('T')[0];
 
-          if (existingSigs.has(sig)) {
+          // Consulta de duplicidade no Firestore
+          const dupCheck = await checkGameDuplicateInFirestore(
+            currentContestNum,
+            numbersKey,
+            selectedNumbers,
+            existingSigs,
+            dateStr
+          );
+
+          if (dupCheck.isDuplicate) {
             duplicateCount++;
           } else {
+            const sig = `contest::${currentContestNum}::${numbersKey}`;
             existingSigs.add(sig);
             savedCount++;
             writePromises.push(addDoc(collection(db, 'games'), {
@@ -266,11 +235,20 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
         const contestTrimmed = contest.trim();
         const contestLabel = contestTrimmed ? `Concurso #${contestTrimmed}` : `Concurso Futuro`;
         const dateIso = parsedDate.toISOString().split('T')[0];
-        const sig = startContestNum > 0 ? `contest::${startContestNum}::${numbersKey}` : `date::${dateIso}::${numbersKey}`;
 
-        if (existingSigs.has(sig)) {
+        // Consulta de duplicidade no Firestore
+        const dupCheck = await checkGameDuplicateInFirestore(
+          startContestNum,
+          numbersKey,
+          selectedNumbers,
+          existingSigs,
+          dateIso
+        );
+
+        if (dupCheck.isDuplicate) {
           duplicateCount++;
         } else {
+          const sig = startContestNum > 0 ? `contest::${startContestNum}::${numbersKey}` : `date::${dateIso}::${numbersKey}`;
           existingSigs.add(sig);
           savedCount++;
           writePromises.push(addDoc(collection(db, 'games'), {

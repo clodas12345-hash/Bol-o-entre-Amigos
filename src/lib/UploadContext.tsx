@@ -50,16 +50,119 @@ const formatDateToMonthRef = (date: Date): string => {
   return `${mm}/${yyyy}`;
 };
 
-const getExistingSignatures = async (): Promise<Set<string>> => {
+/**
+ * Consulta o Firestore em tempo real para verificar se já existe um jogo
+ * com o mesmo número de concurso e as mesmas dezenas cadastradas.
+ */
+export const checkGameDuplicateInFirestore = async (
+  contestNum: number,
+  numbersKey: string,
+  gameNums: number[],
+  inMemorySigs: Set<string>,
+  dateStr?: string
+): Promise<{ isDuplicate: boolean; reason?: string }> => {
+  const sig = contestNum > 0
+    ? `contest::${contestNum}::${numbersKey}`
+    : `date::${dateStr || ''}::${numbersKey}`;
+
+  // 1. Verificação rápida no cache da sessão / lote atual
+  if (inMemorySigs.has(sig)) {
+    return { 
+      isDuplicate: true, 
+      reason: contestNum > 0 ? `Concurso #${contestNum}` : `Data ${dateStr}` 
+    };
+  }
+
+  try {
+    // 2. Consulta direta no Firestore pelo número do concurso
+    if (contestNum > 0) {
+      const qContest = query(
+        collection(db, 'games'),
+        where('contestNumber', '==', contestNum)
+      );
+      const snapContest = await getDocs(qContest);
+
+      for (const d of snapContest.docs) {
+        const docData = d.data();
+        const existingNumbersKey = docData.numbersKey || (
+          Array.isArray(docData.numbers) 
+            ? docData.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b).join('-')
+            : ''
+        );
+
+        if (existingNumbersKey === numbersKey) {
+          inMemorySigs.add(sig);
+          return { 
+            isDuplicate: true, 
+            reason: docData.contest || `Concurso #${contestNum}` 
+          };
+        }
+      }
+    }
+
+    // 3. Consulta secundária pelo conjunto de dezenas (numbersKey)
+    // Garante encontrar jogos onde o concurso foi registrado como texto (ex: "Concurso #3790")
+    if (numbersKey) {
+      const qNumbersKey = query(
+        collection(db, 'games'),
+        where('numbersKey', '==', numbersKey)
+      );
+      const snapNumbers = await getDocs(qNumbersKey);
+
+      for (const d of snapNumbers.docs) {
+        const docData = d.data();
+        let docContestNum = typeof docData.contestNumber === 'number' ? docData.contestNumber : 0;
+        if (!docContestNum && docData.contest) {
+          const match = String(docData.contest).match(/\b(\d{3,5})\b/);
+          docContestNum = match ? parseInt(match[1], 10) : 0;
+        }
+
+        // Se ambos possuem concurso e coincidem: duplicata confirmada!
+        if (contestNum > 0 && docContestNum === contestNum) {
+          inMemorySigs.add(sig);
+          return { 
+            isDuplicate: true, 
+            reason: docData.contest || `Concurso #${contestNum}` 
+          };
+        }
+
+        // Se não houver número formal de concurso, compara pela data do jogo
+        if (contestNum === 0 && dateStr) {
+          let docDateStr = '';
+          if (docData.date) {
+            if (typeof docData.date.toDate === 'function') docDateStr = docData.date.toDate().toISOString().split('T')[0];
+            else if (docData.date instanceof Date) docDateStr = docData.date.toISOString().split('T')[0];
+            else if (typeof docData.date === 'string') docDateStr = docData.date.split('T')[0];
+          }
+          if (docDateStr && docDateStr === dateStr) {
+            inMemorySigs.add(sig);
+            return { 
+              isDuplicate: true, 
+              reason: `Sorteio de ${dateStr}` 
+            };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso: Falha ao consultar duplicidade no Firestore, prosseguindo com verificação local:', err);
+  }
+
+  return { isDuplicate: false };
+};
+
+export const getExistingSignatures = async (): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
-    // Busca em todos os jogos (ativos e arquivados) para evitar duplicatas globais
+    // Busca em todos os jogos para pré-carregar assinaturas conhecidas
     const q = query(collection(db, 'games'));
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();
       let cNum = '';
-      if (data.contest) {
+      if (typeof data.contestNumber === 'number') {
+        cNum = String(data.contestNumber);
+      } else if (data.contest) {
         const match = String(data.contest).match(/\b(\d{3,5})\b/);
         cNum = match ? match[1] : '';
       }
@@ -140,7 +243,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       if (!res.ok || !data.success || !data.games?.length) throw new Error(data.message || 'IA não encontrou jogos legíveis');
 
-      updateItem(item.id, { status: 'saving', progress: 75, message: 'Gravando dados...' });
+      updateItem(item.id, { status: 'saving', progress: 70, message: 'Verificando duplicidades no banco...' });
 
       const receiptURL = compressed.base64;
       const parsedDate = data.date ? parseDateSafely(data.date) : parseDateSafely(gameDate);
@@ -159,6 +262,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       if (!validGames.length) throw new Error('Nenhuma dezena válida');
 
       let savedCount = 0;
+      let duplicateCount = 0;
       const isTeim = isTeimosinha === true || isTeimosinha === 'true' || Number(isTeimosinha) === 1;
       const teimCount = teimosinhaCount && Number(teimosinhaCount) > 0 ? Number(teimosinhaCount) : 1;
 
@@ -175,9 +279,21 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               currDate.setDate(currDate.getDate() + 1);
             }
             const currentContestNum = startContestNum + k;
-            const sig = `contest::${currentContestNum}::${numbersKey}`;
+            const dateStr = currDate.toISOString().split('T')[0];
 
-            if (!existingSigs.has(sig)) {
+            // Verificação de duplicidade no Firestore (dezenas + número do concurso)
+            const dupCheck = await checkGameDuplicateInFirestore(
+              currentContestNum,
+              numbersKey,
+              gameNums,
+              existingSigs,
+              dateStr
+            );
+
+            if (dupCheck.isDuplicate) {
+              duplicateCount++;
+            } else {
+              const sig = `contest::${currentContestNum}::${numbersKey}`;
               await addDoc(collection(db, 'games'), {
                 poolId,
                 numbers: gameNums,
@@ -197,9 +313,21 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           const contestLabel = startContestNum > 0 ? `Concurso #${startContestNum}${gameLabel}` : `Concurso Futuro${gameLabel}`;
-          const sig = startContestNum > 0 ? `contest::${startContestNum}::${numbersKey}` : `date::${parsedDate.toISOString().split('T')[0]}::${numbersKey}`;
+          const dateStr = parsedDate.toISOString().split('T')[0];
 
-          if (!existingSigs.has(sig)) {
+          // Verificação de duplicidade no Firestore (dezenas + número do concurso)
+          const dupCheck = await checkGameDuplicateInFirestore(
+            startContestNum,
+            numbersKey,
+            gameNums,
+            existingSigs,
+            dateStr
+          );
+
+          if (dupCheck.isDuplicate) {
+            duplicateCount++;
+          } else {
+            const sig = startContestNum > 0 ? `contest::${startContestNum}::${numbersKey}` : `date::${dateStr}::${numbersKey}`;
             await addDoc(collection(db, 'games'), {
               poolId,
               numbers: gameNums,
@@ -240,10 +368,23 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         console.warn('Could not fetch results for immediate comparison:', e);
       }
 
+      let finalMessage = '';
+      if (savedCount > 0 && duplicateCount > 0) {
+        finalMessage = `${savedCount} aposta(s) salva(s) (${duplicateCount} duplicada(s) ignorada(s))${hitsSummary}`;
+        addToast(`ℹ️ ${item.name}: ${savedCount} aposta(s) salva(s) e ${duplicateCount} já cadastrada(s) ignorada(s).`, 'info');
+      } else if (savedCount > 0) {
+        finalMessage = `${savedCount} aposta(s) salva(s)${hitsSummary}`;
+        addToast(`✅ ${item.name}: ${savedCount} aposta(s) salva(s) com sucesso!`, 'success');
+      } else {
+        const contestInfo = startContestNum > 0 ? ` no Concurso #${startContestNum}` : '';
+        finalMessage = `Já cadastrado${contestInfo}`;
+        addToast(`⚠️ ${item.name}: Jogo já cadastrado${contestInfo}. Duplicidade evitada!`, 'info');
+      }
+
       updateItem(item.id, { 
         status: savedCount > 0 ? 'success' : 'duplicate', 
         progress: 100, 
-        message: savedCount > 0 ? `${savedCount} aposta(s) salva(s)${hitsSummary}` : 'Já cadastrado',
+        message: finalMessage,
         durationMs: Date.now() - startTime 
       });
 

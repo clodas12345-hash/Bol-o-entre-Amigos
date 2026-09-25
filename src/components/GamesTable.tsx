@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, getDocs, addDoc, writeBatch } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
@@ -131,18 +131,22 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const [gamesTab, setGamesTab] = useState<'active' | 'history'>('active');
 
   // Controle de grupos de concursos expandidos/retraídos
-  // Apenas os jogos vigentes para HOJE ficam expostos por padrão. Futuros e histórico ficam sempre retraídos.
+  // Ao iniciar o app, todas as informações do dia ficam abertas por padrão (mesmo sem dia atual cadastrado).
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-  const isGroupExpanded = (groupKey: string, isToday: boolean): boolean => {
+  const isGroupExpanded = (groupKey: string, isToday: boolean, isFirstGroup?: boolean): boolean => {
     if (expandedGroups[groupKey] !== undefined) {
       return expandedGroups[groupKey];
     }
-    return isToday; // Por padrão: exposto apenas se for sorteio de hoje (isToday)
+    // Ao iniciar o app, todas as informações do dia devem ficar abertas por padrão (mesmo sem dia atual cadastrado)
+    if (gamesTab === 'active') {
+      return true;
+    }
+    return isToday || !!isFirstGroup;
   };
 
-  const toggleGroup = (groupKey: string, isToday: boolean) => {
-    const current = isGroupExpanded(groupKey, isToday);
+  const toggleGroup = (groupKey: string, isToday: boolean, isFirstGroup?: boolean) => {
+    const current = isGroupExpanded(groupKey, isToday, isFirstGroup);
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !current }));
   };
 
@@ -154,7 +158,10 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
   const collapseAllNonToday = () => {
     const next: Record<string, boolean> = {};
-    groupedGames.forEach(g => { next[g.key] = !!g.isToday; });
+    groupedGames.forEach((g, idx) => {
+      // Mantém o sorteio do dia aberto (seja hoje ou o primeiro grupo da lista ativa)
+      next[g.key] = !!g.isToday || (gamesTab === 'active' && idx === 0);
+    });
     setExpandedGroups(next);
   };
 
@@ -591,10 +598,13 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       ? targetResult.numbers.map((n: any) => Number(n))
       : drawnNumbers;
 
-    // Se o jogo for de um concurso futuro (ex: sorteio de amanhã, "Concurso Futuro", ou concurso superior ao resultado atual),
-    // ele AINDA NÃO CORREU e deve ficar estritamente ZERADO em acertos e prêmios para não causar confusão!
+    // Só considera pendente futuro se o concurso ainda não ocorreu e não há resultado gravado
     const isFutureContestTitle = String(game.contest || '').toLowerCase().includes('futuro');
-    const isPendingFuture = dateInfo.isFuture || isFutureContestTitle || (contestNumber !== null && (contestNumber >= 3788 || (latestResult?.contest && contestNumber > Number(latestResult.contest))));
+    const isPendingFuture = (!targetResult || !targetResult.numbers || targetResult.numbers.length === 0) && (
+      dateInfo.isFuture || 
+      isFutureContestTitle || 
+      (contestNumber !== null && (contestNumber >= 3788 || (latestResult?.contest && contestNumber > Number(latestResult.contest))))
+    );
 
     const prizeInfo = isPendingFuture
       ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Sorteio (Zerado)', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
@@ -603,8 +613,51 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     return { ...game, gameNumbers, prizeInfo, contestNumber, isPendingFuture, ...dateInfo };
   });
 
-  const activeGames = gamesWithPrizes.filter(g => g.isActive);
-  const historyGames = gamesWithPrizes.filter(g => !g.isActive);
+  // Se houver jogos de hoje ou futuros, eles são os ativos.
+  // Caso não haja jogos na data de hoje ou futuros ("sem dia atual" cadastrado),
+  // traz automaticamente os jogos do concurso/dia mais recente para ficarem expostos como os "Jogos do Dia"!
+  const rawActiveGames = useMemo(() => {
+    return gamesWithPrizes.filter(g => g.isActive);
+  }, [gamesWithPrizes]);
+
+  const activeGames = useMemo(() => {
+    if (rawActiveGames.length > 0) return rawActiveGames;
+    if (gamesWithPrizes.length === 0) return [];
+    
+    // Encontra o concurso ou dia mais recente presente na lista de jogos
+    const sorted = [...gamesWithPrizes].sort((a, b) => {
+      if (a.dayTimestamp !== b.dayTimestamp) return b.dayTimestamp - a.dayTimestamp;
+      return (b.contestNumber || 0) - (a.contestNumber || 0);
+    });
+    
+    const latestTimestamp = sorted[0]?.dayTimestamp;
+    const latestContestNum = sorted[0]?.contestNumber;
+    
+    return sorted.filter(g => 
+      (latestContestNum && g.contestNumber === latestContestNum) || 
+      (g.dayTimestamp === latestTimestamp)
+    );
+  }, [rawActiveGames, gamesWithPrizes]);
+
+  const activeGameIds = useMemo(() => new Set(activeGames.map(g => g.id)), [activeGames]);
+  const historyGames = useMemo(() => {
+    return gamesWithPrizes.filter(g => !activeGameIds.has(g.id));
+  }, [gamesWithPrizes, activeGameIds]);
+
+  // Ao iniciar o app, todas as informações devem ser do dia: sincroniza automaticamente o resultado com o concurso ativo (mesmo sem dia atual cadastrado)
+  const initialSyncDoneRef = useRef(false);
+  useEffect(() => {
+    if (!initialSyncDoneRef.current && activeGames.length > 0 && savedResultsList.length > 0) {
+      const activeContestNum = activeGames[0]?.contestNumber;
+      if (activeContestNum) {
+        const matchingResult = savedResultsList.find(r => Number(r.contest) === activeContestNum);
+        if (matchingResult) {
+          setLatestResult(matchingResult);
+          initialSyncDoneRef.current = true;
+        }
+      }
+    }
+  }, [activeGames, savedResultsList]);
 
   // Lista de jogos da aba selecionada
   const currentTabGames = gamesTab === 'active' ? activeGames : historyGames;
@@ -623,6 +676,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       return mB - mA;
     });
   }, [currentTabGames, currentMonthStr]);
+
+  // Se o mês vigente não possuir apostas cadastradas, ajusta automaticamente o filtro para 'all' para exibir os jogos
+  useEffect(() => {
+    if (availableMonths.length > 0 && selectedMonthFilter !== 'all') {
+      const hasInSelected = currentTabGames.some(g => g.month === selectedMonthFilter);
+      if (!hasInSelected) {
+        setSelectedMonthFilter('all');
+      }
+    }
+  }, [availableMonths, currentTabGames, selectedMonthFilter]);
 
   // Jogos filtrados pelo mês selecionado
   const filteredGames = selectedMonthFilter === 'all'
@@ -887,7 +950,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             }`}
           >
             <span>🎯</span>
-            <span>Apostas Ativas do Dia ({activeGames.length})</span>
+            <span>Apostas do Dia ({activeGames.length})</span>
           </button>
 
           <button
@@ -919,7 +982,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             <div className="p-3 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                  Apostas Ativas ({filteredGames.length})
+                  Apostas do Dia ({filteredGames.length})
                 </span>
 
                 {availableMonths.length > 0 && (
@@ -954,9 +1017,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 <button
                   onClick={collapseAllNonToday}
                   className="text-xs font-bold text-gray-700 hover:text-gray-950 bg-white hover:bg-gray-100 border border-gray-300 px-2.5 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer transition shadow-2xs active:scale-95"
-                  title="Deixar retraídos todos os jogos futuros, mantendo exposto apenas o jogo de hoje"
+                  title="Manter expostas apenas as apostas do dia, recolhendo os demais concursos"
                 >
-                  <span>🔒</span> Apenas Hoje Exposto
+                  <span>🔒</span> Apenas o do Dia Aberto
                 </button>
                 <button
                   onClick={expandAllGroups}
@@ -1044,15 +1107,17 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
           </div>
         ) : (
           <div className="p-3 sm:p-4 space-y-4 bg-gray-50/50">
-            {groupedGames.map((group: any) => {
+            {groupedGames.map((group: any, idx: number) => {
               const isGroupOfCurrentResult = latestResult?.contest && Number(latestResult.contest) === group.contestNumber;
-              const isExpanded = isGroupExpanded(group.key, !!group.isToday);
+              const isFirstGroup = idx === 0;
+              const isDayGroup = group.isToday || (gamesTab === 'active' && !group.isFuture);
+              const isExpanded = isGroupExpanded(group.key, !!group.isToday, isFirstGroup);
 
               return (
                 <div 
                   key={group.key} 
                   className={`bg-white rounded-xl border shadow-xs overflow-hidden transition ${
-                    group.isToday 
+                    isDayGroup 
                       ? 'border-emerald-400 ring-2 ring-emerald-400/20' 
                       : group.isFuture 
                         ? 'border-blue-300' 
@@ -1061,9 +1126,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 >
                   {/* Cabeçalho do Grupo do Concurso - Clicável em qualquer lugar para expandir/recolher */}
                   <div 
-                    onClick={() => toggleGroup(group.key, !!group.isToday)}
+                    onClick={() => toggleGroup(group.key, !!group.isToday, isFirstGroup)}
                     className={`p-3 sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2.5 border-b cursor-pointer select-none transition ${
-                      group.isToday 
+                      isDayGroup 
                         ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-900 text-white border-emerald-700/50 hover:brightness-110' 
                         : group.isFuture 
                           ? 'bg-gradient-to-r from-blue-950 via-indigo-900 to-blue-900 text-white border-blue-700/50 hover:brightness-110' 
@@ -1072,35 +1137,35 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                     title={isExpanded ? "Clique para recolher este concurso" : "Clique para expandir as apostas deste concurso"}
                   >
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      {group.isToday ? (
+                      {isDayGroup ? (
                         <span className="bg-emerald-500 text-white text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs animate-pulse">
                           <span className="w-2 h-2 rounded-full bg-white inline-block"></span>
-                          Sorteio de Hoje (24/09)
+                          Sorteio do Dia ({group.dateStr})
                         </span>
                       ) : group.isTomorrow ? (
                         <span className="bg-amber-500 text-gray-950 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                          <span>⏳</span> Próximo Sorteio - Amanhã (25/09)
+                          <span>⏳</span> Próximo Sorteio ({group.dateStr})
                         </span>
                       ) : group.isFuture ? (
                         <span className="bg-blue-500 text-white text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                          <span>📅</span> Sorteio Futuro
+                          <span>📅</span> Sorteio Futuro ({group.dateStr})
                         </span>
                       ) : (
                         <span className="bg-gray-300 text-gray-800 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                          <span>📁</span> Histórico
+                          <span>📁</span> Histórico ({group.dateStr})
                         </span>
                       )}
 
-                      <span className={`font-black text-sm sm:text-base ${group.isToday || group.isFuture ? 'text-amber-300' : 'text-purple-950'}`}>
+                      <span className={`font-black text-sm sm:text-base ${isDayGroup || group.isFuture ? 'text-amber-300' : 'text-purple-950'}`}>
                         {group.contestTitle}
                       </span>
 
-                      <span className={`text-xs ${group.isToday || group.isFuture ? 'text-gray-200' : 'text-gray-600'}`}>
+                      <span className={`text-xs ${isDayGroup || group.isFuture ? 'text-gray-200' : 'text-gray-600'}`}>
                         • Data: <strong>{group.dateStr}</strong>
                       </span>
 
                       <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
-                        group.isToday || group.isFuture 
+                        isDayGroup || group.isFuture 
                           ? 'bg-white/15 text-white' 
                           : 'bg-white text-gray-700 border border-gray-200'
                       }`}>
@@ -1109,7 +1174,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
                       {group.totalCost > 0 && (
                         <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
-                          group.isToday || group.isFuture 
+                          isDayGroup || group.isFuture 
                             ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40' 
                             : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         }`}>
@@ -1125,7 +1190,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                         </span>
                       )}
 
-                      {!group.isToday && !group.isFuture && group.contestNumber && (
+                      {!isDayGroup && !group.isFuture && group.contestNumber && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1172,7 +1237,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                           setGroupToDelete(group);
                         }}
                         className={`text-xs font-black px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs border ${
-                          group.isToday || group.isFuture
+                          isDayGroup || group.isFuture
                             ? 'bg-red-600 hover:bg-red-500 text-white border-red-400/50'
                             : 'bg-red-100 hover:bg-red-200 text-red-800 border-red-300'
                         }`}
@@ -1185,10 +1250,10 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleGroup(group.key, !!group.isToday);
+                          toggleGroup(group.key, !!group.isToday, isFirstGroup);
                         }}
                         className={`text-xs font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs ${
-                          group.isToday || group.isFuture
+                          isDayGroup || group.isFuture
                             ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
                             : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
                         }`}
@@ -1373,7 +1438,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                     </div>
                   ) : (
                     <div 
-                      onClick={() => toggleGroup(group.key, !!group.isToday)}
+                      onClick={() => toggleGroup(group.key, !!group.isToday, isFirstGroup)}
                       className="px-4 py-2.5 bg-gray-50/70 hover:bg-gray-100 cursor-pointer flex items-center justify-between text-xs text-gray-600 transition"
                       title="Clique para expandir as dezenas deste concurso"
                     >
@@ -1578,8 +1643,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                     <span className="text-amber-300 ml-1">
                       • Est: R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
-                  ) : Number(latestResult.contest) === 3787 ? (
-                    <span className="text-amber-300 ml-1">• Est: R$ 5.000.000,00 (24/09)</span>
                   ) : null}
                 </div>
               )}
