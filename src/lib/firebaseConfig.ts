@@ -1,0 +1,15 @@
+// Configuração do Firebase incorporada para garantir portabilidade em builds (CI/CD / GitHub Actions / APK)
+export const firebaseConfig = {
+  projectId: "adept-figure-463322-r2",
+  appId: "1:743166930754:web:3a68e1e19835829d5c22db",
+  apiKey: "AIzaSyAvDwqeL3mu-vghn5GKkabuLPChw23BAww",
+  authDomain: "adept-figure-463322-r2.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-a00d8821-22d9-4161-874f-6ffa6eabd8cf",
+  storageBucket: "adept-figure-463322-r2.firebasestorage.app",
+  messagingSenderId: "743166930754",
+  measurementId: "",
+  oAuthClientId: "743166930754-mal7g9429dc0v7aou9svl0sc1ptvd287.apps.googleusercontent.com",
+  recaptchaSiteKey: ""
+};
+
+export default firebaseConfig;

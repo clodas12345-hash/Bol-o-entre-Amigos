@@ -2,13 +2,16 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(import.meta.dirname, '.'),
+        '@': path.resolve(__dirname, '.'),
       },
     },
     build: {
@@ -16,10 +19,18 @@ export default defineConfig(() => {
       sourcemap: false,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
-            'ui-vendor': ['lucide-react', 'motion', 'recharts'],
-            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('firebase')) {
+                return 'firebase-vendor';
+              }
+              if (id.includes('recharts') || id.includes('html2canvas') || id.includes('jspdf')) {
+                return 'ui-vendor';
+              }
+              if (id.includes('react-router') || id.includes('react-dom') || id.includes('react')) {
+                return 'react-vendor';
+              }
+            }
           },
         },
       },
