@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, setDoc, limit } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName } from '../lib/formatters';
 import PageHeader from './PageHeader';
@@ -19,9 +19,12 @@ export default function Chat() {
   const isAdmin = auth.currentUser?.email === 'clodas12345@gmail.com';
 
   useEffect(() => {
-    const q = query(collection(db, 'messages'), orderBy('createdAt', 'asc'));
+    // Limitamos as últimas 100 mensagens para economizar cota e melhorar performance
+    const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(100));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Revertemos para exibir em ordem cronológica (asc)
+      setMessages(list.reverse());
     }, err => {
       console.warn('Messages snapshot error:', err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);

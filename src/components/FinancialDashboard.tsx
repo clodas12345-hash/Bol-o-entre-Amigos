@@ -1,29 +1,33 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { calculateGamePrize } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import { usePool } from '../lib/PoolContext';
 
 export default function FinancialDashboard() {
-  const { setIsQuotaExceeded } = usePool();
+  const { setIsQuotaExceeded, isQuotaExceeded } = usePool();
   const [payments, setPayments] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [results, setResults] = useState<any[]>([]);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const [usingCache, setUsingCache] = useState(false);
 
   useEffect(() => {
     const checkQuotaError = (err: any) => {
-      if (isQuotaError(err)) setIsQuotaExceeded(true);
+      if (isQuotaError(err)) {
+        setIsQuotaExceeded(true);
+        setUsingCache(true);
+      }
     };
 
     const loadData = async () => {
       try {
         const [paySnap, gameSnap, resSnap, usersSnap, membersSnap] = await Promise.all([
-          getDocs(collection(db, 'payments')),
-          getDocs(collection(db, 'games')),
-          getDocs(collection(db, 'lotofacil_results')),
+          getDocs(query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(500))),
+          getDocs(query(collection(db, 'games'), orderBy('date', 'desc'), limit(300))),
+          getDocs(query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(150))),
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'members'))
         ]);
@@ -35,6 +39,7 @@ export default function FinancialDashboard() {
         setPayments(payList);
         setGames(gameList);
         setResults(resList);
+        setUsingCache(false);
 
         const uList: any[] = usersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
         const mList: any[] = membersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
@@ -56,7 +61,9 @@ export default function FinancialDashboard() {
           console.warn('Failed to cache financial data:', cacheErr);
         }
       } catch (e) {
-        console.error('FinancialDashboard load error:', e);
+        if (!isQuotaError(e)) {
+          console.error('FinancialDashboard load error:', e);
+        }
         checkQuotaError(e);
         
         // Try to load from cache
@@ -186,6 +193,11 @@ export default function FinancialDashboard() {
 
   return (
     <div className="p-4 sm:p-5 bg-white">
+      {usingCache && (
+        <div className="mb-4 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-800 text-[10px] font-bold uppercase animate-pulse">
+          <span>⚠️ Modo Offline: Limite de cota excedido. Exibindo dados do último acesso salvo.</span>
+        </div>
+      )}
       {/* Cards de Resumo Real */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-4 text-white shadow-xs">

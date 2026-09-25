@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, doc, updateDoc, getDoc, query, orderBy, limit } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl } from '../lib/formatters';
 import { useToast } from './NotificationManager';
@@ -22,7 +22,7 @@ export default function DetailedFinancialReport() {
     const loadAllData = async () => {
       try {
         const [paySnap, pixSnap, usersSnap, membersSnap] = await Promise.all([
-          getDocs(collection(db, 'payments')),
+          getDocs(query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(500))),
           getDoc(doc(db, 'settings', 'pix')),
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'members'))

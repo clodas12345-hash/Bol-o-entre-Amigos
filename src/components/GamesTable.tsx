@@ -289,7 +289,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     if (!activePool) return;
 
     // Escuta os jogos cadastrados com suporte a bolão ativo e retrocompatibilidade
-    const qGames = query(collection(db, 'games'));
+    // Adicionando um limite para evitar ler milhares de jogos antigos desnecessariamente
+    const qGames = query(collection(db, 'games'), orderBy('date', 'desc'), limit(500));
     const unsubGames = onSnapshot(qGames, snapshot => {
       const allDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       const list = allDocs.filter((g: any) => {

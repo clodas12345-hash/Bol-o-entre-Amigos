@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, limit } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName } from '../lib/formatters';
@@ -53,7 +53,7 @@ export default function VotingSystem() {
   const { addToast } = useToast();
 
   useEffect(() => {
-    const q = query(collection(db, 'polls'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(50));
     const unsub = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => {
         const data = doc.data();
