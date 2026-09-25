@@ -9,6 +9,7 @@ import PixPaymentArea from './PixPaymentArea';
 import StatsThermometer from './StatsThermometer';
 import PoolManager from './PoolManager';
 import BackupManager from './BackupManager';
+import DetailedFinancialReport from './DetailedFinancialReport';
 import { usePool } from '../lib/PoolContext';
 
 export default function UserProfile() {
@@ -229,9 +230,9 @@ export default function UserProfile() {
     <div className="max-w-4xl mx-auto space-y-4">
       {/* Botões de Voltar e Fechar Página */}
       <PageHeader
-        title="Meu Perfil e Participação"
-        subtitle={`Dados de ${formatFirstAndLastName(currentUser?.displayName || currentUser?.email)}`}
-        icon="👤"
+        title="Configurações"
+        subtitle="Backup, importação, relatórios, gestão de bolões e preferências da conta"
+        icon="⚙️"
       />
 
       {/* Modal de Comprovante */}
@@ -441,15 +442,31 @@ Bolão Lotofácil Gestor — Setembro de 2026`}
         )}
       </div>
 
-      {/* Painel de Gestão de Bolões e Backup (Apenas para Admins) */}
-      {userProfile?.role === 'admin' && (
-        <div className="space-y-4">
+      {/* Painel de Gestão de Bolões, Backup, Importação e Relatórios */}
+      <div className="space-y-4">
+        {userProfile?.role === 'admin' && (
           <div className="bg-indigo-50/50 rounded-2xl border border-indigo-100 p-4 sm:p-6 shadow-xs animate-in slide-in-from-bottom duration-300">
+            <h3 className="font-black text-sm text-indigo-900 mb-3 flex items-center gap-2">
+              <span>⚙️</span> Gestão de Bolões e Grupos
+            </h3>
             <PoolManager />
           </div>
+        )}
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6 shadow-xs">
+          <h3 className="font-black text-sm text-gray-900 mb-3 flex items-center gap-2">
+            <span>📊</span> Relatórios Financeiros e Auditoria Detalhada
+          </h3>
+          <DetailedFinancialReport />
+        </div>
+
+        <div className="bg-emerald-50/50 rounded-2xl border border-emerald-100 p-4 sm:p-6 shadow-xs">
+          <h3 className="font-black text-sm text-emerald-900 mb-3 flex items-center gap-2">
+            <span>💾</span> Backup, Exportação e Importação de Dados
+          </h3>
           <BackupManager />
         </div>
-      )}
+      </div>
 
       {/* Histórico Individual de Pagamentos */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">

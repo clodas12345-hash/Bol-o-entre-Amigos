@@ -28,9 +28,8 @@ jobs:
       - name: Build web app
         env:
           CI: true
-          FORCE_COLOR: "0"
           NODE_OPTIONS: "--max-old-space-size=4096"
-        run: npx vite build --log-level warn
+        run: npx vite build
 
       - name: Sync Capacitor
         run: npx cap sync
