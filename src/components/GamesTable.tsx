@@ -3,6 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, g
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 import { calculateGamePrize, MEGASENA_STATS, LOTOFACIL_STATS } from '../lib/prizes';
 import PrizeSplitModal from './PrizeSplitModal';
 import ContestHistoryChecker from './ContestHistoryChecker';
@@ -18,6 +19,7 @@ interface GamesTableProps {
 export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const { addToast } = useToast();
   const { activePool, isQuotaExceeded, setIsQuotaExceeded } = usePool();
+  const { isMobile } = useResponsiveLayout(640);
 
   const [games, setGames] = useState<any[]>(() => {
     try {

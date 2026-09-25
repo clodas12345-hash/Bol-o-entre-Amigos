@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export function useResponsiveLayout(breakpoint = 768) {
+export function useResponsiveLayout(breakpoint = 640) {
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth < breakpoint;
