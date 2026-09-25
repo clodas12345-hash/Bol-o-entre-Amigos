@@ -41,9 +41,27 @@ export default function LotofacilBacktester() {
     }
   };
 
+  const strictVerifyInput = (selectedNumbers: number[]): boolean => {
+    if (!Array.isArray(selectedNumbers) || selectedNumbers.length < 15 || selectedNumbers.length > 20) {
+      addToast('Verificação Rígida: A quantidade de dezenas deve ser entre 15 e 20.', 'error');
+      return false;
+    }
+    const unique = new Set(selectedNumbers);
+    if (unique.size !== selectedNumbers.length) {
+      addToast('Verificação Rígida: Dezenas duplicadas rejeitadas.', 'error');
+      return false;
+    }
+    for (const n of selectedNumbers) {
+      if (typeof n !== 'number' || isNaN(n) || n < 1 || n > 25 || !Number.isInteger(n)) {
+        addToast(`Verificação Rígida: Dezena inválida ou simulada detectada (${n}). Permitido apenas de 01 a 25.`, 'error');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleBacktest = async () => {
-    if (numbers.length < 15) {
-      addToast('Selecione ao menos 15 dezenas.', 'error');
+    if (!strictVerifyInput(numbers)) {
       return;
     }
 

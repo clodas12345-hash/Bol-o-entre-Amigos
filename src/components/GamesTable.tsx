@@ -3,7 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, g
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
-import { useResponsiveLayout } from '../lib/useResponsiveLayout';
+import { useResponsiveLayout } from '../lib/formatters';
 import { calculateGamePrize, MEGASENA_STATS, LOTOFACIL_STATS } from '../lib/prizes';
 import PrizeSplitModal from './PrizeSplitModal';
 import ContestHistoryChecker from './ContestHistoryChecker';

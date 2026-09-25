@@ -555,8 +555,18 @@ app.post('/api/send-reminders', async (req, res) => {
 app.post('/api/lotofacil/backtest', async (req, res) => {
   const { numbers } = req.body;
   
-  if (!Array.isArray(numbers) || numbers.length < 15) {
-    return res.status(400).json({ success: false, message: 'Forneça ao menos 15 números para o backtest.' });
+  // Validação rígida contra dados simulados ou manuais incorretos
+  if (!Array.isArray(numbers) || numbers.length < 15 || numbers.length > 20) {
+    return res.status(400).json({ success: false, message: 'Verificação Rígida: Quantidade de dezenas inválida (mínimo 15, máximo 20).' });
+  }
+  const uniqueBackend = new Set(numbers);
+  if (uniqueBackend.size !== numbers.length) {
+    return res.status(400).json({ success: false, message: 'Verificação Rígida: Dezenas duplicadas rejeitadas automaticamente.' });
+  }
+  for (const n of numbers) {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 25) {
+      return res.status(400).json({ success: false, message: `Verificação Rígida: Entrada simulada ou dezena inválida detectada (${n}). Permitido apenas entre 01 e 25.` });
+    }
   }
 
   const sortedNums = [...numbers].sort((a, b) => a - b).join(', ');

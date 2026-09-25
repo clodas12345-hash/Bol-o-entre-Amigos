@@ -4,7 +4,7 @@ import { db, isQuotaError } from '../lib/firebase';
 import { calculateGamePrize } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import { usePool } from '../lib/PoolContext';
-import { useResponsiveLayout } from '../lib/useResponsiveLayout';
+import { useResponsiveLayout } from '../lib/formatters';
 
 export default function FinancialDashboard() {
   const { setIsQuotaExceeded, isQuotaExceeded, activePool } = usePool();

@@ -4,7 +4,7 @@ import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, formatCPF } from '../lib/formatters';
 import { usePool } from '../lib/PoolContext';
-import { useResponsiveLayout } from '../lib/useResponsiveLayout';
+import { useResponsiveLayout } from '../lib/formatters';
 
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
