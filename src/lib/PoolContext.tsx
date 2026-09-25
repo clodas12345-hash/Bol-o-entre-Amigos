@@ -10,6 +10,7 @@ export interface Pool {
   lotteryType?: 'lotofacil' | 'megasena';
   active: boolean;
   createdAt: any;
+  currentContest?: number | null;
 }
 
 interface PoolContextType {

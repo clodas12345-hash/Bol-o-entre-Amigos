@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
-import { doc, getDoc, collection, getDocs, setDoc, query, where, deleteDoc, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, deleteDoc, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
 import NewGameModal from './components/NewGameModal';
@@ -170,7 +170,7 @@ function BackgroundUploadStatus() {
   );
 }
 
-function Layout({ children, user, onSignOut }: { children: React.ReactNode, user: any, onSignOut: () => void }) {
+function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactNode, user: any, isAdmin: boolean, onSignOut: () => void }) {
   const { isQuotaExceeded, activePool } = usePool();
   const location = useLocation();
   const navigate = useNavigate();
@@ -180,6 +180,9 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
   const [currentContest, setCurrentContest] = useState<number | null>(null);
+  
+  const [isEditingContest, setIsEditingContest] = useState(false);
+  const [customContestInput, setCustomContestInput] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(1));
@@ -197,8 +200,33 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
     return () => unsub();
   }, [resultsCollection]);
 
+  const handleSaveCustomContest = async () => {
+    if (!activePool?.id) return;
+    const num = Number(customContestInput);
+    if (!isNaN(num) && num > 0) {
+      try {
+        await updateDoc(doc(db, 'pools', activePool.id), {
+          currentContest: num
+        });
+        setIsEditingContest(false);
+      } catch (err) {
+        console.error('Erro ao salvar concurso personalizado:', err);
+      }
+    } else if (customContestInput === '') {
+      try {
+        await updateDoc(doc(db, 'pools', activePool.id), {
+          currentContest: null
+        });
+        setIsEditingContest(false);
+      } catch (err) {
+        console.error('Erro ao apagar concurso personalizado:', err);
+      }
+    }
+  };
+
   if (!user) return <>{children}</>;
 
+  const displayContestNum = activePool?.currentContest || currentContest;
   const isHome = location.pathname === '/';
 
   const navLinks = [
@@ -320,16 +348,58 @@ function Layout({ children, user, onSignOut }: { children: React.ReactNode, user
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
             <span className="text-gray-700 font-medium">Concurso Vigente:</span>
-            {currentContest ? (
-              <span className="bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
-                #{currentContest}
-              </span>
+            
+            {isEditingContest ? (
+              <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95">
+                <input
+                  type="number"
+                  placeholder="Ex: 3251"
+                  value={customContestInput}
+                  onChange={(e) => setCustomContestInput(e.target.value)}
+                  className="w-20 bg-white border border-emerald-300 rounded px-1.5 py-0.5 text-xs text-gray-800 font-bold focus:outline-emerald-600"
+                  autoFocus
+                />
+                <button
+                  onClick={handleSaveCustomContest}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition shadow-2xs"
+                  title="Salvar Concurso"
+                >
+                  Salvar
+                </button>
+                <button
+                  onClick={() => setIsEditingContest(false)}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition"
+                >
+                  ✕
+                </button>
+              </div>
             ) : (
-              <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
+              <div className="flex items-center gap-1.5">
+                {displayContestNum ? (
+                  <span className="bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
+                    #{displayContestNum}
+                  </span>
+                ) : (
+                  <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
+                )}
+                
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setCustomContestInput(displayContestNum ? String(displayContestNum) : '');
+                      setIsEditingContest(true);
+                    }}
+                    className="text-emerald-700 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md text-[10px] cursor-pointer transition-colors"
+                    title="Editar Concurso Vigente"
+                  >
+                    ✏️ Alterar
+                  </button>
+                )}
+              </div>
             )}
           </div>
           <div className="text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider flex items-center gap-1.5 bg-emerald-100/50 px-2 py-0.5 rounded-md">
-            <span>🟢 Sincronizado com o Servidor</span>
+            <span>{activePool?.currentContest ? '📌 Forçado por Admin' : '🟢 Sincronizado'}</span>
           </div>
         </div>
       </div>
@@ -449,6 +519,42 @@ export default function App() {
     setPhoneUser(null);
     signOut(auth);
   };
+
+  useEffect(() => {
+    if (!phoneUser?.sessionUser?.uid) return;
+    const phoneUid = phoneUser.sessionUser.uid;
+
+    if (phoneUid.startsWith('admin_phone_')) {
+      return;
+    }
+
+    const unsubMember = onSnapshot(doc(db, 'members', phoneUid), (docSnap) => {
+      if (docSnap.exists()) {
+        const mData = docSnap.data();
+        const updated = {
+          sessionUser: phoneUser.sessionUser,
+          memberData: { id: docSnap.id, ...mData }
+        };
+        setPhoneUser(updated);
+        localStorage.setItem('bolao_phone_user', JSON.stringify(updated));
+      } else {
+        const unsubUser = onSnapshot(doc(db, 'users', phoneUid), (userSnap) => {
+          if (userSnap.exists()) {
+            const uData = userSnap.data();
+            const updated = {
+              sessionUser: phoneUser.sessionUser,
+              memberData: { id: userSnap.id, ...uData }
+            };
+            setPhoneUser(updated);
+            localStorage.setItem('bolao_phone_user', JSON.stringify(updated));
+          }
+        });
+        return () => unsubUser();
+      }
+    });
+
+    return () => unsubMember();
+  }, [phoneUser?.sessionUser?.uid]);
 
   useEffect(() => {
     // Verificação na inicialização: limpa qualquer estado de 'concursos futuros' ou simulados da memória
@@ -666,7 +772,7 @@ export default function App() {
     <PoolProvider>
       <UploadProvider>
         <BrowserRouter>
-        <Layout user={activeUser} onSignOut={handleSignOut}>
+        <Layout user={activeUser} isAdmin={activeUserData?.role === 'admin'} onSignOut={handleSignOut}>
           <Routes>
         <Route path="/" element={
           activeUser ? (

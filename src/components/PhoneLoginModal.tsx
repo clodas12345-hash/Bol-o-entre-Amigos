@@ -28,7 +28,10 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
       let matchedMember: any = null;
 
       // 1. Verifica no admin fixo primeiro para login instantâneo sem depender de banco
-      if (cleanPhone === '5511953292570' || cleanPhone.includes('11953292570')) {
+      if (
+        cleanPhone === '5511953292570' || cleanPhone.includes('11953292570') ||
+        cleanPhone === '5511983302659' || cleanPhone.includes('11983302659')
+      ) {
         matchedMember = {
           uid: 'admin_phone_clodas',
           email: 'clodas12345@gmail.com',
@@ -85,17 +88,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
 
   if (isInline) {
     return (
-      <div className="bg-white rounded-2xl p-2 space-y-5">
-        <div className="flex justify-between items-center border-b pb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">📱</span>
-            <div className="text-left">
-              <h3 className="font-black text-gray-900 text-sm">Acesso por Celular</h3>
-              <p className="text-[11px] text-gray-500">Entre sem precisar de senha ou Google</p>
-            </div>
-          </div>
-        </div>
-
+      <div className="bg-white rounded-2xl p-2 space-y-4">
         <form onSubmit={handlePhoneLogin} className="space-y-4">
           <div className="text-left">
             <label className="block text-xs font-bold text-gray-700 mb-1.5">Número do WhatsApp / Celular (com DDD)</label>

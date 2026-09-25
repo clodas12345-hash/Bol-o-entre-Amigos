@@ -117,6 +117,16 @@ export default function MembersList() {
     try {
       const colName = editingMember.collectionName || 'users';
       const normalizedPhone = editPhone.trim() ? normalizeBrazilianPhoneDigits(editPhone) : '';
+      
+      if (normalizedPhone) {
+        const isDuplicate = members.some(m => m.id !== editingMember.id && normalizeBrazilianPhoneDigits(m.phone || '') === normalizedPhone);
+        if (isDuplicate) {
+          addToast('Este número de celular já está cadastrado para outro participante! 1 número por acesso.', 'error');
+          setIsSavingEdit(false);
+          return;
+        }
+      }
+
       const quotasVal = Math.max(1, Number(editQuotas) || 1);
 
       await updateDoc(doc(db, colName, editingMember.id), {
@@ -212,6 +222,16 @@ export default function MembersList() {
     setIsSubmitting(true);
     try {
       const normalizedPhone = newPhone.trim() ? normalizeBrazilianPhoneDigits(newPhone) : '';
+      
+      if (normalizedPhone) {
+        const isDuplicate = members.some(m => normalizeBrazilianPhoneDigits(m.phone || '') === normalizedPhone);
+        if (isDuplicate) {
+          addToast('Este número de celular já está cadastrado para outro participante! 1 número por acesso.', 'error');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const quotasVal = Math.max(1, Number(newQuotas) || 1);
 
       await addDoc(collection(db, 'users'), {
