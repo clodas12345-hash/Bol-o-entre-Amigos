@@ -7,6 +7,7 @@ import { usePool } from '../lib/PoolContext';
 
 export default function FinancialDashboard() {
   const { setIsQuotaExceeded, isQuotaExceeded, activePool } = usePool();
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const [payments, setPayments] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
@@ -205,43 +206,43 @@ export default function FinancialDashboard() {
   return (
     <div className="p-4 sm:p-5 bg-white">
       {/* Cards de Resumo Real */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-4 text-white shadow-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-5">
+        <div className={`bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl text-white shadow-xs ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-100 uppercase tracking-wider">Saldo Líquido em Caixa</span>
-            <span className="text-lg">💰</span>
+            <span className="text-[10px] sm:text-xs font-medium text-emerald-100 uppercase tracking-wider">Saldo Líquido</span>
+            <span className="text-sm sm:text-lg">💰</span>
           </div>
-          <div className="text-2xl font-black mt-2">
+          <div className="text-lg sm:text-2xl font-black mt-1 sm:mt-2">
             R$ {saldoCaixa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-xs">
+        <div className={`bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl text-white shadow-xs ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-blue-100 uppercase tracking-wider">Total Arrecadado</span>
-            <span className="text-lg">📥</span>
+            <span className="text-[10px] sm:text-xs font-medium text-blue-100 uppercase tracking-wider">Arrecadado</span>
+            <span className="text-sm sm:text-lg">📥</span>
           </div>
-          <div className="text-2xl font-black mt-2">
+          <div className="text-lg sm:text-2xl font-black mt-1 sm:mt-2">
             R$ {totalArrecadado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl p-4 text-white shadow-xs">
+        <div className={`bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl text-white shadow-xs ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-100 uppercase tracking-wider">Prêmios Ganhos</span>
-            <span className="text-lg">🏆</span>
+            <span className="text-[10px] sm:text-xs font-medium text-amber-100 uppercase tracking-wider">Prêmios Ganhos</span>
+            <span className="text-sm sm:text-lg">🏆</span>
           </div>
-          <div className="text-2xl font-black mt-2">
+          <div className="text-lg sm:text-2xl font-black mt-1 sm:mt-2">
             R$ {totalPrizesWon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-violet-700 rounded-xl p-4 text-white shadow-xs">
+        <div className={`bg-gradient-to-br from-purple-500 to-violet-700 rounded-xl text-white shadow-xs ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-purple-100 uppercase tracking-wider">Total em Apostas</span>
-            <span className="text-lg">🎟️</span>
+            <span className="text-[10px] sm:text-xs font-medium text-purple-100 uppercase tracking-wider">Total Apostas</span>
+            <span className="text-sm sm:text-lg">🎟️</span>
           </div>
-          <div className="text-2xl font-black mt-2">
+          <div className="text-lg sm:text-2xl font-black mt-1 sm:mt-2">
             R$ {totalGastoApostas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
@@ -251,7 +252,7 @@ export default function FinancialDashboard() {
       <div>
         <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
           <div>
-            <h3 className="font-bold text-sm text-gray-800">Evolução Mensal</h3>
+            <h3 className="font-bold text-xs sm:text-sm text-gray-800">Evolução Mensal</h3>
           </div>
           {availableYears.length > 1 && (
             <select
@@ -266,7 +267,7 @@ export default function FinancialDashboard() {
           )}
         </div>
 
-        <div className="h-56 w-full pt-2">
+        <div className={`${isMobile ? 'h-44' : 'h-56'} w-full pt-1`}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
