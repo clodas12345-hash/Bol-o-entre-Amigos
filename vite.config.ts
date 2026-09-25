@@ -14,6 +14,15 @@ export default defineConfig(() => {
     build: {
       chunkSizeWarningLimit: 2000,
       sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
+            'ui-vendor': ['lucide-react', 'motion', 'recharts', 'html2canvas', 'jspdf'],
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          },
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
