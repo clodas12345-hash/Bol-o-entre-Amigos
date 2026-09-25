@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
 import NewGameModal from './components/NewGameModal';
@@ -360,9 +360,7 @@ export default function App() {
                 approved: true,
                 createdAt: new Date().toISOString()
               };
-              await import('firebase/firestore').then(async ({ setDoc }) => {
-                await setDoc(userDocRef, defaultData);
-              });
+              await setDoc(userDocRef, defaultData);
               setUserData(defaultData);
               try {
                 localStorage.setItem('bolao_cache_user_data', JSON.stringify(defaultData));

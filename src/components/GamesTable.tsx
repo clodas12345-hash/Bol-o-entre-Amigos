@@ -1794,7 +1794,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
               <button
                 type="submit"
-                disabled={manualNumbers.length !== 15 || !manualContest || isUpdatingResult}
+                disabled={manualNumbers.length !== (isMegaSena ? 6 : 15) || !manualContest || isUpdatingResult}
                 className="w-full bg-purple-700 hover:bg-purple-800 text-white font-black py-4 rounded-2xl shadow-lg transition active:scale-95 disabled:opacity-50 disabled:active:scale-100 cursor-pointer"
               >
                 {isUpdatingResult ? 'Salvando...' : 'Confirmar Correção'}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import {
@@ -162,8 +162,6 @@ export default function BackupManager() {
       });
 
       let importedCount = 0;
-      const { Timestamp } = await import('firebase/firestore');
-
       for (const colName of collections) {
         const docsList = previewData[colName];
         if (!Array.isArray(docsList)) continue;

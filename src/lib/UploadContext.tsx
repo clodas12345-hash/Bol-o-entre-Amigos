@@ -108,7 +108,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX = 1800;
+            const MAX = 1200;
             let w = img.width, h = img.height;
             if (w > h ? w > MAX : h > MAX) {
               if (w > h) { h *= MAX / w; w = MAX; }
@@ -118,7 +118,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.drawImage(img, 0, 0, w, h);
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.85), mimeType: 'image/jpeg' });
+              resolve({ base64: canvas.toDataURL('image/jpeg', 0.7), mimeType: 'image/jpeg' });
             } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
           };
           img.src = e.target?.result as string;

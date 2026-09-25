@@ -1,6 +1,6 @@
 import express from 'express';
 import { GoogleGenAI } from "@google/genai";
-import { createServer as createViteServer } from 'vite';
+
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
 import { db } from './src/lib/firebase';
@@ -27,7 +27,7 @@ async function generateWithFallback(params: {
   const { 
     contents, 
     config, 
-    primaryModel = "gemini-3.8-flash", 
+    primaryModel = "gemini-flash-latest", 
     fallbackModels = ["gemini-3.1-flash-lite", "gemini-3.1-pro-preview"] 
   } = params;
   
@@ -49,11 +49,15 @@ async function generateWithFallback(params: {
           delete targetConfig.tools;
         }
         
+        const { tools, toolConfig, ...restConfig } = targetConfig;
+        
         const response = await ai.models.generateContent({
           model,
           contents,
-          config: targetConfig
-        });
+          config: restConfig,
+          tools,
+          toolConfig
+        } as any);
         console.log(`[AI] Success with model: ${model} on attempt ${attempt}`);
         return response;
       } catch (err: any) {
@@ -438,12 +442,14 @@ Retorne estritamente um objeto JSON válido neste formato exato (sem comentário
 
     const text = response.text || '';
     
-    // Clean JSON content robustly: remove markdown formatters and any inline comment lines
-    let cleanJson = text.replace(/```json|```/gi, '').trim();
-    // Strip single line comments
-    cleanJson = cleanJson.replace(/\/\/.*$/gm, '');
-    // Strip multi line comments
-    cleanJson = cleanJson.replace(/\/\*[\s\S]*?\*\//g, '');
+    // Robust JSON extraction using regex to find the first '{' and last '}'
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    let cleanJson = jsonMatch ? jsonMatch[0] : text;
+    
+    // Remove markdown code blocks if still present
+    cleanJson = cleanJson.replace(/```json|```/gi, '').trim();
+    // Strip comments
+    cleanJson = cleanJson.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
     try {
       const parsed = JSON.parse(cleanJson);
@@ -589,8 +595,11 @@ Retorne estritamente um objeto JSON com esta estrutura:
   try {
     const response = await generateWithFallback({
       contents: prompt,
+      // tools and toolConfig belong at top level, but my generateWithFallback only takes config
+      // I will update generateWithFallback to accept tools
       config: {
         tools: [{ googleSearch: {} }],
+        toolConfig: { includeServerSideToolInvocations: true },
         responseMimeType: "application/json"
       }
     });
@@ -638,6 +647,7 @@ app.use((err: any, req: any, res: any, next: any) => {
 // Vite middleware for development
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
