@@ -7,6 +7,7 @@ import { DESDOBRAMENTOS_CATALOG, DesdobramentoScheme, sortNumbers } from '../lib
 import { LOTOFACIL_STATS, getGoldenBalancedNumbers, getTopHotNumbers } from '../lib/lotofacilStats';
 import { usePool } from '../lib/PoolContext';
 import { validateGameSchema } from '../lib/formatters';
+import { checkGameDuplicateInFirestore, getExistingSignatures } from '../lib/UploadContext';
 
 interface LotofacilDesdobramentoProps {
   onClose?: () => void;
@@ -14,7 +15,7 @@ interface LotofacilDesdobramentoProps {
 }
 
 export default function LotofacilDesdobramento({ onClose, onGamesSaved }: LotofacilDesdobramentoProps) {
-  const { setIsQuotaExceeded } = usePool();
+  const { setIsQuotaExceeded, activePool } = usePool();
   const navigate = useNavigate();
   const [selectedScheme, setSelectedScheme] = useState<DesdobramentoScheme>(DESDOBRAMENTOS_CATALOG[0]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
@@ -121,26 +122,64 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
 
     setIsSaving(true);
     try {
-      const contestVal = contestNumber.trim() ? Number(contestNumber.trim()) : null;
+      const contestVal = contestNumber.trim() ? Number(contestNumber.trim()) : 0;
+      const existingSigs = await getExistingSignatures();
+      const poolId = activePool?.id || 'default_lotofacil_pool';
+      const d = new Date();
+      const currentMonth = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+
+      let savedCount = 0;
+      let duplicateCount = 0;
 
       for (let i = 0; i < generatedGames.length; i++) {
-        const valRes = validateGameSchema({ numbers: generatedGames[i] });
+        const gameNums = [...generatedGames[i]].sort((a, b) => a - b);
+        const valRes = validateGameSchema({ numbers: gameNums });
         if (!valRes.isValid) {
           addToast(`Jogo #${i + 1} inválido: ${valRes.error}`, 'error');
           setIsSaving(false);
           return;
         }
+
+        const numbersKey = gameNums.join('-');
+        const dupCheck = await checkGameDuplicateInFirestore(
+          contestVal,
+          numbersKey,
+          gameNums,
+          existingSigs
+        );
+
+        if (dupCheck.isDuplicate) {
+          duplicateCount++;
+          continue;
+        }
+
         await addDoc(collection(db, 'games'), {
-          numbers: generatedGames[i],
-          contestNumber: contestVal,
+          poolId,
+          numbers: gameNums,
+          numbersKey,
+          contest: contestVal > 0 ? `Concurso #${contestVal} (Desdobramento ${i + 1}/${generatedGames.length})` : `Desdobramento: ${selectedScheme.name} (Jogo ${i + 1}/${generatedGames.length})`,
+          contestNumber: contestVal > 0 ? contestVal : null,
           description: `Desdobramento: ${selectedScheme.name} (Jogo ${i + 1}/${generatedGames.length})`,
+          cost: 3.50,
+          month: currentMonth,
+          date: serverTimestamp(),
           createdAt: serverTimestamp(),
           isDesdobramento: true,
           schemeId: selectedScheme.id,
         });
+
+        existingSigs.add(`contest::${contestVal}::${numbersKey}`);
+        savedCount++;
       }
 
-      addToast(`🎉 ${generatedGames.length} jogos do desdobramento foram salvos no bolão!`, 'success');
+      if (duplicateCount > 0 && savedCount > 0) {
+        addToast(`🎉 ${savedCount} jogos salvos (${duplicateCount} ignorados por já estarem cadastrados).`, 'info');
+      } else if (savedCount > 0) {
+        addToast(`🎉 ${savedCount} jogos do desdobramento foram salvos no bolão!`, 'success');
+      } else {
+        addToast(`⚠️ Todos os ${duplicateCount} jogos já estavam cadastrados no bolão.`, 'info');
+      }
+
       if (onGamesSaved) onGamesSaved();
       if (onClose) {
         onClose();

@@ -65,9 +65,6 @@ export default function VisualChartsDashboard() {
   const totalPaid = members.filter(m => m.paymentStatus === 'Pago').length;
   const totalPending = members.length - totalPaid;
   const totalQuotas = members.reduce((sum, m) => sum + (Number(m.quotas) > 0 ? Number(m.quotas) : 1), 0);
-  const totalArrecadado = totalQuotas * 20.00;
-  const totalInvestedInGames = games.length * 3.50;
-  const caixaSaldo = totalArrecadado - totalInvestedInGames;
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -76,28 +73,6 @@ export default function VisualChartsDashboard() {
         subtitle="Gráficos de evolução financeira, cotas e status de pagamentos"
         icon="📊"
       />
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-1">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Arrecadação</span>
-          <h3 className="text-2xl font-black text-emerald-700">R$ {totalArrecadado.toFixed(2).replace('.', ',')}</h3>
-          <p className="text-xs text-gray-500">{totalQuotas} cotas</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-1">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Apostas</span>
-          <h3 className="text-2xl font-black text-purple-700">R$ {totalInvestedInGames.toFixed(2).replace('.', ',')}</h3>
-          <p className="text-xs text-gray-500">{games.length} jogos</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-1">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Saldo</span>
-          <h3 className={`text-2xl font-black ${caixaSaldo >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-            R$ {caixaSaldo.toFixed(2).replace('.', ',')}
-          </h3>
-        </div>
-      </div>
-
       {/* Gráfico Visual de Barras: Status de Pagamentos */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 space-y-4">
         <h3 className="text-sm font-bold text-gray-800">💳 Status de Pagamento dos Participantes</h3>

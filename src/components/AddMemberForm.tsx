@@ -22,7 +22,7 @@ export default function AddMemberForm({ onMemberAdded }: { onMemberAdded: () => 
         phone: normalizedPhone,
         createdAt: new Date(),
         paymentStatus: 'Pendente',
-        approved: false,
+        approved: true,
         role: 'participant'
       });
       setDisplayName('');

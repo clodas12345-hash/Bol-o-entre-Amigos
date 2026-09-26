@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, isQuotaError } from '../lib/firebase';
+import { useState, useEffect, useMemo } from 'react';
+import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits } from '../lib/formatters';
+import { useNavigate } from 'react-router-dom';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
+import { usePermissions } from '../lib/PermissionsContext';
 
 // Helpers de persistência local para contornar problemas de limite de cota do Firestore
 const getLocalMembers = (): any[] => {
@@ -31,10 +33,18 @@ const saveLocalMember = (newMember: any) => {
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
   const { isMobile, compactTableClass } = useResponsiveLayout();
+  const { can } = usePermissions();
+  const canCreateMember = can('members_create');
+  const canEditMember = can('members_edit');
+  const canDeleteMember = can('members_delete');
+  const canTogglePayment = can('members_toggle_payment');
+
+  const navigate = useNavigate();
   const [members, setMembers] = useState<any[]>([]);
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid'>('all');
 
   // Campos do formulário de novo membro
   const [newDisplayName, setNewDisplayName] = useState('');
@@ -57,6 +67,30 @@ export default function MembersList() {
 
   useEffect(() => {
     fetchMembers();
+
+    let unsubUsers = () => {};
+    let unsubMembers = () => {};
+
+    try {
+      unsubUsers = onSnapshot(collection(db, 'users'), () => {
+        fetchMembers();
+      }, (err) => {
+        console.warn('Snapshot users error:', err);
+      });
+    } catch {}
+
+    try {
+      unsubMembers = onSnapshot(collection(db, 'members'), () => {
+        fetchMembers();
+      }, (err) => {
+        console.warn('Snapshot members error:', err);
+      });
+    } catch {}
+
+    return () => {
+      unsubUsers();
+      unsubMembers();
+    };
   }, []);
 
   const fetchMembers = async () => {
@@ -547,9 +581,22 @@ export default function MembersList() {
     }
   };
 
-  const approvedMembers = members.filter(m => m.approved === true);
+  const approvedMembers = members;
   const pendingJoinRequests = members.filter(m => m.approved === false);
-  const pendingQuotaRequests = members.filter(m => m.approved === true && m.quotaRequest && m.quotaRequest.status === 'Pendente');
+  const pendingQuotaRequests = members.filter(m => m.quotaRequest && m.quotaRequest.status === 'Pendente');
+
+  const displayedMembers = useMemo(() => {
+    if (memberFilterTab === 'pending') {
+      return [];
+    }
+    if (memberFilterTab === 'approved') {
+      return approvedMembers;
+    }
+    if (memberFilterTab === 'unpaid') {
+      return approvedMembers.filter(m => m.paymentStatus === 'Pendente');
+    }
+    return approvedMembers;
+  }, [memberFilterTab, approvedMembers]);
 
   const totalMembers = approvedMembers.length;
   const totalQuotas = approvedMembers.reduce((sum, m) => sum + (Number(m.quotas) || 1), 0);
@@ -558,6 +605,16 @@ export default function MembersList() {
 
   return (
     <div className="bg-white p-4 space-y-6 rounded-2xl border border-gray-150 shadow-xs">
+      {/* Botão de Retorno ao Início / Bolão Principal */}
+      <div className="flex items-center justify-between pb-1">
+        <button
+          onClick={() => navigate('/')}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+        >
+          <span>←</span>
+          <span>Voltar ao Bolão Principal (Início)</span>
+        </button>
+      </div>
       {confirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-5 rounded-lg shadow-xl max-w-sm w-full">
@@ -584,25 +641,101 @@ export default function MembersList() {
         </div>
       )}
 
+      {/* Abas Rápidas de Filtragem */}
+      <div className="flex border-b border-gray-200 bg-gray-100/90 p-1 gap-1 text-xs rounded-xl overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setMemberFilterTab('all')}
+          className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            memberFilterTab === 'all'
+              ? 'bg-blue-700 text-white shadow-xs font-black'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+          }`}
+        >
+          <span>👥</span>
+          <span>Todos ({members.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMemberFilterTab('pending')}
+          className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative ${
+            memberFilterTab === 'pending'
+              ? 'bg-red-600 text-white shadow-xs font-black'
+              : (pendingJoinRequests.length + pendingQuotaRequests.length > 0)
+                ? 'bg-red-100 text-red-800 hover:bg-red-200 border border-red-300 animate-pulse font-black'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+          }`}
+        >
+          <span>📢</span>
+          <span>Pedidos Pendentes ({pendingJoinRequests.length + pendingQuotaRequests.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMemberFilterTab('approved')}
+          className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            memberFilterTab === 'approved'
+              ? 'bg-emerald-700 text-white shadow-xs font-black'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+          }`}
+        >
+          <span>✅</span>
+          <span>Ativos ({approvedMembers.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMemberFilterTab('unpaid')}
+          className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            memberFilterTab === 'unpaid'
+              ? 'bg-amber-600 text-white shadow-xs font-black'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+          }`}
+        >
+          <span>💳</span>
+          <span>Pagamento Pendente ({approvedMembers.filter(m => m.paymentStatus === 'Pendente').length})</span>
+        </button>
+      </div>
+
+      {/* Estado Vazio quando na Aba de Pedidos Pendentes e tudo estiver aprovado */}
+      {memberFilterTab === 'pending' && pendingJoinRequests.length === 0 && pendingQuotaRequests.length === 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-2 animate-in fade-in">
+          <span className="text-3xl block">🎉</span>
+          <h3 className="font-black text-emerald-950 text-sm sm:text-base">Tudo em dia! Nenhum pedido pendente</h3>
+          <p className="text-xs text-emerald-700">Todas as solicitações de entrada e alterações de cotas foram aprovadas ou não há pedidos novos no momento.</p>
+        </div>
+      )}
+
       {/* SEÇÃO 1: Solicitações de Entrada Pendentes (Aguardando Aprovação) */}
       {pendingJoinRequests.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3 animate-in fade-in">
           <div className="flex items-center gap-2 border-b border-red-100 pb-2">
             <span className="text-xl">📢</span>
             <div>
-              <h3 className="font-black text-red-950 text-sm">Novas Solicitações de Entrada</h3>
+              <h3 className="font-black text-red-950 text-sm">Novas Solicitações de Entrada ({pendingJoinRequests.length})</h3>
               <p className="text-[10px] text-red-700">Novos participantes que tentaram logar pelo celular e aguardam aprovação</p>
             </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {pendingJoinRequests.map((req) => (
-              <div key={req.id} className="bg-white p-3 rounded-xl border border-red-100 flex items-center justify-between gap-2 shadow-2xs">
+              <div key={req.id} className="bg-white p-3 rounded-xl border border-red-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
                 <div>
                   <h4 className="font-black text-gray-900 text-xs">{req.displayName || 'Sem Nome'}</h4>
                   <p className="text-[10px] text-gray-500 font-medium">{formatPhoneDisplay(req.phone || '')}</p>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-1.5 flex-wrap">
+                  {req.phone && (
+                    <a
+                      href={`https://wa.me/55${normalizeBrazilianPhoneDigits(req.phone)}?text=${encodeURIComponent(`Olá ${req.displayName || ''}, vi sua solicitação de entrada no Bolão Amigos!`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition"
+                    >
+                      📲 WhatsApp
+                    </a>
+                  )}
                   <button
                     onClick={() => toggleApproval(req)}
                     className="px-2.5 py-1.5 text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition cursor-pointer"
@@ -629,18 +762,18 @@ export default function MembersList() {
 
       {/* SEÇÃO 2: Solicitações de Alteração de Cotas */}
       {pendingQuotaRequests.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3 animate-in fade-in">
           <div className="flex items-center gap-2 border-b border-amber-200/50 pb-2">
             <span className="text-xl">🎟️</span>
             <div>
-              <h3 className="font-black text-amber-950 text-sm">Solicitações de Alteração de Cotas</h3>
+              <h3 className="font-black text-amber-950 text-sm">Solicitações de Alteração de Cotas ({pendingQuotaRequests.length})</h3>
               <p className="text-[10px] text-amber-800">Participantes solicitando aumento ou diminuição de suas cotas</p>
             </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {pendingQuotaRequests.map((m) => (
-              <div key={m.id} className="bg-white p-3 rounded-xl border border-amber-100 flex items-center justify-between gap-2 shadow-2xs">
+              <div key={m.id} className="bg-white p-3 rounded-xl border border-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
                 <div>
                   <h4 className="font-black text-gray-900 text-xs">{m.displayName}</h4>
                   <div className="flex items-center gap-1.5 mt-1">
@@ -651,7 +784,17 @@ export default function MembersList() {
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-1.5 flex-wrap">
+                  {m.phone && (
+                    <a
+                      href={`https://wa.me/55${normalizeBrazilianPhoneDigits(m.phone)}?text=${encodeURIComponent(`Olá ${m.displayName || ''}, vi seu pedido de alteração para ${m.quotaRequest.requestedQuotas} cota(s) no Bolão!`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition"
+                    >
+                      📲 WhatsApp
+                    </a>
+                  )}
                   <button
                     onClick={() => handleApproveQuotaRequest(m)}
                     className="px-2.5 py-1.5 text-[10px] font-black text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-2xs transition cursor-pointer"
@@ -689,12 +832,14 @@ export default function MembersList() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="px-3.5 py-2 text-xs font-black rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
-          >
-            {showAddForm ? '✕ Cancelar' : '+ Cadastrar Novo Contato'}
-          </button>
+          {canCreateMember && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="px-3.5 py-2 text-xs font-black rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
+            >
+              {showAddForm ? '✕ Cancelar' : '+ Cadastrar Novo Contato'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -824,17 +969,29 @@ export default function MembersList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {approvedMembers.length === 0 ? (
+            {displayedMembers.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-8 text-center text-gray-400 italic font-medium">
-                  Nenhum contato cadastrado no momento.
+                  {memberFilterTab === 'pending'
+                    ? 'Nenhum participante na listagem regular (veja os quadros de pedidos pendentes acima).'
+                    : memberFilterTab === 'unpaid'
+                      ? 'Nenhum participante com pagamento pendente.'
+                      : 'Nenhum contato encontrado nesta categoria.'}
                 </td>
               </tr>
             ) : (
-              approvedMembers.map((member) => {
+              displayedMembers.map((member) => {
                 const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
                 const isPaid = member.paymentStatus === 'Pago';
                 const monthlyValue = quotas * 20.00;
+
+                const currentUser = auth.currentUser;
+                const isOwnRow = currentUser && (
+                  (currentUser.email && member.email && member.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+                  (currentUser.phoneNumber && member.phone && normalizeBrazilianPhoneDigits(member.phone) === normalizeBrazilianPhoneDigits(currentUser.phoneNumber)) ||
+                  member.uid === currentUser.uid ||
+                  member.id === currentUser.uid
+                );
 
                 return (
                   <tr key={member.id} className="hover:bg-gray-50/50 transition">
@@ -868,40 +1025,55 @@ export default function MembersList() {
                     </td>
 
                     <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => handleQuickChangeQuotas(member, -1)}
-                          className="w-5 h-5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded flex items-center justify-center text-xs font-bold border cursor-pointer"
-                        >
-                          -
-                        </button>
-                        <span className="font-black text-gray-800 min-w-4 text-center">
-                          {quotas}
-                        </span>
-                        <button
-                          onClick={() => handleQuickChangeQuotas(member, 1)}
-                          className="w-5 h-5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded flex items-center justify-center text-xs font-bold border cursor-pointer"
-                        >
-                          +
-                        </button>
-                      </div>
+                      {canTogglePayment ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleQuickChangeQuotas(member, -1)}
+                            className="w-5 h-5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded flex items-center justify-center text-xs font-bold border cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="font-black text-gray-800 min-w-4 text-center">
+                            {quotas}
+                          </span>
+                          <button
+                            onClick={() => handleQuickChangeQuotas(member, 1)}
+                            className="w-5 h-5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded flex items-center justify-center text-xs font-bold border cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="font-bold text-gray-800">{quotas} cota(s)</span>
+                      )}
                     </td>
 
                     <td className="p-3 text-center font-bold text-gray-800">
-                      R$ {monthlyValue.toFixed(2).replace('.', ',')}
+                      {canTogglePayment || isOwnRow ? `R$ ${monthlyValue.toFixed(2).replace('.', ',')}` : '---'}
                     </td>
 
                     <td className="p-3 text-center">
-                      <button
-                        onClick={() => togglePaymentStatus(member)}
-                        className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
-                          isPaid
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
-                            : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                        }`}
-                      >
-                        {member.paymentStatus || 'Pendente'}
-                      </button>
+                      {canTogglePayment || isOwnRow ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (canTogglePayment) togglePaymentStatus(member);
+                          }}
+                          disabled={!canTogglePayment}
+                          className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                            canTogglePayment ? 'cursor-pointer' : 'cursor-default'
+                          } ${
+                            isPaid
+                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
+                              : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                          }`}
+                          title={canTogglePayment ? "Alterar status de pagamento" : "Seu status de pagamento"}
+                        >
+                          {member.paymentStatus || 'Pendente'}
+                        </button>
+                      ) : (
+                        <span className="text-gray-400 font-medium">---</span>
+                      )}
                     </td>
 
                     <td className="p-3 text-center font-bold">
@@ -916,32 +1088,41 @@ export default function MembersList() {
 
                     <td className="p-3">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => handleOpenEdit(member)}
-                          className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                          title="Editar Cadastro"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => sendWhatsApp(member)}
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                          title="Cobrar via WhatsApp"
-                        >
-                          💬
-                        </button>
-                        <button
-                          onClick={() => {
-                            setConfirmation({
-                              action: () => deleteMember(member),
-                              message: `Excluir definitivamente o participante ${member.displayName}?`
-                            });
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                          title="Remover"
-                        >
-                          🗑️
-                        </button>
+                        {canEditMember && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(member)}
+                            className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                            title="Editar Cadastro"
+                          >
+                            ✏️
+                          </button>
+                        )}
+                        {canTogglePayment && (
+                          <button
+                            type="button"
+                            onClick={() => sendWhatsApp(member)}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                            title="Cobrar via WhatsApp"
+                          >
+                            💬
+                          </button>
+                        )}
+                        {canDeleteMember && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmation({
+                                action: () => deleteMember(member),
+                                message: `Excluir definitivamente o participante ${member.displayName}?`
+                              });
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                            title="Remover"
+                          >
+                            🗑️
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

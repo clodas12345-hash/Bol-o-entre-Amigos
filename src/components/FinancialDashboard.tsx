@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { calculateGamePrize } from '../lib/prizes';
@@ -112,19 +112,41 @@ export default function FinancialDashboard() {
       return sum + (q * 20.00);
     }, 0);
 
+  // Deduplicação rigorosa de jogos para evitar valores inflados por bilhetes duplicados
+  const uniqueGames = useMemo(() => {
+    const seen = new Set<string>();
+    return games.filter(g => {
+      const match = g.contest ? String(g.contest).match(/\b(\d{3,5})\b/) : null;
+      const cNum = match ? Number(match[1]) : (typeof g.contestNumber === 'number' ? g.contestNumber : null);
+      let dateStr = '';
+      if (g.date) {
+        if (typeof g.date.toDate === 'function') dateStr = g.date.toDate().toISOString().split('T')[0];
+        else if (g.date instanceof Date) dateStr = g.date.toISOString().split('T')[0];
+        else if (typeof g.date === 'string') dateStr = g.date.split('T')[0];
+      }
+      const numbersKey = g.numbersKey || (Array.isArray(g.numbers)
+        ? g.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b).join('-')
+        : '');
+      const sig = `${g.poolId || ''}::${cNum || dateStr}::${numbersKey}`;
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    });
+  }, [games]);
+
   // Total arrecadado considera o maior entre os pagamentos avulsos registrados e o cálculo automático dos pagos
   const totalArrecadado = Math.max(paymentsTotal, paidMembersTotal);
 
-  // Total investido em apostas registradas
-  const totalGastoApostas = games.reduce((sum, g) => sum + (Number(g.cost) || 0), 0);
+  // Total investido em apostas registradas (apenas bilhetes únicos)
+  const totalGastoApostas = uniqueGames.reduce((sum, g) => sum + (Number(g.cost) || 3.50), 0);
 
-  // Cálculo de Prêmios Ganhos
+  // Cálculo de Prêmios Ganhos (apenas bilhetes únicos)
   const latestResult = results[0];
   const drawnNumbers: number[] = Array.isArray(latestResult?.numbers)
     ? latestResult.numbers.map((n: any) => Number(n))
     : [];
 
-  const totalPrizesWon = games.reduce((sum, g) => {
+  const totalPrizesWon = uniqueGames.reduce((sum, g) => {
     const isFutureContestTitle = String(g.contest || '').toLowerCase().includes('futuro');
     const contestMatch = g.contest ? String(g.contest).match(/#(\d+)/) : null;
     const contestNum = contestMatch ? Number(contestMatch[1]) : null;
@@ -175,7 +197,7 @@ export default function FinancialDashboard() {
     // Se não houver pagamentos avulsos mas houver membros pagos no mês atual (ou geral), distribui proporcionalmente ou no mês corrente
     const effectiveArrecadadoMes = arrecadadoMes > 0 ? arrecadadoMes : (index === new Date().getMonth() ? paidMembersTotal : 0);
 
-    const apostasMes = games
+    const apostasMes = uniqueGames
       .filter(g => {
         if (g.date?.toDate) {
           const d = g.date.toDate();
@@ -183,7 +205,7 @@ export default function FinancialDashboard() {
         }
         return false;
       })
-      .reduce((sum, g) => sum + (Number(g.cost) || 0), 0);
+      .reduce((sum, g) => sum + (Number(g.cost) || 3.50), 0);
 
     return {
       month: name,

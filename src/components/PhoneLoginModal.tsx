@@ -128,14 +128,14 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
           const docRef = await addDoc(collection(db, 'users'), {
             displayName: newDisplayName.trim(),
             phone: cleanPhone,
-            approved: false,
+            approved: true,
             role: 'participant',
             quotas: 1,
             paymentStatus: 'Pendente',
             createdAt: new Date().toISOString()
           });
           docId = docRef.id;
-          addToast('Solicitação de entrada enviada com sucesso! Aguarde a aprovação do administrador.', 'success');
+          addToast('Cadastro realizado com sucesso!', 'success');
         } catch (dbErr) {
           console.warn('DB error, saving registration locally', dbErr);
           wasSavedLocally = true;
@@ -144,7 +144,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             id: docId,
             displayName: newDisplayName.trim(),
             phone: cleanPhone,
-            approved: false,
+            approved: true,
             role: 'participant',
             quotas: 1,
             paymentStatus: 'Pendente',
@@ -162,7 +162,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             console.error('Failed to save registration in local storage:', e);
           }
           
-          addToast('Solicitação salva localmente devido ao limite de cota do servidor! Aguarde a aprovação do administrador.', 'success');
+          addToast('Cadastro realizado com sucesso!', 'success');
         }
 
         matchedMember = {
@@ -170,7 +170,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
           uid: docId,
           displayName: newDisplayName.trim(),
           phone: cleanPhone,
-          approved: false,
+          approved: true,
           role: 'participant',
           quotas: 1,
           paymentStatus: 'Pendente',

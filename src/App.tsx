@@ -18,18 +18,22 @@ import StatsThermometer from './components/StatsThermometer';
 import Chat from './components/Chat';
 import WhatsAppHub from './components/WhatsAppHub';
 import LotofacilDesdobramento from './components/LotofacilDesdobramento';
+import BackupManager from './components/BackupManager';
 import CalendarAgenda from './components/CalendarAgenda';
 import VictoryCardGenerator from './components/VictoryCardGenerator';
 import LotofacilBacktester from './components/LotofacilBacktester';
 import RolesGuide from './components/RolesGuide';
 import PhoneLoginModal from './components/PhoneLoginModal';
+import EditProfileModal from './components/EditProfileModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
 import { PoolProvider, usePool } from './lib/PoolContext';
 import { UploadProvider, useUpload } from './lib/UploadContext';
-import { formatFirstAndLastName } from './lib/formatters';
+import { PermissionsProvider, usePermissions } from './lib/PermissionsContext';
+import { PendingRequestsProvider, usePendingRequests } from './lib/PendingRequestsContext';
+import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from './lib/formatters';
 
 import logoImg from './assets/images/bolao_logo_app.png';
 
@@ -171,7 +175,9 @@ function BackgroundUploadStatus() {
 }
 
 function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactNode, user: any, isAdmin: boolean, onSignOut: () => void }) {
-  const { isQuotaExceeded, activePool } = usePool();
+  const { isQuotaExceeded, setIsQuotaExceeded, activePool } = usePool();
+  const { can, isAdmin: permissionsIsAdmin, isSimulating, simulatedRole, setSimulatedRole } = usePermissions();
+  const { pendingJoinRequests, pendingQuotaRequests, totalPendingCount } = usePendingRequests();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -183,6 +189,42 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
   
   const [isEditingContest, setIsEditingContest] = useState(false);
   const [customContestInput, setCustomContestInput] = useState('');
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const lastRead = localStorage.getItem(`bolao_last_read_chat_${user.uid}`);
+    const lastReadDate = lastRead ? new Date(lastRead) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const q = query(
+      collection(db, 'messages'),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      let count = 0;
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.uid !== user.uid && data.createdAt) {
+          const msgDate = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+          if (msgDate > lastReadDate) {
+            count++;
+          }
+        }
+      });
+      setUnreadChatCount(count);
+    }, err => console.warn('Unread chat count error:', err));
+
+    return unsub;
+  }, [user, location.pathname]);
+
+  useEffect(() => {
+    if (location.pathname === '/chat' && user?.uid) {
+      localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
+      setUnreadChatCount(0);
+    }
+  }, [location.pathname, user?.uid]);
 
   useEffect(() => {
     const q = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(1));
@@ -229,16 +271,23 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
   const displayContestNum = activePool?.currentContest || currentContest;
   const isHome = location.pathname === '/';
 
+  const isFinalAdmin = isAdmin || permissionsIsAdmin || user?.email === 'clodas12345@gmail.com';
+  const canManageMembers = isFinalAdmin || can('members_approve_quota') || can('members_create') || can('members_edit');
+  const isAdminOrCounselor = isFinalAdmin || can('games_create');
+
   const navLinks = [
     { to: '/', label: 'Início', icon: '🏠' },
-    { to: '/contatos', label: 'Contatos', icon: '👥' },
+    { to: '/contatos', label: 'Contatos', icon: '👥', badge: (canManageMembers && totalPendingCount > 0) ? totalPendingCount : null },
     { to: '/chat', label: 'Chat', icon: '💬' },
-    { to: '/whatsapp', label: 'WhatsApp', icon: '📢' },
-    { to: '/desdobramentos', label: 'Desdobramentos', icon: '🎯' },
     { to: '/calendar', label: 'Agenda', icon: '📅' },
-    { to: '/rules', label: 'Regras', icon: '📜' },
-    { to: '/permissoes', label: 'Papéis', icon: '🛡️' },
-    { to: '/profile', label: 'Configurações', icon: '⚙️' },
+    ...(isAdminOrCounselor ? [
+      { to: '/whatsapp', label: 'WhatsApp', icon: '📢' },
+      { to: '/desdobramentos', label: 'Desdobramentos', icon: '🎯' },
+      { to: '/rules', label: 'Regras', icon: '📜' },
+      { to: '/permissoes', label: 'Papéis', icon: '🛡️' },
+      { to: '/backup', label: 'Backup', icon: '💾' },
+      { to: '/profile', label: 'Configurações', icon: '⚙️' }
+    ] : [])
   ];
 
   return (
@@ -249,36 +298,74 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
         <header className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-md sticky top-0 z-40">
           <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-2">
             {/* Logo & Botão Voltar */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 {!isHome && (
                   <button
-                    onClick={() => navigate(-1)}
-                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
-                    title="Voltar"
+                    onClick={() => {
+                      if (window.history.length > 1) {
+                        navigate(-1);
+                      } else {
+                        navigate('/');
+                      }
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                    title="Voltar ao Início"
                   >
                     <span>←</span>
+                    <span className="text-[11px]">Início</span>
                   </button>
                 )}
                 <div 
-                  onClick={() => setLogoViewState('description')}
-                  className="font-black text-xs sm:text-base tracking-wide flex items-center gap-1.5 hover:opacity-90 transition cursor-pointer"
+                  onClick={() => navigate('/')}
+                  className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-2.5 hover:opacity-95 transition cursor-pointer py-0.5"
+                  title="Página Inicial do Bolão"
                 >
-                  <img src={logoImg} alt="Logotipo" className="w-6 h-6 rounded-md object-cover border border-white/20 shadow-xs" />
-                  <span className="hidden xs:inline">Bolão Amigos</span>
+                  <img src={logoImg} alt="Logotipo" className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-white/60 shadow-lg ring-2 ring-white/30 hover:scale-105 transition-transform" />
+                  <span className="hidden xs:inline font-black text-white drop-shadow-md">Bolão Amigos</span>
                 </div>
               </div>
 
-            {/* Seleção de Bolão & Notificações */}
+            {/* Seleção de Bolão, Chat & Notificações */}
             <div className="flex items-center gap-1 sm:gap-2">
               <PoolSelector />
+
+              {/* Ícone do Chat ao lado da Notificação */}
+              <button
+                onClick={() => {
+                  if (user?.uid) {
+                    localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
+                    setUnreadChatCount(0);
+                  }
+                  navigate('/chat');
+                }}
+                className={`relative p-2 rounded-xl transition cursor-pointer flex items-center justify-center border ${
+                  location.pathname === '/chat'
+                    ? 'bg-white/30 text-white border-white/40 shadow-inner'
+                    : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+                }`}
+                title="Abrir Chat do Bolão"
+              >
+                <span className="text-base sm:text-lg">💬</span>
+                {unreadChatCount > 0 && location.pathname !== '/chat' && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 text-blue-950 text-[10px] font-black rounded-full flex items-center justify-center border-2 border-blue-900 animate-bounce shadow-sm">
+                    {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                  </span>
+                )}
+              </button>
+
               <NotificationBell />
               
               {/* Botão Menu Mobile */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                className="md:hidden bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer relative"
               >
                 <span>{mobileMenuOpen ? '✕' : '☰'}</span>
+                {totalPendingCount > 0 && canManageMembers && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-blue-800 animate-pulse">
+                    {totalPendingCount}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -290,11 +377,17 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
                 <Link
                   key={link.to}
                   to={link.to}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 relative ${
                     active ? 'bg-white/20 text-white shadow-inner' : 'text-blue-100 hover:bg-white/10'
                   }`}
                 >
-                  {link.icon} {link.label}
+                  <span>{link.icon}</span>
+                  <span>{link.label}</span>
+                  {link.badge && (
+                    <span className="ml-0.5 px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-black rounded-full shadow-xs animate-pulse">
+                      {link.badge}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -319,11 +412,19 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
                   key={link.to}
                   to={link.to}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`block px-3 py-2 rounded-xl text-xs font-bold transition ${
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
                     active ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10'
                   }`}
                 >
-                  {link.icon} {link.label}
+                  <span className="flex items-center gap-2">
+                    <span>{link.icon}</span>
+                    <span>{link.label}</span>
+                  </span>
+                  {link.badge && (
+                    <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-black rounded-full">
+                      {link.badge} pendente(s)
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -339,6 +440,24 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
           </div>
         )}
       </header>
+
+      {/* Banner de Simulação Ativa para o Administrador */}
+      {isSimulating && (
+        <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-950 px-4 py-2 text-xs font-black flex items-center justify-between shadow-sm border-b border-amber-600">
+          <div className="flex items-center gap-2">
+            <span className="text-base animate-bounce">👁️</span>
+            <span>
+              MODO SIMULAÇÃO ATIVO: Você está navegando com os acessos de <strong>{simulatedRole === 'counselor' ? '🛡️ Conselheiro' : '👥 Participante'}</strong>.
+            </span>
+          </div>
+          <button
+            onClick={() => setSimulatedRole(null)}
+            className="bg-black hover:bg-gray-800 text-white px-3 py-1 rounded-lg text-[11px] font-black transition cursor-pointer shadow-xs"
+          >
+            Sair da Simulação ✕
+          </button>
+        </div>
+      )}
 
       {/* Sub-header com Concurso Vigente Sincronizado */}
       <div className="bg-emerald-50 border-b border-emerald-100 py-2 px-3 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs">
@@ -384,13 +503,13 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
                   <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
                 )}
                 
-                {isAdmin && (
+                {can('games_official_result_edit') && (
                   <button
                     onClick={() => {
                       setCustomContestInput(displayContestNum ? String(displayContestNum) : '');
                       setIsEditingContest(true);
                     }}
-                    className="text-emerald-700 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md text-[10px] cursor-pointer transition-colors"
+                    className="text-emerald-700 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md text-[10px] cursor-pointer transition-colors font-bold"
                     title="Editar Concurso Vigente"
                   >
                     ✏️ Alterar
@@ -407,26 +526,73 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
 
       {/* Conteúdo Principal */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5">
+        {/* Banner de Pedidos Pendentes (Entradas e Cotas) */}
+        {totalPendingCount > 0 && canManageMembers && (
+          <div className="mb-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-xl shrink-0 shadow-xs animate-bounce">
+                📢
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs sm:text-sm font-black uppercase tracking-wide">
+                    {totalPendingCount} Pedido(s) Pendente(s) de Aprovação
+                  </h4>
+                  <span className="bg-white text-red-700 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    Ação Necessária
+                  </span>
+                </div>
+                <p className="text-[11px] text-red-100 mt-0.5 leading-relaxed">
+                  {pendingJoinRequests.length > 0 && `• ${pendingJoinRequests.length} nova(s) solicitação(ões) de entrada`}
+                  {pendingJoinRequests.length > 0 && pendingQuotaRequests.length > 0 && ' '}
+                  {pendingQuotaRequests.length > 0 && `• ${pendingQuotaRequests.length} pedido(s) de alteração de cota`}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigate('/contatos')}
+              className="bg-white hover:bg-red-50 text-red-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 shrink-0"
+            >
+              <span>Ver e Aprovar na Lista</span>
+              <span>➔</span>
+            </button>
+          </div>
+        )}
+
         {isQuotaExceeded && (
-          <div className="mb-4 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-xs animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex">
+          <div className="mb-4 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-xs animate-in fade-in slide-in-from-top-2 duration-300 relative">
+            <button
+              onClick={() => setIsQuotaExceeded(false)}
+              className="absolute top-2 right-2 text-amber-700 hover:text-amber-900 p-1 text-sm font-bold cursor-pointer transition"
+              title="Fechar aviso temporariamente"
+            >
+              ✕
+            </button>
+            <div className="flex pr-6">
               <div className="flex-shrink-0 text-xl">⚠️</div>
               <div className="ml-3">
                 <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">
-                  Limite de Cota Atingido (Firestore/AI)
+                  Limite de Cota do Firestore / AI Atingido
                 </p>
                 <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
-                  Limite de cota atingido. Algumas funções podem estar temporariamente indisponíveis.
+                  O limite diário gratuito de operações foi atingido. O aplicativo está utilizando cache local e dados em memória.
                 </p>
-                <div className="mt-2.5">
+                <div className="mt-2.5 flex items-center gap-2 flex-wrap">
                   <a
-                    href="https://console.firebase.google.com/project/adept-figure-463322-r2/firestore/databases/ai-studio-a00d8821-22d9-4161-874f-6ffa6eabd8cf/data?openUpgradeDialog=true"
+                    href="https://console.firebase.google.com/project/bolaoeamigos-6caa4/usage"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg transition-colors cursor-pointer uppercase shadow-sm"
                   >
-                    Ativar Faturamento / Upgrade ➔
+                    Abrir Firebase Console ➔
                   </a>
+                  <button
+                    onClick={() => setIsQuotaExceeded(false)}
+                    className="inline-flex items-center bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer uppercase border border-amber-300"
+                  >
+                    Ocultar Aviso
+                  </button>
                 </div>
               </div>
             </div>
@@ -509,11 +675,18 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showNewGameModal, setShowNewGameModal] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
 
   const { addToast } = useToast();
 
   const activeUser = user || (phoneUser ? phoneUser.sessionUser : null);
   const activeUserData = userData || (phoneUser ? phoneUser.memberData : null);
+
+  const isUserAdmin = activeUserData?.role === 'admin' ||
+    activeUser?.email === 'clodas12345@gmail.com' ||
+    phoneUser?.sessionUser?.uid?.startsWith('admin_phone_') ||
+    (activeUserData?.phone && normalizeBrazilianPhoneDigits(activeUserData.phone).includes('11953292570')) ||
+    (activeUser?.phoneNumber && normalizeBrazilianPhoneDigits(activeUser.phoneNumber).includes('11953292570'));
 
   const handleSignOut = () => {
     localStorage.removeItem('bolao_phone_user');
@@ -532,6 +705,9 @@ export default function App() {
     const unsubMember = onSnapshot(doc(db, 'members', phoneUid), (docSnap) => {
       if (docSnap.exists()) {
         const mData = docSnap.data();
+        if (isUserAdmin || mData.email === 'clodas12345@gmail.com' || (mData.phone && normalizeBrazilianPhoneDigits(mData.phone).includes('11953292570'))) {
+          mData.role = 'admin';
+        }
         const updated = {
           sessionUser: phoneUser.sessionUser,
           memberData: { id: docSnap.id, ...mData }
@@ -542,6 +718,9 @@ export default function App() {
         const unsubUser = onSnapshot(doc(db, 'users', phoneUid), (userSnap) => {
           if (userSnap.exists()) {
             const uData = userSnap.data();
+            if (isUserAdmin || uData.email === 'clodas12345@gmail.com' || (uData.phone && normalizeBrazilianPhoneDigits(uData.phone).includes('11953292570'))) {
+              uData.role = 'admin';
+            }
             const updated = {
               sessionUser: phoneUser.sessionUser,
               memberData: { id: userSnap.id, ...uData }
@@ -771,112 +950,143 @@ export default function App() {
 
   return (
     <PoolProvider>
-      <UploadProvider>
-        <BrowserRouter>
-        <Layout user={activeUser} isAdmin={activeUserData?.role === 'admin'} onSignOut={handleSignOut}>
-          <Routes>
-        <Route path="/" element={
-          activeUser ? (
-            activeUserData?.approved ? (
-              <div className="max-w-4xl mx-auto space-y-6">
-                {/* Cabeçalho do Usuário */}
-                <div className="bg-white p-4 rounded-xl shadow-xs border flex items-center justify-between">
-                  <div>
-                    <h1 className="text-lg sm:text-xl font-bold text-gray-800">
-                      Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
-                    </h1>
-                    <p className="text-xs text-gray-500">
-                      Perfil: <span className="font-semibold text-blue-600 uppercase">{activeUserData?.role === 'admin' ? 'Administrador' : 'Participante'}</span>
-                    </p>
-                  </div>
-                </div>
+      <PermissionsProvider>
+        <PendingRequestsProvider>
+          <UploadProvider>
+            <BrowserRouter>
+            <Layout user={activeUser} isAdmin={isUserAdmin} onSignOut={handleSignOut}>
+            <Routes>
+          <Route path="/" element={
+            activeUser ? (
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {/* Cabeçalho do Usuário com Acesso Direto à Edição do Cadastro */}
+                  <div 
+                    onClick={() => setShowEditProfileModal(true)}
+                    className="bg-white p-4 rounded-xl shadow-xs border border-gray-200 flex items-center justify-between cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group select-none"
+                    title="Clique para editar seus dados de cadastro e chave PIX"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h1 className="text-lg sm:text-xl font-bold text-gray-800 group-hover:text-blue-600 transition flex items-center gap-1.5">
+                          <span>👋</span> Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
+                        </h1>
+                        <span className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition shadow-2xs">
+                          ✏️ Editar Cadastro
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Perfil: <span className="font-semibold text-blue-600 uppercase">
+                          {
+                            (activeUserData?.role === 'admin' || activeUser?.email === 'clodas12345@gmail.com' || phoneUser?.sessionUser?.uid?.startsWith('admin_phone_') || (activeUserData?.phone && normalizeBrazilianPhoneDigits(activeUserData.phone).includes('11953292570')) || activeUser?.email === 'clodas12345@gmail.com')
+                              ? 'Administrador'
+                              : (activeUserData?.role === 'counselor' ? 'Conselheiro' : 'Participante')
+                          }
+                        </span>
+                      </p>
+                    </div>
 
-                {/* Alertas e Notificações dos Dias de Sorteio (Push & Calendário) */}
-                <DrawAlertsConfig />
-
-                {/* 1. Tabela de Jogos Cadastrados e Apostas Registradas (Em cima de tudo) */}
-                <GamesTable onOpenNewGame={() => setShowNewGameModal(true)} />
-
-                {/* 2. Dashboard Financeiro Principal */}
-                <div className="bg-white rounded-xl shadow-xs border overflow-hidden">
-                  <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                    <h2 className="font-bold text-sm text-gray-800">📊 Painel Financeiro e Caixa</h2>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => window.print()}
-                        className="bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
-                      >
-                        <span>🖨️</span> Imprimir Relatório
-                      </button>
-                      <ExportButton />
+                    <div className="text-gray-400 group-hover:text-blue-600 transition font-bold text-xs sm:text-sm flex items-center gap-1">
+                      <span className="hidden xs:inline">Meu Cadastro</span>
+                      <span className="text-base group-hover:translate-x-1 transition-transform">→</span>
                     </div>
                   </div>
-                  <FinancialDashboard />
+
+                  {/* 1. Tabela de Jogos Cadastrados, Apostas e Resultado Oficial Caixa Unificado */}
+                  <GamesTable onOpenNewGame={() => setShowNewGameModal(true)} />
+
+                  {/* 2. Dashboard Financeiro Principal */}
+                  <div className="bg-white rounded-xl shadow-xs border overflow-hidden">
+                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                      <h2 className="font-bold text-sm text-gray-800">📊 Painel Financeiro e Caixa</h2>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => window.print()}
+                          className="bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                        >
+                          <span>🖨️</span> Imprimir Relatório
+                        </button>
+                        <ExportButton />
+                      </div>
+                    </div>
+                    <FinancialDashboard />
+                  </div>
+
+                  {/* 4. Gráficos Visuais Avançados */}
+                  <VisualChartsDashboard />
+
+                  {/* 5. Relatório Financeiro Detalhado */}
+                  <div className="bg-white rounded-xl shadow-xs border p-4">
+                    <DetailedFinancialReport />
+                  </div>
+
+                  {/* Modais do Sistema */}
+                  {showPaymentModal && <PaymentModal onClose={() => setShowPaymentModal(false)} />}
+                  {showNewGameModal && <NewGameModal onClose={() => setShowNewGameModal(false)} />}
+                  {showEditProfileModal && (
+                    <EditProfileModal
+                      user={activeUser}
+                      userData={activeUserData}
+                      onClose={() => setShowEditProfileModal(false)}
+                      onSaved={(updated) => {
+                        if (userData) setUserData((prev: any) => ({ ...prev, ...updated }));
+                        if (phoneUser) {
+                          setPhoneUser((prev: any) => ({
+                            ...prev,
+                            memberData: { ...(prev?.memberData || {}), ...updated },
+                            sessionUser: { ...(prev?.sessionUser || {}), displayName: updated.displayName }
+                          }));
+                        }
+                      }}
+                    />
+                  )}
                 </div>
-
-                {/* 4. Gráficos Visuais Avançados */}
-                <VisualChartsDashboard />
-
-                {/* 5. Relatório Financeiro Detalhado */}
-                <div className="bg-white rounded-xl shadow-xs border p-4">
-                  <DetailedFinancialReport />
-                </div>
-
-                {/* Modais do Administrador */}
-                {showPaymentModal && <PaymentModal onClose={() => setShowPaymentModal(false)} />}
-                {showNewGameModal && <NewGameModal onClose={() => setShowNewGameModal(false)} />}
-              </div>
             ) : (
-              <div className="max-w-md mx-auto mt-20 text-center bg-white p-6 rounded-2xl shadow-lg border">
-                <span className="text-4xl">⏳</span>
-                <h2 className="text-base font-bold text-gray-900 mt-2">Aguardando Aprovação</h2>
-                <p className="text-xs text-gray-500 mt-1">Sua conta foi cadastrada e está aguardando o administrador aprovar o acesso ao bolão.</p>
+              <div className="min-h-[80vh] flex items-center justify-center bg-gray-100 p-4">
+                <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4 border border-gray-100">
+                  <div className="flex justify-center">
+                    <img src={logoImg} alt="Logo" className="w-24 h-24 rounded-2xl shadow-md object-cover border border-gray-100 animate-pulse" />
+                  </div>
+                  <h1 className="text-xl font-black text-gray-950 text-center">Bolão Amigos</h1>
+                  
+                  <PhoneLoginModal
+                    isInline={true}
+                    onPhoneLoginSuccess={(member) => {
+                      const sessionUser = {
+                        uid: member.id || 'phone_user',
+                        email: member.email || `${member.phone}@bolao.local`,
+                        displayName: member.displayName || 'Participante'
+                      };
+                      const memberData = {
+                        ...member,
+                        approved: member.approved !== undefined ? member.approved : true,
+                        role: member.role || 'participante'
+                      };
+                      setPhoneUser({ sessionUser, memberData });
+                      localStorage.setItem('bolao_phone_user', JSON.stringify({ sessionUser, memberData }));
+                    }}
+                  />
+                </div>
               </div>
             )
-          ) : (
-            <div className="min-h-[80vh] flex items-center justify-center bg-gray-100 p-4">
-              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4 border border-gray-100">
-                <div className="flex justify-center">
-                  <img src={logoImg} alt="Logo" className="w-24 h-24 rounded-2xl shadow-md object-cover border border-gray-100 animate-pulse" />
-                </div>
-                <h1 className="text-xl font-black text-gray-950 text-center">Bolão Amigos</h1>
-                
-                <PhoneLoginModal
-                  isInline={true}
-                  onPhoneLoginSuccess={(member) => {
-                    const sessionUser = {
-                      uid: member.id || 'phone_user',
-                      email: member.email || `${member.phone}@bolao.local`,
-                      displayName: member.displayName || 'Participante'
-                    };
-                    const memberData = {
-                      ...member,
-                      approved: member.approved !== undefined ? member.approved : true,
-                      role: member.role || 'participante'
-                    };
-                    setPhoneUser({ sessionUser, memberData });
-                    localStorage.setItem('bolao_phone_user', JSON.stringify({ sessionUser, memberData }));
-                  }}
-                />
-              </div>
-            </div>
-          )
-        } />
-        <Route path="/contatos" element={activeUser ? <MembersList /> : <Navigate to="/" />} />
-        <Route path="/chat" element={activeUser ? <Chat /> : <Navigate to="/" />} />
-        <Route path="/whatsapp" element={activeUser ? <WhatsAppHub /> : <Navigate to="/" />} />
-        <Route path="/desdobramentos" element={activeUser ? <LotofacilDesdobramento /> : <Navigate to="/" />} />
-        <Route path="/calendar" element={activeUser ? <CalendarAgenda /> : <Navigate to="/" />} />
-        <Route path="/backtest" element={activeUser ? <LotofacilBacktester /> : <Navigate to="/" />} />
-        <Route path="/charts" element={activeUser ? <VisualChartsDashboard /> : <Navigate to="/" />} />
-        <Route path="/card-generator" element={activeUser ? <VictoryCardGenerator /> : <Navigate to="/" />} />
-        <Route path="/profile" element={activeUser ? <UserProfile /> : <Navigate to="/" />} />
-        <Route path="/rules" element={activeUser ? <RulesAndNorms /> : <Navigate to="/" />} />
-        <Route path="/permissoes" element={activeUser ? <RolesGuide /> : <Navigate to="/" />} />
-      </Routes>
-        </Layout>
-      </BrowserRouter>
-      </UploadProvider>
+          } />
+          <Route path="/contatos" element={activeUser ? <MembersList /> : <Navigate to="/" />} />
+          <Route path="/chat" element={activeUser ? <Chat /> : <Navigate to="/" />} />
+          <Route path="/whatsapp" element={activeUserData?.role === 'admin' || activeUserData?.role === 'counselor' ? <WhatsAppHub /> : <Navigate to="/" />} />
+          <Route path="/desdobramentos" element={activeUser ? <LotofacilDesdobramento /> : <Navigate to="/" />} />
+          <Route path="/calendar" element={activeUser ? <CalendarAgenda /> : <Navigate to="/" />} />
+          <Route path="/backtest" element={activeUser ? <LotofacilBacktester /> : <Navigate to="/" />} />
+          <Route path="/charts" element={activeUser ? <VisualChartsDashboard /> : <Navigate to="/" />} />
+          <Route path="/card-generator" element={activeUser ? <VictoryCardGenerator /> : <Navigate to="/" />} />
+          <Route path="/profile" element={activeUser ? <UserProfile /> : <Navigate to="/" />} />
+          <Route path="/rules" element={activeUser ? <RulesAndNorms /> : <Navigate to="/" />} />
+          <Route path="/permissoes" element={activeUser ? <RolesGuide /> : <Navigate to="/" />} />
+          <Route path="/backup" element={activeUser ? <BackupManager /> : <Navigate to="/" />} />
+        </Routes>
+          </Layout>
+        </BrowserRouter>
+        </UploadProvider>
+        </PendingRequestsProvider>
+      </PermissionsProvider>
     </PoolProvider>
   );
 }

@@ -61,9 +61,10 @@ export const checkGameDuplicateInFirestore = async (
   inMemorySigs: Set<string>,
   dateStr?: string
 ): Promise<{ isDuplicate: boolean; reason?: string }> => {
+  const normalizedKey = numbersKey || (Array.isArray(gameNums) ? [...gameNums].map(Number).sort((a, b) => a - b).join('-') : '');
   const sig = contestNum > 0
-    ? `contest::${contestNum}::${numbersKey}`
-    : `date::${dateStr || ''}::${numbersKey}`;
+    ? `contest::${contestNum}::${normalizedKey}`
+    : `date::${dateStr || ''}::${normalizedKey}`;
 
   // 1. Verificação rápida no cache da sessão / lote atual
   if (inMemorySigs.has(sig)) {
@@ -90,7 +91,7 @@ export const checkGameDuplicateInFirestore = async (
             : ''
         );
 
-        if (existingNumbersKey === numbersKey) {
+        if (existingNumbersKey === normalizedKey) {
           inMemorySigs.add(sig);
           return { 
             isDuplicate: true, 
@@ -102,10 +103,10 @@ export const checkGameDuplicateInFirestore = async (
 
     // 3. Consulta secundária pelo conjunto de dezenas (numbersKey)
     // Garante encontrar jogos onde o concurso foi registrado como texto (ex: "Concurso #3790")
-    if (numbersKey) {
+    if (normalizedKey) {
       const qNumbersKey = query(
         collection(db, 'games'),
-        where('numbersKey', '==', numbersKey)
+        where('numbersKey', '==', normalizedKey)
       );
       const snapNumbers = await getDocs(qNumbersKey);
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isQuotaError } from './firebase';
 
@@ -40,9 +40,14 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
   const [activePoolId, setActivePoolId] = useState<string | null>(localStorage.getItem('activePoolId'));
   const [loading, setLoading] = useState(true);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+  const isCreatingPoolRef = useRef(false);
 
   // Helper para criar ou garantir bolão inicial caso não haja nenhum no banco
   const ensureDefaultPool = async (): Promise<string> => {
+    if (isCreatingPoolRef.current) {
+      return DEFAULT_POOL.id;
+    }
+    isCreatingPoolRef.current = true;
     try {
       const docRef = await addDoc(collection(db, 'pools'), {
         name: 'Bolão Principal - Lotofácil',
@@ -69,6 +74,7 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
       setPools(poolsList);
       
       if (poolsList.length > 0) {
+        isCreatingPoolRef.current = true;
         // Se o pool ativo salvo não existir na lista, escolhe o primeiro ativo
         const found = poolsList.find(p => p.id === activePoolId);
         if (!found) {
@@ -76,8 +82,8 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
           setActivePoolId(firstActive.id);
           localStorage.setItem('activePoolId', firstActive.id);
         }
-      } else {
-        // Se a coleção estiver vazia, cria o primeiro bolão automaticamente no Firestore
+      } else if (!isCreatingPoolRef.current) {
+        // Se a coleção estiver vazia, cria o primeiro bolão automaticamente no Firestore apenas uma vez
         await ensureDefaultPool();
       }
       setLoading(false);

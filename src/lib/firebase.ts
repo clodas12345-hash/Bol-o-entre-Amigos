@@ -7,18 +7,25 @@ import { firebaseConfig } from './firebaseConfig';
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+  ? firebaseConfig.firestoreDatabaseId
+  : undefined;
 
 let dbInstance;
 try {
   // Use initializeFirestore to set custom settings like long polling (critical for iframes/mobile)
-  dbInstance = initializeFirestore(app, {
-    localCache: memoryLocalCache(),
-    experimentalForceLongPolling: true, // Crucial for restricted networks and iframes
-  }, databaseId);
+  dbInstance = databaseId
+    ? initializeFirestore(app, {
+        localCache: memoryLocalCache(),
+        experimentalForceLongPolling: true,
+      }, databaseId)
+    : initializeFirestore(app, {
+        localCache: memoryLocalCache(),
+        experimentalForceLongPolling: true,
+      });
 } catch (err) {
   console.warn('Firestore already initialized or failed to initialize with settings, falling back to getFirestore:', err);
-  dbInstance = getFirestore(app, databaseId);
+  dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
 export const isQuotaError = (err: any): boolean => {

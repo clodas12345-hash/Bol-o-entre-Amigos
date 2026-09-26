@@ -179,13 +179,16 @@ export function calculateGamePrize(
   
   // Lógica para Lotofácil (15 drawn)
   if (drawnNumbers.length === 15) {
+    const prize11 = contestData?.prize11Amount && Number(contestData.prize11Amount) > 0 ? Number(contestData.prize11Amount) : 7.00;
+    const prize12 = contestData?.prize12Amount && Number(contestData.prize12Amount) > 0 ? Number(contestData.prize12Amount) : 14.00;
+    const prize13 = contestData?.prize13Amount && Number(contestData.prize13Amount) > 0 ? Number(contestData.prize13Amount) : 35.00;
     const prize14 = contestData?.prize14Amount ? Number(contestData.prize14Amount) : 1500.00;
     const prize15 = contestData?.prize15Amount ? Number(contestData.prize15Amount) : 1500000.00;
 
     const basePrizes: Record<number, number> = {
-      11: 7.00,
-      12: 14.00,
-      13: 35.00,
+      11: prize11,
+      12: prize12,
+      13: prize13,
       14: prize14,
       15: prize15
     };

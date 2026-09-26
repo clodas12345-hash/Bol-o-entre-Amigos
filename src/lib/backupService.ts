@@ -1,4 +1,4 @@
-import { collection, getDocs, addDoc, query, orderBy, limit, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy, limit, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 export const COLLECTIONS_TO_BACKUP = [
@@ -186,7 +186,30 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
   return { totalRecords, fileName };
 }
 
-export async function saveBackupToFirestore(): Promise<{ id: string; totalRecords: number }> {
+export async function saveDailyCloudBackupToFirestore(): Promise<{ id: string; totalRecords: number; isNew: boolean }> {
+  const todayStr = new Date().toLocaleDateString('pt-BR');
+  
+  // Verifica se já existe backup gerado na nuvem na data de hoje
+  try {
+    const qToday = query(
+      collection(db, 'backups_history'), 
+      where('dateRef', '==', todayStr), 
+      limit(1)
+    );
+    const existingSnap = await getDocs(qToday);
+    if (!existingSnap.empty) {
+      const docData = existingSnap.docs[0].data();
+      return { 
+        id: existingSnap.docs[0].id, 
+        totalRecords: docData.totalRecords || 0,
+        isNew: false 
+      };
+    }
+  } catch (e) {
+    console.warn('Verificação de backup diário anterior:', e);
+  }
+
+  // Gera novo backup na nuvem
   const backupData: Record<string, any[]> = {
     _metadata: [
       {
@@ -195,7 +218,7 @@ export async function saveBackupToFirestore(): Promise<{ id: string; totalRecord
           app: 'Bolão Lotofácil & Mega-Sena Gestor',
           exportedAt: new Date().toISOString(),
           version: '2.0',
-          type: 'automatic_monthly'
+          type: 'daily_cloud'
         }
       }
     ]
@@ -210,7 +233,6 @@ export async function saveBackupToFirestore(): Promise<{ id: string; totalRecord
         const data = docSnap.data();
         const serializedData = { ...data };
         
-        // Remove base64 strings heavy assets to fit in Firestore 1MB limit for history documents
         if (colName === 'games' || colName === 'payments') {
           delete serializedData.receiptURL;
           delete serializedData.imageUrl;
@@ -246,18 +268,24 @@ export async function saveBackupToFirestore(): Promise<{ id: string; totalRecord
     data: JSON.stringify(backupData),
     totalRecords,
     createdAt: serverTimestamp(),
+    dateRef: todayStr,
     monthRef: new Date().toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }),
-    type: 'monthly_automatic'
+    type: 'daily_cloud'
   });
 
   recordBackupCompleted();
 
-  return { id: docRef.id, totalRecords };
+  return { id: docRef.id, totalRecords, isNew: true };
+}
+
+export async function saveBackupToFirestore(): Promise<{ id: string; totalRecords: number }> {
+  const result = await saveDailyCloudBackupToFirestore();
+  return { id: result.id, totalRecords: result.totalRecords };
 }
 
 export async function getBackupsHistory(): Promise<any[]> {
   try {
-    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(12));
+    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(30));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {

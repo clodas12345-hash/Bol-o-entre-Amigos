@@ -50,8 +50,7 @@ service cloud.firestore {
     }
 
     match /messages/{msgId} {
-      allow read: if true;
-      allow create: if true;
+      allow read, write: if true;
     }
 
     match /polls/{pollId} {

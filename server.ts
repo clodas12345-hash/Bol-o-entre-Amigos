@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
 import { db } from './src/lib/firebase';
-import { collection, addDoc, getDocs, query, where, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, setDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -112,8 +112,11 @@ interface LotofacilContestData {
   prize14Winners?: number;
   prize14Amount?: number;
   prize13Winners?: number;
+  prize13Amount?: number;
   prize12Winners?: number;
+  prize12Amount?: number;
   prize11Winners?: number;
+  prize11Amount?: number;
   createdAt: any;
 }
 
@@ -173,9 +176,9 @@ async function fetchLotofacilFromCaixaApi(contestNumber?: number | string): Prom
     
     let prize15Winners = 0, prize15Amount = 0;
     let prize14Winners = 0, prize14Amount = 0;
-    let prize13Winners = 0;
-    let prize12Winners = 0;
-    let prize11Winners = 0;
+    let prize13Winners = 0, prize13Amount = 0;
+    let prize12Winners = 0, prize12Amount = 0;
+    let prize11Winners = 0, prize11Amount = 0;
 
     if (Array.isArray(data.listaRateioPremio)) {
       for (const p of data.listaRateioPremio) {
@@ -188,10 +191,13 @@ async function fetchLotofacilFromCaixaApi(contestNumber?: number | string): Prom
           prize14Amount = Number(p.valorPremio) || 0;
         } else if (faixa.includes('13')) {
           prize13Winners = Number(p.numeroDeGanhadores) || 0;
+          prize13Amount = Number(p.valorPremio) || 0;
         } else if (faixa.includes('12')) {
           prize12Winners = Number(p.numeroDeGanhadores) || 0;
+          prize12Amount = Number(p.valorPremio) || 0;
         } else if (faixa.includes('11')) {
           prize11Winners = Number(p.numeroDeGanhadores) || 0;
+          prize11Amount = Number(p.valorPremio) || 0;
         }
       }
     }
@@ -207,8 +213,11 @@ async function fetchLotofacilFromCaixaApi(contestNumber?: number | string): Prom
       prize14Winners,
       prize14Amount,
       prize13Winners,
+      prize13Amount,
       prize12Winners,
+      prize12Amount,
       prize11Winners,
+      prize11Amount,
       createdAt: new Date()
     };
 
@@ -290,7 +299,7 @@ async function fetchLotofacilContest(contestNumber?: number | string): Promise<L
   const officialCaixaData = await fetchLotofacilFromCaixaApi(contestNumber);
   if (officialCaixaData) {
     try {
-      await addDoc(collection(db, 'lotofacil_results'), officialCaixaData);
+      await setDoc(doc(db, 'lotofacil_results', String(officialCaixaData.contest)), officialCaixaData, { merge: true });
       console.log('Lotofácil contest saved from official Caixa API:', officialCaixaData.contest);
     } catch (saveErr) {
       console.warn('Could not save to firestore:', saveErr);
@@ -313,7 +322,7 @@ async function fetchMegaSenaContest(contestNumber?: number | string): Promise<Me
   const officialCaixaData = await fetchMegaSenaFromCaixaApi(contestNumber);
   if (officialCaixaData) {
     try {
-      await addDoc(collection(db, 'megasena_results'), officialCaixaData);
+      await setDoc(doc(db, 'megasena_results', String(officialCaixaData.contest)), officialCaixaData, { merge: true });
       console.log('Mega-Sena contest saved from official Caixa API:', officialCaixaData.contest);
     } catch (saveErr) {
       console.warn('Could not save to firestore:', saveErr);
@@ -548,6 +557,62 @@ app.post('/api/send-reminders', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to send emails' });
+  }
+});
+
+// API route for AI Chat Assistant to answer group questions based on rules & chat history
+app.post('/api/gemini/chat-assistant', async (req, res) => {
+  const { question, chatHistory, poolContext, learnedKnowledge } = req.body;
+
+  if (!question || typeof question !== 'string') {
+    return res.status(400).json({ success: false, message: 'Pergunta não fornecida.' });
+  }
+
+  const formattedHistory = Array.isArray(chatHistory)
+    ? chatHistory.map((m: any) => `${m.displayName || 'Participante'}: ${m.text || '[Foto]'}`).join('\n')
+    : 'Nenhum histórico recente.';
+
+  const formattedLearnings = Array.isArray(learnedKnowledge) && learnedKnowledge.length > 0
+    ? learnedKnowledge.map((lk: any) => `- Pergunta/Tema: "${lk.question || lk.topic || 'Dúvida'}" => Resposta Oficial do Administrador (${lk.author || 'Clodas'}): "${lk.answer || lk.text}"`).join('\n')
+    : 'Nenhum aprendizado prévio adicional salvo.';
+
+  const prompt = `Você é a IA Assistente Oficial do Bolão Amigos.
+Sua missão é responder automaticamente dúvidas dos participantes sobre o bolão com base nas informações oficiais, comunicados e respostas prévias que você APRENDEU com o Administrador Clodas e Conselheiros.
+
+DADOS OFICIAIS DO BOLÃO:
+- Valor da Cota: ${poolContext?.quotaValue || 'R$ 5,00 por cota'}
+- Chave PIX oficial para pagamento: ${poolContext?.pixKey || '11953292570 (Nome: Clodas / Bolão)'}
+- Tipo de Jogo: Lotofácil / Mega-Sena
+- Administrador do Grupo: Clodas
+
+CONHECIMENTOS E RESPOSTAS QUE VOCÊ APRENDEU COM O ADMINISTRADOR CLODAS / CONSELHEIROS:
+${formattedLearnings}
+
+HISTÓRICO RECENTE DE MENSAGENS E COMUNICADOS DO CHAT:
+${formattedHistory}
+
+PERGUNTA FEITA PELO PARTICIPANTE: "${question}"
+
+REGRAS OBRIGATÓRIAS PARA SUA RESPOSTA:
+1. Priorize as respostas APRENDIDAS com o Administrador/Conselheiro e os DADOS OFICIAIS. Se houver uma resposta aprendida sobre o tema, use-a com precisão!
+2. Seja objetivo, direto, amigável e educado.
+3. Se a informação não constar nos dados, nos aprendizados ou no histórico, forneça uma orientação inicial genérica do bolão e informe amigavelmente: "Caso necessite de detalhes específicos, o Administrador Clodas ou um Conselheiro responderá em breve!".
+4. Mantenha a resposta em português e curta (no máximo 3 a 4 frases).`;
+
+  try {
+    const response = await generateWithFallback({
+      contents: prompt,
+      config: {
+        systemInstruction: "Você é a IA Assistente do Bolão Amigos. Responda de forma direta e amigável.",
+        temperature: 0.2
+      }
+    });
+
+    const answer = response.text?.trim() || 'Não consegui processar a resposta no momento.';
+    res.json({ success: true, answer });
+  } catch (err: any) {
+    console.error('Chat Assistant AI error:', err);
+    res.status(500).json({ success: false, message: 'Não foi possível consultar a IA no momento.' });
   }
 });
 
