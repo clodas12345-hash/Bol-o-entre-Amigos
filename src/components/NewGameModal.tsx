@@ -202,8 +202,10 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
         let currDate = new Date(parsedDate);
         if (isNaN(currDate.getTime())) currDate = new Date();
 
+        const validDrawDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6];
+
         for (let i = 0; i < teimosinhaCount; i++) {
-          while (currDate.getDay() === 0) {
+          while (!validDrawDays.includes(currDate.getDay())) {
             currDate.setDate(currDate.getDate() + 1);
           }
           const currentContestNum = startContestNum + i;

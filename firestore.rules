@@ -2,85 +2,109 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     // Helpers
     function isSignedIn() { return request.auth != null; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
     function isAdmin() { 
       return isSignedIn() && (
         request.auth.token.email == 'clodas12345@gmail.com' ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (exists(/databases/$(database)/documents/members/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role == 'admin')
       ); 
     }
-    function incoming() { return request.resource.data; }
-    function existing() { return resource.data; }
 
-    // Validation Helpers
-    function isValidGame(data) {
-      return data.keys().hasAll(['poolId', 'numbers']) &&
-             data.poolId is string &&
-             data.numbers is list &&
-             (!data.keys().contains('numbersKey') || data.numbersKey is string) &&
-             (!data.keys().contains('contestNumber') || data.contestNumber is number || data.contestNumber == null);
+    function isApprovedUser() {
+      return isSignedIn() && (
+        request.auth.token.email == 'clodas12345@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approved == true) ||
+        (exists(/databases/$(database)/documents/members/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/members/$(request.auth.uid)).data.approved == true) ||
+        isAdmin()
+      );
     }
 
     // Rules
     match /users/{uid} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /members/{memberId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isOwner(memberId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /pools/{poolId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isApprovedUser();
+      allow write: if isAdmin();
     }
 
     match /games/{gameId} {
-      allow read, write: if true;
+      allow read: if isApprovedUser();
+      allow write: if isApprovedUser();
     }
 
     match /payments/{paymentId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isApprovedUser();
+      allow write: if isApprovedUser();
     }
 
     match /messages/{msgId} {
-      allow read, write: if true;
+      allow read, write: if isApprovedUser();
     }
 
     match /polls/{pollId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if isApprovedUser();
     }
 
     match /events/{eventId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isApprovedUser();
+      allow write: if isApprovedUser();
     }
 
     match /notifications/{notifId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isApprovedUser();
+      allow write: if isApprovedUser();
     }
 
     match /lotofacil_results/{resId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn();
+      allow write: if isApprovedUser();
     }
 
     match /megasena_results/{resId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn();
+      allow write: if isApprovedUser();
     }
 
     match /settings/{settingId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /bet_releases/{releaseId} {
+      allow read: if isApprovedUser();
+      allow write: if isAdmin();
+    }
+
+    match /bet_submissions/{submissionId} {
+      allow read: if isApprovedUser();
+      allow create: if isApprovedUser();
+      allow update: if isApprovedUser();
+      allow delete: if isAdmin();
     }
   }
 }

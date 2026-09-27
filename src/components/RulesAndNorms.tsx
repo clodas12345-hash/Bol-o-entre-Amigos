@@ -6,6 +6,27 @@ import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { getIsAdmin } from '../lib/authHelpers';
 
+const DEFAULT_RULES_TEXT = `📜 REGULAMENTO INTERNO DO BOLÃO DE AMIGOS
+
+1. AUTORIZAÇÃO DE ENTRADA E CONTROLE DE ACESSO
+• Todo novo participante que se cadastrar receberá o status provisório de "Pendente".
+• É expressamente necessária a autorização direta do Administrador para que o membro seja aprovado, garantindo um ambiente seguro e controlado.
+• Membros sem autorização aprovada não participam dos sorteios, cotas, estatísticas ou discussões no chat.
+
+2. CONTRIBUIÇÃO, COTAS E VALORES
+• A cota mensal de participação padrão possui o valor predefinido de R$ 20,00 por cota.
+• Qualquer pedido de alteração ou solicitação de novas cotas de um integrante deve ser submetido pelo aplicativo e aguardará aprovação da administração.
+• Os pagamentos devem ser efetuados via Pix oficial cadastrado no aplicativo, enviando o respectivo comprovante para compensação do caixa.
+
+3. DIVISÃO PROPORCIONAL DE PRÊMIOS
+• Todos os prêmios apurados e confirmados serão rateados de forma estritamente proporcional ao número de cotas ativas e pagas que cada participante possuir.
+• Integrantes em situação de inadimplência (com cotas marcadas como "Pendente de Pagamento") no momento da extração oficial não farão jus ao rateio daquele sorteio correspondente.
+
+4. TRANSPARÊNCIA E CONFERÊNCIA
+• Todos os jogos registrados, dezenas escolhidas e teimosinhas ficam visíveis para todos os membros ativos na aba "Jogos".
+• O sistema realiza a conferência automatizada em tempo real com os resultados oficiais da Caixa Econômica Federal.
+• Os balanços, comprovantes e prestação de contas do Caixa do bolão ficam acessíveis de forma transparente no painel financeiro.`;
+
 export default function RulesAndNorms() {
   const { setIsQuotaExceeded } = usePool();
   const [rules, setRules] = useState('');
@@ -85,11 +106,7 @@ export default function RulesAndNorms() {
         ) : (
           <div>
             <div className="prose prose-sm max-w-none text-gray-800 whitespace-pre-wrap leading-relaxed">
-              {rules || (
-                <div className="text-gray-400 italic py-4">
-                  Nenhuma regra cadastrada ainda.
-                </div>
-              )}
+              {rules || DEFAULT_RULES_TEXT}
             </div>
 
             {isAdmin && (

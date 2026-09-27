@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { calculateGamePrize } from '../lib/prizes';
 import { useToast } from './NotificationManager';
 import PrizeSplitModal from './PrizeSplitModal';
+import { usePermissions } from '../lib/PermissionsContext';
 
 interface GameHistoryProps {
   games: any[];
@@ -60,6 +61,7 @@ export default function GameHistory({
   onDeleteGame,
   onDeleteAllArchived
 }: GameHistoryProps) {
+  const { can } = usePermissions();
   const { addToast } = useToast();
 
   const [searchContestQuery, setSearchContestQuery] = useState('');
@@ -351,7 +353,7 @@ export default function GameHistory({
               ✕ Fechar
             </button>
           )}
-          {archivedGames.length > 0 && onDeleteAllArchived && (
+          {archivedGames.length > 0 && onDeleteAllArchived && can('games_delete') && (
             <button
               onClick={() => setShowDeleteAllConfirm(true)}
               className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
@@ -680,7 +682,7 @@ export default function GameHistory({
                                 </button>
                               )}
 
-                              {onDeleteGame && (
+                              {onDeleteGame && can('games_delete') && (
                                 <button
                                   onClick={() => setDeletingId(game.id)}
                                   className="text-xs text-red-600 hover:text-red-800 font-bold underline cursor-pointer"

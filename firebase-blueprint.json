@@ -13,7 +13,8 @@
         "cpf": { "type": "string" },
         "quotas": { "type": "number" },
         "notes": { "type": "string" },
-        "paymentStatus": { "type": "string", "enum": ["Pago", "Pendente"] }
+        "paymentStatus": { "type": "string", "enum": ["Pago", "Pendente"] },
+        "approved": { "type": "boolean" }
       },
       "required": ["uid", "email", "role"]
     },
@@ -29,6 +30,7 @@
         "quotas": { "type": "number" },
         "notes": { "type": "string" },
         "paymentStatus": { "type": "string", "enum": ["Pago", "Pendente"] },
+        "approved": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["displayName"]
@@ -148,6 +150,36 @@
         "createdAt": { "type": "string", "format": "date-time" }
       }
     },
+    "BetRelease": {
+      "title": "Bet Release",
+      "description": "Admin release for members to submit bets.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "poolId": { "type": "string" },
+        "numbersCount": { "type": "number" },
+        "betsPerMember": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "closed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["poolId", "numbersCount", "betsPerMember", "status"]
+    },
+    "BetSubmission": {
+      "title": "Member Bet Submission",
+      "description": "Bets submitted by a member for a release.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "releaseId": { "type": "string" },
+        "memberId": { "type": "string" },
+        "memberName": { "type": "string" },
+        "bets": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+        "status": { "type": "string", "enum": ["pending", "validated", "rejected"] },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "validatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["releaseId", "memberId", "bets", "status"]
+    },
     "Setting": {
       "title": "System Setting",
       "type": "object",
@@ -169,6 +201,8 @@
     "/notifications/{notifId}": { "schema": "Notification", "description": "Internal alerts." },
     "/lotofacil_results/{resId}": { "schema": "LotofacilResult", "description": "Lottery history." },
     "/megasena_results/{resId}": { "schema": "MegaSenaResult", "description": "Mega-Sena history." },
-    "/settings/{settingId}": { "schema": "Setting", "description": "System settings (PIX, chat, rules)." }
+    "/settings/{settingId}": { "schema": "Setting", "description": "System settings (PIX, chat, rules)." },
+    "/bet_releases/{releaseId}": { "schema": "BetRelease", "description": "Admin releases for member bets." },
+    "/bet_submissions/{submissionId}": { "schema": "BetSubmission", "description": "Member bet submissions." }
   }
 }

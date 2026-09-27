@@ -3,6 +3,8 @@ import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { normalizeBrazilianPhoneDigits } from '../lib/formatters';
 import { useToast } from './NotificationManager';
+import bcrypt from 'bcryptjs';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface PhoneLoginModalProps {
   onPhoneLoginSuccess: (memberData: any) => void;
@@ -19,7 +21,12 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
   const [showRegisterPrompt, setShowRegisterPrompt] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
 
+  // Password requirement for existing members
+  const [memberNeedsPassword, setMemberNeedsPassword] = useState(false);
+  const [foundMember, setFoundMember] = useState<any>(null);
+
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const { addToast } = useToast();
 
   const handlePhoneLogin = async (e: React.FormEvent) => {
@@ -47,61 +54,64 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
 
     setLoading(true);
     try {
-      let matchedMember: any = null;
+      let matchedMember: any = foundMember;
 
-      // 1. Verifica no admin fixo primeiro para login instantâneo sem depender de banco
-      if (isAdminNumber) {
-        matchedMember = {
-          uid: 'admin_phone_clodas',
-          email: 'clodas12345@gmail.com',
-          displayName: 'Clodas (Admin)',
-          role: 'admin',
-          approved: true,
-          phone: cleanPhone
-        };
-      }
-
-      // 2. Busca nas coleções do Firestore caso não seja o admin principal
+      // Se já temos o membro e estamos apenas validando a senha
       if (!matchedMember) {
-        const [usersSnap, membersSnap] = await Promise.all([
-          getDocs(collection(db, 'users')).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))
-        ]);
-
-        if (usersSnap && usersSnap.docs) {
-          usersSnap.docs.forEach(d => {
-            const data = d.data();
-            const p = normalizeBrazilianPhoneDigits(data.phone || '');
-            if (p && p === cleanPhone) {
-              matchedMember = { id: d.id, ...data };
-            }
-          });
+        // 1. Verifica no admin fixo primeiro para login instantâneo sem depender de banco
+        if (isAdminNumber) {
+          matchedMember = {
+            uid: 'admin_phone_clodas',
+            email: 'clodas12345@gmail.com',
+            displayName: 'Clodas (Admin)',
+            role: 'admin',
+            approved: true,
+            phone: cleanPhone
+          };
         }
 
-        if (!matchedMember && membersSnap && membersSnap.docs) {
-          membersSnap.docs.forEach(d => {
-            const data = d.data();
-            const p = normalizeBrazilianPhoneDigits(data.phone || '');
-            if (p && p === cleanPhone) {
-              matchedMember = { id: d.id, ...data };
-            }
-          });
-        }
-      }
+        // 2. Busca nas coleções do Firestore caso não seja o admin principal
+        if (!matchedMember) {
+          const [usersSnap, membersSnap] = await Promise.all([
+            getDocs(collection(db, 'users')).catch(() => ({ docs: [] })),
+            getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))
+          ]);
 
-      // 3. Busca nos membros locais caso o banco esteja fora de cota ou offline
-      if (!matchedMember) {
-        try {
-          const localSaved = localStorage.getItem('bolao_local_members');
-          if (localSaved) {
-            const parsed = JSON.parse(localSaved);
-            const found = parsed.find((m: any) => normalizeBrazilianPhoneDigits(m.phone || '') === cleanPhone);
-            if (found) {
-              matchedMember = { ...found };
-            }
+          if (usersSnap && usersSnap.docs) {
+            usersSnap.docs.forEach(d => {
+              const data = d.data();
+              const p = normalizeBrazilianPhoneDigits(data.phone || '');
+              if (p && p === cleanPhone) {
+                matchedMember = { id: d.id, ...data };
+              }
+            });
           }
-        } catch (err) {
-          console.warn('Error reading local members in login:', err);
+
+          if (!matchedMember && membersSnap && membersSnap.docs) {
+            membersSnap.docs.forEach(d => {
+              const data = d.data();
+              const p = normalizeBrazilianPhoneDigits(data.phone || '');
+              if (p && p === cleanPhone) {
+                matchedMember = { id: d.id, ...data };
+              }
+            });
+          }
+        }
+
+        // 3. Busca nos membros locais caso o banco esteja fora de cota ou offline
+        if (!matchedMember) {
+          try {
+            const localSaved = localStorage.getItem('bolao_local_members');
+            if (localSaved) {
+              const parsed = JSON.parse(localSaved);
+              const found = parsed.find((m: any) => normalizeBrazilianPhoneDigits(m.phone || '') === cleanPhone);
+              if (found) {
+                matchedMember = { ...found };
+              }
+            }
+          } catch (err) {
+            console.warn('Error reading local members in login:', err);
+          }
         }
       }
 
@@ -128,14 +138,14 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
           const docRef = await addDoc(collection(db, 'users'), {
             displayName: newDisplayName.trim(),
             phone: cleanPhone,
-            approved: true,
+            approved: false, 
             role: 'participant',
             quotas: 1,
             paymentStatus: 'Pendente',
             createdAt: new Date().toISOString()
           });
           docId = docRef.id;
-          addToast('Cadastro realizado com sucesso!', 'success');
+          addToast('Solicitação de cadastro enviada com sucesso! Aguarde aprovação do administrador.', 'success');
         } catch (dbErr) {
           console.warn('DB error, saving registration locally', dbErr);
           wasSavedLocally = true;
@@ -144,7 +154,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             id: docId,
             displayName: newDisplayName.trim(),
             phone: cleanPhone,
-            approved: true,
+            approved: false,
             role: 'participant',
             quotas: 1,
             paymentStatus: 'Pendente',
@@ -162,7 +172,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             console.error('Failed to save registration in local storage:', e);
           }
           
-          addToast('Cadastro realizado com sucesso!', 'success');
+          addToast('Solicitação de cadastro guardada localmente! Aguarde aprovação.', 'success');
         }
 
         matchedMember = {
@@ -170,7 +180,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
           uid: docId,
           displayName: newDisplayName.trim(),
           phone: cleanPhone,
-          approved: true,
+          approved: false,
           role: 'participant',
           quotas: 1,
           paymentStatus: 'Pendente',
@@ -179,8 +189,28 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
       }
 
       if (matchedMember) {
+        // Verification for member password
+        if (matchedMember.passwordHash && !isAdminNumber) {
+          if (!memberNeedsPassword) {
+            setFoundMember(matchedMember);
+            setMemberNeedsPassword(true);
+            setLoading(false);
+            addToast('Este número possui uma senha cadastrada. Por favor, digite sua senha.', 'info');
+            return;
+          }
+
+          const isPasswordCorrect = await bcrypt.compare(passwordInput, matchedMember.passwordHash);
+          if (!isPasswordCorrect) {
+            addToast('Senha incorreta! Tente novamente.', 'error');
+            setLoading(false);
+            return;
+          }
+        }
+
         if (matchedMember.approved) {
           addToast(`Bem-vindo(a) de volta, ${matchedMember.displayName || 'Participante'}!`, 'success');
+        } else {
+          addToast('Sua solicitação de cadastro foi registrada e está aguardando a aprovação do administrador.', 'info');
         }
         onPhoneLoginSuccess(matchedMember);
       }
@@ -212,6 +242,11 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
                   setShowRegisterPrompt(false);
                   setNewDisplayName('');
                 }
+                if (memberNeedsPassword) {
+                  setMemberNeedsPassword(false);
+                  setFoundMember(null);
+                  setPasswordInput('');
+                }
               }}
               className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
               required
@@ -220,18 +255,29 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             <p className="text-[10px] text-gray-500 mt-1">O número deve estar cadastrado previamente pelo administrador.</p>
           </div>
 
-          {isAdminPrompt && (
+          {(isAdminPrompt || memberNeedsPassword) && (
             <div className="text-left animate-in fade-in slide-in-from-top-1 duration-200">
-              <label className="block text-xs font-bold text-red-600 mb-1.5">🔒 Senha de Blindagem Administrativa</label>
-              <input
-                type="password"
-                placeholder="Digite a senha de 6 dígitos"
-                value={passwordInput}
-                onChange={e => setPasswordInput(e.target.value)}
-                className="w-full border border-red-300 rounded-xl p-3 text-sm font-semibold focus:outline-red-600 bg-red-50/50"
-                required
-                autoFocus
-              />
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                {isAdminPrompt ? '🔒 Senha de Blindagem Administrativa' : '🔒 Sua Senha de Acesso'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder={isAdminPrompt ? "Digite a senha de 6 dígitos" : "Sua senha pessoal"}
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  className={`w-full border rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 pr-10 ${isAdminPrompt ? 'border-red-300 bg-red-50/50' : 'border-gray-300 bg-gray-50'}`}
+                  required
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-emerald-600 transition-colors cursor-pointer"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
           )}
 
@@ -260,7 +306,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
               disabled={loading}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar Blindagem' : showRegisterPrompt ? 'Enviar Solicitação de Entrada' : 'Entrar no Bolão'}
+              {loading ? 'Verificando...' : (isAdminPrompt || memberNeedsPassword) ? 'Confirmar Acesso' : showRegisterPrompt ? 'Enviar Solicitação de Entrada' : 'Entrar no Bolão'}
             </button>
           </div>
         </form>
@@ -299,6 +345,11 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
                   setShowRegisterPrompt(false);
                   setNewDisplayName('');
                 }
+                if (memberNeedsPassword) {
+                  setMemberNeedsPassword(false);
+                  setFoundMember(null);
+                  setPasswordInput('');
+                }
               }}
               className="w-full border border-gray-300 rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 bg-gray-50"
               required
@@ -307,18 +358,29 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             <p className="text-[10px] text-gray-500 mt-1">O número deve estar cadastrado previamente pelo administrador.</p>
           </div>
 
-          {isAdminPrompt && (
+          {(isAdminPrompt || memberNeedsPassword) && (
             <div className="text-left animate-in fade-in slide-in-from-top-1 duration-200">
-              <label className="block text-xs font-bold text-red-600 mb-1.5">🔒 Senha de Blindagem Administrativa</label>
-              <input
-                type="password"
-                placeholder="Digite a senha de 6 dígitos"
-                value={passwordInput}
-                onChange={e => setPasswordInput(e.target.value)}
-                className="w-full border border-red-300 rounded-xl p-3 text-sm font-semibold focus:outline-red-600 bg-red-50/50"
-                required
-                autoFocus
-              />
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                {isAdminPrompt ? '🔒 Senha de Blindagem Administrativa' : '🔒 Sua Senha de Acesso'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder={isAdminPrompt ? "Digite a senha de 6 dígitos" : "Sua senha pessoal"}
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  className={`w-full border rounded-xl p-3 text-sm font-semibold focus:outline-emerald-600 pr-10 ${isAdminPrompt ? 'border-red-300 bg-red-50/50' : 'border-gray-300 bg-gray-50'}`}
+                  required
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-emerald-600 transition-colors cursor-pointer"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
           )}
 
@@ -354,7 +416,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
               disabled={loading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Verificando...' : isAdminPrompt ? 'Confirmar' : showRegisterPrompt ? 'Solicitar Entrada' : 'Entrar no Bolão'}
+              {loading ? 'Verificando...' : (isAdminPrompt || memberNeedsPassword) ? 'Confirmar' : showRegisterPrompt ? 'Solicitar Entrada' : 'Entrar no Bolão'}
             </button>
           </div>
         </form>

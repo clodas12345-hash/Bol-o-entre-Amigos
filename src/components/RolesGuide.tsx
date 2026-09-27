@@ -1,6 +1,11 @@
 import PageHeader from './PageHeader';
+import { usePermissions } from '../lib/PermissionsContext';
+import PermissionsSettings from './PermissionsSettings';
 
 export default function RolesGuide() {
+  const { can } = usePermissions();
+  const canManagePermissions = can('system_manage_permissions');
+
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       <PageHeader
@@ -88,6 +93,15 @@ export default function RolesGuide() {
           </div>
         </div>
       </div>
+
+      {canManagePermissions && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 mt-6">
+          <h3 className="text-lg font-black text-purple-950 mb-3 flex items-center gap-2">
+            <span>🛡️</span> Gerenciamento de Permissões
+          </h3>
+          <PermissionsSettings embedded={true} />
+        </div>
+      )}
     </div>
   );
 }

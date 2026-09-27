@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
@@ -25,6 +25,9 @@ import LotofacilBacktester from './components/LotofacilBacktester';
 import RolesGuide from './components/RolesGuide';
 import PhoneLoginModal from './components/PhoneLoginModal';
 import EditProfileModal from './components/EditProfileModal';
+import SetPasswordModal from './components/SetPasswordModal';
+import BetReleaseManager from './components/BetReleaseManager';
+import MemberBetSubmission from './components/MemberBetSubmission';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
@@ -34,6 +37,7 @@ import { UploadProvider, useUpload } from './lib/UploadContext';
 import { PermissionsProvider, usePermissions } from './lib/PermissionsContext';
 import { PendingRequestsProvider, usePendingRequests } from './lib/PendingRequestsContext';
 import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from './lib/formatters';
+import { PermissionKey } from './lib/permissions';
 
 import logoImg from './assets/images/bolao_logo_app.png';
 
@@ -170,11 +174,80 @@ function BackgroundUploadStatus() {
           )}
         </div>
       )}
+
+
     </div>
   );
 }
 
-function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactNode, user: any, isAdmin: boolean, onSignOut: () => void }) {
+function WaitingForApprovalScreen({ user, userData, onSignOut }: { user: any, userData: any, onSignOut: () => void }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-950 to-blue-950 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] max-w-md w-full overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-300">
+        <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 text-center text-white relative">
+          <div className="absolute top-4 right-4 animate-ping w-2.5 h-2.5 rounded-full bg-white opacity-75" />
+          <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 shadow-inner animate-bounce-slow">
+            ⏳
+          </div>
+          <h2 className="text-xl font-black uppercase tracking-wide">Cadastro Pendente</h2>
+          <p className="text-xs text-amber-100 font-semibold mt-1">Aguardando Aprovação do Administrador</p>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <div className="text-sm text-gray-600 leading-relaxed space-y-3 text-left">
+            <p>
+              Olá, <strong className="text-gray-900">{userData?.displayName || user?.displayName || 'Participante'}</strong>!
+            </p>
+            <p>
+              Seu cadastro foi registrado com sucesso em nosso sistema do <strong className="text-gray-900">Bolão Amigos</strong>.
+            </p>
+            <p>
+              Para garantir a segurança de todos os participantes, as finanças e apostas do grupo são privadas. Um administrador precisa aprovar seu acesso antes que você possa visualizar os jogos e participar do chat.
+            </p>
+          </div>
+
+          {/* Dados Cadastrados */}
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-150 space-y-2 text-xs text-left">
+            <p className="font-bold text-gray-500 uppercase tracking-widest text-[9px] mb-2">Seus Dados de Acesso:</p>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Nome:</span>
+              <span className="font-bold text-gray-800">{userData?.displayName || user?.displayName}</span>
+            </div>
+            {userData?.phone && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">WhatsApp:</span>
+                <span className="font-mono font-bold text-gray-800">{userData.phone}</span>
+              </div>
+            )}
+            {userData?.email && (
+              <div className="flex justify-between text-right">
+                <span className="text-gray-500">E-mail:</span>
+                <span className="font-bold text-gray-800 truncate max-w-[200px]">{userData.email}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="text-center bg-amber-50/50 border border-amber-100 rounded-xl p-3 text-amber-800 text-[11px] font-semibold animate-pulse flex items-center justify-center gap-1.5">
+            <span className="text-base">🔄</span>
+            <span>Esta tela se atualizará automaticamente assim que você for aprovado!</span>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={onSignOut}
+              className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded-2xl font-black transition text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-2xs border border-red-200"
+            >
+              <span>🚪</span>
+              <span>Sair / Entrar com outra conta</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData }: { children: React.ReactNode, user: any, userData: any, isAdmin: boolean, onSignOut: () => void, onUpdateUserData?: (data: any) => void }) {
   const { isQuotaExceeded, setIsQuotaExceeded, activePool } = usePool();
   const { can, isAdmin: permissionsIsAdmin, isSimulating, simulatedRole, setSimulatedRole } = usePermissions();
   const { pendingJoinRequests, pendingQuotaRequests, totalPendingCount } = usePendingRequests();
@@ -239,207 +312,235 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
     }, err => {
       console.warn('Current contest header fetch error:', err);
     });
-    return () => unsub();
+    return unsub;
   }, [resultsCollection]);
 
+  const { addToast } = useToast();
+  const isHome = location.pathname === '/';
+  const displayContestNum = activePool?.currentContest || currentContest;
+  const canManageMembers = can('members_edit');
+
   const handleSaveCustomContest = async () => {
-    if (!activePool?.id) return;
-    const num = Number(customContestInput);
-    if (!isNaN(num) && num > 0) {
-      try {
-        await updateDoc(doc(db, 'pools', activePool.id), {
-          currentContest: num
-        });
-        setIsEditingContest(false);
-      } catch (err) {
-        console.error('Erro ao salvar concurso personalizado:', err);
-      }
-    } else if (customContestInput === '') {
-      try {
-        await updateDoc(doc(db, 'pools', activePool.id), {
-          currentContest: null
-        });
-        setIsEditingContest(false);
-      } catch (err) {
-        console.error('Erro ao apagar concurso personalizado:', err);
-      }
+    if (!customContestInput.trim() || !activePool?.id) return;
+    try {
+      const poolRef = doc(db, 'pools', activePool.id);
+      await updateDoc(poolRef, {
+        currentContest: Number(customContestInput.trim())
+      });
+      setIsEditingContest(false);
+      addToast('Concurso vigente atualizado com sucesso!', 'success');
+    } catch (err) {
+      console.error('Error saving custom contest:', err);
+      addToast('Erro ao atualizar concurso vigente.', 'error');
     }
   };
 
-  if (!user) return <>{children}</>;
-
-  const displayContestNum = activePool?.currentContest || currentContest;
-  const isHome = location.pathname === '/';
-
-  const isFinalAdmin = isAdmin || permissionsIsAdmin || user?.email === 'clodas12345@gmail.com';
-  const canManageMembers = isFinalAdmin || can('members_approve_quota') || can('members_create') || can('members_edit');
-  const isAdminOrCounselor = isFinalAdmin || can('games_create');
-
-  const navLinks = [
-    { to: '/', label: 'Início', icon: '🏠' },
-    { to: '/contatos', label: 'Contatos', icon: '👥', badge: (canManageMembers && totalPendingCount > 0) ? totalPendingCount : null },
-    { to: '/chat', label: 'Chat', icon: '💬' },
-    { to: '/calendar', label: 'Agenda', icon: '📅' },
-    ...(isAdminOrCounselor ? [
-      { to: '/whatsapp', label: 'WhatsApp', icon: '📢' },
-      { to: '/desdobramentos', label: 'Desdobramentos', icon: '🎯' },
+  const navLinks = useMemo(() => {
+    const links: { to: string; label: string; icon: string; badge?: number }[] = [
+      { to: '/', label: 'Apostas', icon: '🎰' },
       { to: '/rules', label: 'Regras', icon: '📜' },
-      { to: '/permissoes', label: 'Papéis', icon: '🛡️' },
-      { to: '/backup', label: 'Backup', icon: '💾' },
-      { to: '/profile', label: 'Configurações', icon: '⚙️' }
-    ] : [])
-  ];
+      { to: '/calendar', label: 'Calendário', icon: '📅' },
+      { to: '/desdobramentos', label: 'Desdobramentos', icon: '🎯' },
+      { to: '/chat', label: 'Chat', icon: '💬' },
+    ];
+
+    if (can('members_view')) {
+      links.push({
+        to: '/contatos',
+        label: 'Contatos',
+        icon: '👥',
+        badge: canManageMembers && totalPendingCount > 0 ? totalPendingCount : undefined
+      } as any);
+    }
+
+    if (can('whatsapp_view')) {
+      links.push({ to: '/whatsapp', label: 'WhatsApp', icon: '📢' } as any);
+    }
+
+    links.push({ to: '/permissoes', label: 'Ajuda / Papéis', icon: '🛡️' } as any);
+
+    if (can('system_backup_restore')) {
+      links.push({ to: '/backup', label: 'Backup', icon: '⚙️' } as any);
+    }
+
+    return links;
+  }, [can, canManageMembers, totalPendingCount]);
+
+  const isUserApproved = userData?.approved === true || isAdmin;
+
+  const isSettingPassword = user && userData?.approved === true && !userData?.passwordSet && !isAdmin;
+  const hideHeader = !user || isSettingPassword;
+
+  if (user && !isUserApproved) {
+    return <WaitingForApprovalScreen user={user} userData={userData} onSignOut={onSignOut} />;
+  }
+
+  if (isSettingPassword) {
+    return (
+      <SetPasswordModal 
+        userId={userData.id} 
+        onClose={() => {
+          // If admin skips, we just let them through this session
+          if (isAdmin) {
+            onUpdateUserData?.({ ...userData, passwordSet: 'skipped' });
+          }
+        }} 
+        onSuccess={() => onUpdateUserData?.({ ...userData, passwordSet: true })}
+        onSignOut={onSignOut}
+        canSkip={isAdmin}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
-      <NotificationManager />
-        
-        {/* Barra de Navegação Superior */}
-        <header className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-md sticky top-0 z-40">
-          <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-2">
-            {/* Logo & Botão Voltar */}
+    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white">
+      {!hideHeader && (
+        <header className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white py-3 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+              {/* Logo & Botão Voltar */}
               <div className="flex items-center gap-1.5 sm:gap-2">
-                {!isHome && (
-                  <button
-                    onClick={() => {
-                      if (window.history.length > 1) {
-                        navigate(-1);
-                      } else {
-                        navigate('/');
-                      }
-                    }}
-                    className="px-2 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                    title="Voltar ao Início"
+                  {!isHome && (
+                    <button
+                      onClick={() => {
+                        if (window.history.length > 1) {
+                          navigate(-1);
+                        } else {
+                          navigate('/');
+                        }
+                      }}
+                      className="px-2 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                      title="Voltar ao Início"
+                    >
+                      <span>←</span>
+                      <span className="hidden sm:inline text-[11px]">Início</span>
+                    </button>
+                  )}
+                  <div 
+                    onClick={() => navigate('/')}
+                    className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-1.5 sm:gap-2.5 hover:opacity-95 transition cursor-pointer py-0.5 shrink-0"
+                    title="Página Inicial do Bolão"
                   >
-                    <span>←</span>
-                    <span className="text-[11px]">Início</span>
-                  </button>
-                )}
-                <div 
-                  onClick={() => navigate('/')}
-                  className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-2.5 hover:opacity-95 transition cursor-pointer py-0.5"
-                  title="Página Inicial do Bolão"
-                >
-                  <img src={logoImg} alt="Logotipo" className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-white/60 shadow-lg ring-2 ring-white/30 hover:scale-105 transition-transform" />
-                  <span className="hidden xs:inline font-black text-white drop-shadow-md">Bolão Amigos</span>
+                    <img src={logoImg} alt="Logotipo" className="w-10 h-10 xs:w-12 xs:h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-white/60 shadow-lg ring-2 ring-white/30 hover:scale-105 transition-transform shrink-0" />
+                    <span className="hidden md:inline font-black text-white drop-shadow-md">Bolão Amigos</span>
+                  </div>
                 </div>
+
+              {/* Seleção de Bolão, Chat & Notificações */}
+              <div className="flex items-center gap-1 sm:gap-2">
+                <PoolSelector />
+
+                {/* Ícone do Chat ao lado da Notificação */}
+                <button
+                  onClick={() => {
+                    if (user?.uid) {
+                      localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
+                      setUnreadChatCount(0);
+                    }
+                    navigate('/chat');
+                  }}
+                  className={`relative p-2 rounded-xl transition cursor-pointer flex items-center justify-center border ${
+                    location.pathname === '/chat'
+                      ? 'bg-white/30 text-white border-white/40 shadow-inner'
+                      : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+                  }`}
+                  title="Abrir Chat do Bolão"
+                >
+                  <span className="text-base sm:text-lg">💬</span>
+                  {unreadChatCount > 0 && location.pathname !== '/chat' && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 text-blue-950 text-[10px] font-black rounded-full flex items-center justify-center border-2 border-blue-900 animate-bounce shadow-sm">
+                      {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                    </span>
+                  )}
+                </button>
+
+                <NotificationBell />
+                
+                {/* Botão Menu Mobile */}
+                <button
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="md:hidden bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer relative"
+                >
+                  <span>{mobileMenuOpen ? '✕' : '☰'}</span>
+                  {totalPendingCount > 0 && canManageMembers && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-blue-800 animate-pulse">
+                      {totalPendingCount}
+                    </span>
+                  )}
+                </button>
               </div>
 
-            {/* Seleção de Bolão, Chat & Notificações */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              <PoolSelector />
-
-              {/* Ícone do Chat ao lado da Notificação */}
-              <button
-                onClick={() => {
-                  if (user?.uid) {
-                    localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
-                    setUnreadChatCount(0);
-                  }
-                  navigate('/chat');
-                }}
-                className={`relative p-2 rounded-xl transition cursor-pointer flex items-center justify-center border ${
-                  location.pathname === '/chat'
-                    ? 'bg-white/30 text-white border-white/40 shadow-inner'
-                    : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-                }`}
-                title="Abrir Chat do Bolão"
-              >
-                <span className="text-base sm:text-lg">💬</span>
-                {unreadChatCount > 0 && location.pathname !== '/chat' && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 text-blue-950 text-[10px] font-black rounded-full flex items-center justify-center border-2 border-blue-900 animate-bounce shadow-sm">
-                    {unreadChatCount > 9 ? '9+' : unreadChatCount}
-                  </span>
-                )}
-              </button>
-
-              <NotificationBell />
-              
-              {/* Botão Menu Mobile */}
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer relative"
-              >
-                <span>{mobileMenuOpen ? '✕' : '☰'}</span>
-                {totalPendingCount > 0 && canManageMembers && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-blue-800 animate-pulse">
-                    {totalPendingCount}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Links Desktop */}
-            <nav className="hidden md:flex items-center gap-1.5">
-            {navLinks.map(link => {
-              const active = location.pathname === link.to;
-              return (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 relative ${
-                    active ? 'bg-white/20 text-white shadow-inner' : 'text-blue-100 hover:bg-white/10'
-                  }`}
-                >
-                  <span>{link.icon}</span>
-                  <span>{link.label}</span>
-                  {link.badge && (
-                    <span className="ml-0.5 px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-black rounded-full shadow-xs animate-pulse">
-                      {link.badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-
-            <button
-              onClick={onSignOut}
-              className="ml-2 text-xs bg-red-500/80 hover:bg-red-600 text-white px-2.5 py-1.5 rounded-lg font-semibold transition shadow-2xs cursor-pointer"
-              title="Encerrar sessão"
-            >
-              Sair
-            </button>
-          </nav>
-        </div>
-
-        {/* Menu Dropdown Mobile */}
-        {mobileMenuOpen && (
-          <div className="md:hidden bg-blue-900 border-t border-blue-800 p-3 space-y-1.5 animate-in slide-in-from-top duration-150">
-            {navLinks.map(link => {
-              const active = location.pathname === link.to;
-              return (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
-                    active ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
+              {/* Links Desktop */}
+              <nav className="hidden md:flex items-center gap-1.5">
+              {navLinks.map(link => {
+                const active = location.pathname === link.to;
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 relative ${
+                      active ? 'bg-white/20 text-white shadow-inner' : 'text-blue-100 hover:bg-white/10'
+                    }`}
+                  >
                     <span>{link.icon}</span>
                     <span>{link.label}</span>
-                  </span>
-                  {link.badge && (
-                    <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-black rounded-full">
-                      {link.badge} pendente(s)
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                onSignOut();
-              }}
-              className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold bg-red-600 text-white hover:bg-red-700 transition"
-            >
-              🚪 Sair da Conta
-            </button>
+                    {link.badge && (
+                      <span className="ml-0.5 px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-black rounded-full shadow-xs animate-pulse">
+                        {link.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+
+              <button
+                onClick={onSignOut}
+                className="ml-2 text-xs bg-red-500/80 hover:bg-red-600 text-white px-2.5 py-1.5 rounded-lg font-semibold transition shadow-2xs cursor-pointer"
+                title="Encerrar sessão"
+              >
+                Sair
+              </button>
+            </nav>
           </div>
-        )}
-      </header>
+
+          {/* Menu Dropdown Mobile */}
+          {mobileMenuOpen && (
+            <div className="md:hidden bg-blue-900 border-t border-blue-800 p-3 space-y-1.5 animate-in slide-in-from-top duration-150">
+              {navLinks.map(link => {
+                const active = location.pathname === link.to;
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                      active ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>{link.icon}</span>
+                      <span>{link.label}</span>
+                    </span>
+                    {link.badge && (
+                      <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-black rounded-full">
+                        {link.badge} pendente(s)
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onSignOut();
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold bg-red-600 text-white hover:bg-red-700 transition"
+              >
+                🚪 Sair da Conta
+              </button>
+            </div>
+          )}
+        </header>
+      )}
 
       {/* Banner de Simulação Ativa para o Administrador */}
       {isSimulating && (
@@ -460,69 +561,71 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
       )}
 
       {/* Sub-header com Concurso Vigente Sincronizado */}
-      <div className="bg-emerald-50 border-b border-emerald-100 py-2 px-3 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-            <span className="text-gray-700 font-medium">Concurso Vigente:</span>
-            
-            {isEditingContest ? (
-              <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95">
-                <input
-                  type="number"
-                  placeholder="Ex: 3251"
-                  value={customContestInput}
-                  onChange={(e) => setCustomContestInput(e.target.value)}
-                  className="w-20 bg-white border border-emerald-300 rounded px-1.5 py-0.5 text-xs text-gray-800 font-bold focus:outline-emerald-600"
-                  autoFocus
-                />
-                <button
-                  onClick={handleSaveCustomContest}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition shadow-2xs"
-                  title="Salvar Concurso"
-                >
-                  Salvar
-                </button>
-                <button
-                  onClick={() => setIsEditingContest(false)}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition"
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                {displayContestNum ? (
-                  <span className="bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
-                    #{displayContestNum}
-                  </span>
-                ) : (
-                  <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
-                )}
-                
-                {can('games_official_result_edit') && (
+      {!hideHeader && (
+        <div className="bg-emerald-50 border-b border-emerald-100 py-2 px-3 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-gray-700 font-medium">Concurso Vigente:</span>
+              
+              {isEditingContest ? (
+                <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95">
+                  <input
+                    type="number"
+                    placeholder="Ex: 3251"
+                    value={customContestInput}
+                    onChange={(e) => setCustomContestInput(e.target.value)}
+                    className="w-20 bg-white border border-emerald-300 rounded px-1.5 py-0.5 text-xs text-gray-800 font-bold focus:outline-emerald-600"
+                    autoFocus
+                  />
                   <button
-                    onClick={() => {
-                      setCustomContestInput(displayContestNum ? String(displayContestNum) : '');
-                      setIsEditingContest(true);
-                    }}
-                    className="text-emerald-700 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md text-[10px] cursor-pointer transition-colors font-bold"
-                    title="Editar Concurso Vigente"
+                    onClick={handleSaveCustomContest}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition shadow-2xs"
+                    title="Salvar Concurso"
                   >
-                    ✏️ Alterar
+                    Salvar
                   </button>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider flex items-center gap-1.5 bg-emerald-100/50 px-2 py-0.5 rounded-md">
-            <span>{activePool?.currentContest ? '📌 Forçado por Admin' : '🟢 Sincronizado'}</span>
+                  <button
+                    onClick={() => setIsEditingContest(false)}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  {displayContestNum ? (
+                    <span className="bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
+                      #{displayContestNum}
+                    </span>
+                  ) : (
+                    <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
+                  )}
+                  
+                  {can('games_official_result_edit') && (
+                    <button
+                      onClick={() => {
+                        setCustomContestInput(displayContestNum ? String(displayContestNum) : '');
+                        setIsEditingContest(true);
+                      }}
+                      className="text-emerald-700 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md text-[10px] cursor-pointer transition-colors font-bold"
+                      title="Editar Concurso Vigente"
+                    >
+                      Alterar
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider flex items-center gap-1.5 bg-emerald-100/50 px-2 py-0.5 rounded-md">
+              <span>{activePool?.currentContest ? '📌 Forçado por Admin' : '🟢 Sincronizado'}</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Conteúdo Principal */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5">
@@ -662,6 +765,21 @@ function Layout({ children, user, isAdmin, onSignOut }: { children: React.ReactN
       </footer>
     </div>
   );
+}
+
+function ProtectedRoute({ children, permission }: { children: React.ReactNode; permission: PermissionKey }) {
+  const { can, loading } = usePermissions();
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-gray-500 font-semibold text-sm">
+        Carregando permissões...
+      </div>
+    );
+  }
+  if (!can(permission)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -852,78 +970,100 @@ export default function App() {
 
     sanitizeContestsMemory();
 
+    let unsubUserRealtime = () => {};
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      unsubUserRealtime(); // Cancela listener anterior se houver
+
       if (currentUser) {
-        try {
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            const uData = userDocSnap.data();
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const memberDocRef = doc(db, 'members', currentUser.uid);
+
+        // Listener em tempo real para mudanças no cadastro do usuário
+        unsubUserRealtime = onSnapshot(userDocRef, async (userSnap) => {
+          if (userSnap.exists()) {
+            const uData = userSnap.data();
             setUserData(uData);
             try {
               localStorage.setItem('bolao_cache_user_data', JSON.stringify(uData));
             } catch (cacheErr) {
               console.warn('Failed to cache user data:', cacheErr);
             }
+            setLoading(false);
           } else {
-            const memberRef = doc(db, 'members', currentUser.uid);
-            const memberSnap = await getDoc(memberRef);
-            if (memberSnap.exists()) {
-              const mData = memberSnap.data();
-              setUserData(mData);
-              try {
-                localStorage.setItem('bolao_cache_user_data', JSON.stringify(mData));
-              } catch (cacheErr) {
-                console.warn('Failed to cache user member data:', cacheErr);
+            // Se não existe na coleção 'users', verifica 'members'
+            try {
+              const memberSnap = await getDoc(memberDocRef);
+              if (memberSnap.exists()) {
+                // Se existe em 'members', escuta mudanças em tempo real lá
+                unsubUserRealtime = onSnapshot(memberDocRef, (memSnap) => {
+                  if (memSnap.exists()) {
+                    const mData = memSnap.data();
+                    setUserData(mData);
+                    try {
+                      localStorage.setItem('bolao_cache_user_data', JSON.stringify(mData));
+                    } catch (cacheErr) {
+                      console.warn('Failed to cache member data:', cacheErr);
+                    }
+                  }
+                  setLoading(false);
+                });
+              } else {
+                // Novo usuário via Google: cadastra com approved = false (exceto admin clodas)
+                const isAdminEmail = currentUser.email === 'clodas12345@gmail.com';
+                const defaultData = {
+                  uid: currentUser.uid,
+                  email: currentUser.email,
+                  displayName: currentUser.displayName || 'Participante',
+                  role: isAdminEmail ? 'admin' : 'participante',
+                  approved: isAdminEmail ? true : false,
+                  createdAt: new Date().toISOString()
+                };
+                await setDoc(userDocRef, defaultData);
+                setUserData(defaultData);
+                try {
+                  localStorage.setItem('bolao_cache_user_data', JSON.stringify(defaultData));
+                } catch (cacheErr) {
+                  console.warn('Failed to cache default user data:', cacheErr);
+                }
+                setLoading(false);
               }
-            } else {
-              const defaultData = {
-                uid: currentUser.uid,
-                email: currentUser.email,
-                displayName: currentUser.displayName || 'Participante',
-                role: currentUser.email === 'clodas12345@gmail.com' ? 'admin' : 'participante',
-                approved: true,
-                createdAt: new Date().toISOString()
-              };
-              await setDoc(userDocRef, defaultData);
-              setUserData(defaultData);
-              try {
-                localStorage.setItem('bolao_cache_user_data', JSON.stringify(defaultData));
-              } catch (cacheErr) {
-                console.warn('Failed to cache default user data:', cacheErr);
-              }
+            } catch (err) {
+              console.warn('Erro ao verificar coleção members:', err);
+              setLoading(false);
             }
           }
-        } catch (err) {
-          console.warn('Erro ao buscar dados do usuário, carregando do cache local de segurança:', err);
+        }, async (snapErr) => {
+          console.warn('Erro no listener em tempo real, usando fallback de getDoc:', snapErr);
+          // Fallback silencioso via getDoc em caso de erro de regras/permissões iniciais
           try {
-            const cached = localStorage.getItem('bolao_cache_user_data');
-            if (cached) {
-              setUserData(JSON.parse(cached));
+            const userSnap = await getDoc(userDocRef);
+            if (userSnap.exists()) {
+              const uData = userSnap.data();
+              setUserData(uData);
             } else {
-              // Fallback inteligente para o Administrador principal
-              const fallbackData = {
-                uid: currentUser.uid,
-                email: currentUser.email,
-                displayName: currentUser.displayName || 'Participante',
-                role: currentUser.email === 'clodas12345@gmail.com' ? 'admin' : 'participante',
-                approved: true,
-                createdAt: new Date().toISOString()
-              };
-              setUserData(fallbackData);
+              const memberSnap = await getDoc(memberDocRef);
+              if (memberSnap.exists()) {
+                const mData = memberSnap.data();
+                setUserData(mData);
+              }
             }
-          } catch (cacheErr) {
-            console.error('Erro ao ler cache de dados de usuário:', cacheErr);
+          } catch (fbErr) {
+            console.error('Fallback fetch user error:', fbErr);
           }
-        }
+          setLoading(false);
+        });
       } else {
         setUserData(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubUserRealtime();
+    };
   }, []);
 
   const handleLogin = async () => {
@@ -954,7 +1094,7 @@ export default function App() {
         <PendingRequestsProvider>
           <UploadProvider>
             <BrowserRouter>
-            <Layout user={activeUser} isAdmin={isUserAdmin} onSignOut={handleSignOut}>
+            <Layout user={activeUser} userData={activeUserData} isAdmin={isUserAdmin} onSignOut={handleSignOut} onUpdateUserData={setUserData}>
             <Routes>
           <Route path="/" element={
             activeUser ? (
@@ -971,7 +1111,7 @@ export default function App() {
                           <span>👋</span> Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
                         </h1>
                         <span className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition shadow-2xs">
-                          ✏️ Editar Cadastro
+                          Editar Cadastro
                         </span>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
@@ -991,33 +1131,49 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Componente para Membros enviarem suas apostas (apenas se houver liberação ativa) */}
+                  {activeUser && (
+                    <MemberBetSubmission user={activeUser} userData={activeUserData} />
+                  )}
+
+                  {/* Gestão de Liberação de Apostas (Apenas Admin) */}
+                  {isUserAdmin && <BetReleaseManager />}
+
                   {/* 1. Tabela de Jogos Cadastrados, Apostas e Resultado Oficial Caixa Unificado */}
                   <GamesTable onOpenNewGame={() => setShowNewGameModal(true)} />
 
-                  {/* 2. Dashboard Financeiro Principal */}
-                  <div className="bg-white rounded-xl shadow-xs border overflow-hidden">
-                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                      <h2 className="font-bold text-sm text-gray-800">📊 Painel Financeiro e Caixa</h2>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => window.print()}
-                          className="bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
-                        >
-                          <span>🖨️</span> Imprimir Relatório
-                        </button>
-                        <ExportButton />
+                  {/* 2. Dashboard Financeiro Principal (Apenas Admin) */}
+                  {isUserAdmin && (
+                    <div className="bg-white rounded-xl shadow-xs border overflow-hidden">
+                      <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                        <h2 className="font-bold text-sm text-gray-800">📊 Painel Financeiro e Caixa</h2>
+                        <div className="flex items-center gap-2">
+                          {(activeUserData?.role === 'admin' || activeUserData?.role === 'counselor' || activeUser?.email === 'clodas12345@gmail.com' || (activeUserData?.phone && normalizeBrazilianPhoneDigits(activeUserData.phone).includes('11953292570'))) && (
+                            <>
+                              <button
+                                onClick={() => window.print()}
+                                className="bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                              >
+                                <span>🖨️</span> Imprimir Relatório
+                              </button>
+                              <ExportButton />
+                            </>
+                          )}
+                        </div>
                       </div>
+                      <FinancialDashboard />
                     </div>
-                    <FinancialDashboard />
-                  </div>
+                  )}
 
-                  {/* 4. Gráficos Visuais Avançados */}
-                  <VisualChartsDashboard />
+                  {/* 4. Gráficos Visuais Avançados (Apenas Admin) */}
+                  {isUserAdmin && <VisualChartsDashboard />}
 
-                  {/* 5. Relatório Financeiro Detalhado */}
-                  <div className="bg-white rounded-xl shadow-xs border p-4">
-                    <DetailedFinancialReport />
-                  </div>
+                  {/* 5. Relatório Financeiro Detalhado (Apenas Admin) */}
+                  {isUserAdmin && (
+                    <div className="bg-white rounded-xl shadow-xs border p-4">
+                      <DetailedFinancialReport />
+                    </div>
+                  )}
 
                   {/* Modais do Sistema */}
                   {showPaymentModal && <PaymentModal onClose={() => setShowPaymentModal(false)} />}
@@ -1058,7 +1214,7 @@ export default function App() {
                       };
                       const memberData = {
                         ...member,
-                        approved: member.approved !== undefined ? member.approved : true,
+                        approved: member.approved === true, // Strict check: only true becomes true
                         role: member.role || 'participante'
                       };
                       setPhoneUser({ sessionUser, memberData });
@@ -1069,9 +1225,9 @@ export default function App() {
               </div>
             )
           } />
-          <Route path="/contatos" element={activeUser ? <MembersList /> : <Navigate to="/" />} />
+           <Route path="/contatos" element={activeUser ? <ProtectedRoute permission="members_view"><MembersList /></ProtectedRoute> : <Navigate to="/" />} />
           <Route path="/chat" element={activeUser ? <Chat /> : <Navigate to="/" />} />
-          <Route path="/whatsapp" element={activeUserData?.role === 'admin' || activeUserData?.role === 'counselor' ? <WhatsAppHub /> : <Navigate to="/" />} />
+          <Route path="/whatsapp" element={activeUser ? <ProtectedRoute permission="whatsapp_view"><WhatsAppHub /></ProtectedRoute> : <Navigate to="/" />} />
           <Route path="/desdobramentos" element={activeUser ? <LotofacilDesdobramento /> : <Navigate to="/" />} />
           <Route path="/calendar" element={activeUser ? <CalendarAgenda /> : <Navigate to="/" />} />
           <Route path="/backtest" element={activeUser ? <LotofacilBacktester /> : <Navigate to="/" />} />
@@ -1080,7 +1236,7 @@ export default function App() {
           <Route path="/profile" element={activeUser ? <UserProfile /> : <Navigate to="/" />} />
           <Route path="/rules" element={activeUser ? <RulesAndNorms /> : <Navigate to="/" />} />
           <Route path="/permissoes" element={activeUser ? <RolesGuide /> : <Navigate to="/" />} />
-          <Route path="/backup" element={activeUser ? <BackupManager /> : <Navigate to="/" />} />
+          <Route path="/backup" element={activeUser ? <ProtectedRoute permission="system_backup_restore"><BackupManager /></ProtectedRoute> : <Navigate to="/" />} />
         </Routes>
           </Layout>
         </BrowserRouter>

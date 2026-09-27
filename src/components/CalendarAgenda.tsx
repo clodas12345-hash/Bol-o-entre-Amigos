@@ -76,14 +76,21 @@ export default function CalendarAgenda() {
     }
   };
 
-  // Dias oficiais de sorteio da Lotofácil (Segunda a Sábado às 20h00)
-  const lotofacilDays = [
-    { day: 'Segunda-feira', time: '20:00', desc: 'Sorteio Oficial Caixa' },
-    { day: 'Terça-feira', time: '20:00', desc: 'Sorteio Oficial Caixa' },
-    { day: 'Quarta-feira', time: '20:00', desc: 'Sorteio Oficial Caixa' },
-    { day: 'Quinta-feira', time: '20:00', desc: 'Sorteio Oficial Caixa' },
-    { day: 'Sexta-feira', time: '20:00', desc: 'Sorteio Oficial Caixa' },
-    { day: 'Sábado', time: '20:00', desc: 'Sorteio Oficial Caixa' },
+  const { activePool } = usePool();
+  const isMegaSena = activePool?.lotteryType === 'megasena';
+
+  // Dias oficiais de sorteio da modalidade ativa
+  const drawDays = isMegaSena ? [
+    { day: 'Terça-feira', time: '20:00', desc: 'Sorteio Oficial Mega-Sena Caixa' },
+    { day: 'Quinta-feira', time: '20:00', desc: 'Sorteio Oficial Mega-Sena Caixa' },
+    { day: 'Sábado', time: '20:00', desc: 'Sorteio Oficial Mega-Sena Caixa' },
+  ] : [
+    { day: 'Segunda-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
+    { day: 'Terça-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
+    { day: 'Quarta-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
+    { day: 'Quinta-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
+    { day: 'Sexta-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
+    { day: 'Sábado', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
   ];
 
   return (
@@ -173,11 +180,11 @@ export default function CalendarAgenda() {
         </div>
       )}
 
-      {/* Sorteios Oficiais Recorrentes da Lotofácil */}
+      {/* Sorteios Oficiais Recorrentes da Modalidade */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-3">
         <div className="flex justify-between items-center">
           <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-            <span>⏰</span> Dias Recorrentes de Sorteio da Lotofácil
+            <span>⏰</span> Dias Recorrentes de Sorteio ({isMegaSena ? 'Mega-Sena' : 'Lotofácil'})
           </h3>
           <span className="text-[11px] bg-purple-100 text-purple-800 font-semibold px-2.5 py-0.5 rounded-full">
             Caixa Econômica Federal
@@ -185,7 +192,7 @@ export default function CalendarAgenda() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {lotofacilDays.map((d, i) => (
+          {drawDays.map((d, i) => (
             <div key={i} className="bg-purple-50/70 border border-purple-200 p-3 rounded-xl flex items-center justify-between">
               <div>
                 <span className="font-bold text-purple-900 text-xs block">{d.day}</span>

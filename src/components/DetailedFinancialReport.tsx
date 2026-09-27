@@ -6,9 +6,11 @@ import { useToast } from './NotificationManager';
 import PixPaymentArea from './PixPaymentArea';
 import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { usePool } from '../lib/PoolContext';
+import { usePermissions } from '../lib/PermissionsContext';
 
 export default function DetailedFinancialReport() {
   const { setIsQuotaExceeded, activePool } = usePool();
+  const { can } = usePermissions();
   const [payments, setPayments] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
@@ -217,20 +219,32 @@ export default function DetailedFinancialReport() {
                     </td>
                     <td className="p-2.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => togglePaymentStatus(m)}
-                          disabled={isUpdatingStatus === m.id}
-                          title="Clique para alternar entre Pago e Pendente"
-                          className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition shadow-2xs ${
-                            isPaid
-                              ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
-                              : 'bg-red-500 hover:bg-red-600 text-white'
-                          }`}
-                        >
-                          {isPaid ? '✓ Pago' : 'Pendente'}
-                        </button>
+                        {can('members_toggle_payment') ? (
+                          <button
+                            onClick={() => togglePaymentStatus(m)}
+                            disabled={isUpdatingStatus === m.id}
+                            title="Clique para alternar entre Pago e Pendente"
+                            className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition shadow-2xs ${
+                              isPaid
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                : 'bg-red-500 hover:bg-red-600 text-white'
+                            }`}
+                          >
+                            {isPaid ? '✓ Pago' : 'Pendente'}
+                          </button>
+                        ) : (
+                          <span
+                            className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                              isPaid
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            }`}
+                          >
+                            {isPaid ? '✓ Pago' : 'Pendente'}
+                          </span>
+                        )}
 
-                        {!isPaid && (
+                        {!isPaid && can('members_send_reminder') && (
                           <a
                             href={whatsappUrl}
                             target="_blank"

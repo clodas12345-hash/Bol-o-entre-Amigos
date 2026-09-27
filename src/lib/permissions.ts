@@ -284,12 +284,12 @@ export const DEFAULT_COUNSELOR_PERMISSIONS: RolePermissions = {
   games_official_result_edit: true, // Conselheiro ajuda na conferência
   // Participantes & Membros
   members_view: true,
-  members_create: false,
-  members_edit: false,
+  members_create: true,
+  members_edit: true,
   members_change_role: false,
   members_delete: false,
-  members_toggle_payment: false,
-  members_approve_quota: false,
+  members_toggle_payment: true,
+  members_approve_quota: true,
   members_send_reminder: true, // Pode cobrar pelo WhatsApp
   // Financeiro & Caixa
   finance_view_dashboard: true,

@@ -45,6 +45,12 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
             combined.push(m);
           }
         }
+        // Ordena a lista telefônica/membros em ordem alfabética crescente (A-Z)
+        combined.sort((a, b) => {
+          const nameA = (a.displayName || a.name || '').trim();
+          const nameB = (b.displayName || b.name || '').trim();
+          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+        });
         setMembers(combined);
 
         // Processa outros dados

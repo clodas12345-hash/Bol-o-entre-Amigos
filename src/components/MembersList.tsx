@@ -3,7 +3,7 @@ import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits } from '../lib/formatters';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
 import { usePermissions } from '../lib/PermissionsContext';
@@ -33,7 +33,10 @@ const saveLocalMember = (newMember: any) => {
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
   const { isMobile, compactTableClass } = useResponsiveLayout();
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
+  if (!can('members_view')) {
+    return <Navigate to="/" replace />;
+  }
   const canCreateMember = can('members_create');
   const canEditMember = can('members_edit');
   const canDeleteMember = can('members_delete');
@@ -395,6 +398,10 @@ export default function MembersList() {
     }
 
     try {
+      if (!can('members_edit')) {
+        addToast('Apenas administradores ou conselheiros autorizados podem aprovar acessos.', 'error');
+        return;
+      }
       const colName = member.collectionName || 'members';
       const nextApproved = !member.approved;
       await updateDoc(doc(db, colName, member.id), { approved: nextApproved });
@@ -439,6 +446,10 @@ export default function MembersList() {
     }
 
     try {
+      if (!isAdmin) {
+        addToast('Apenas administradores podem aprovar solicitações de cota.', 'error');
+        return;
+      }
       const colName = member.collectionName || 'members';
       await updateDoc(doc(db, colName, member.id), {
         quotas: newQuotasAmount,
@@ -483,6 +494,11 @@ export default function MembersList() {
   };
 
   const deleteMember = async (member: any) => {
+    if (!isAdmin) {
+      addToast('Apenas administradores podem remover membros.', 'error');
+      return;
+    }
+
     if (member.isLocalOnly) {
       try {
         const local = getLocalMembers();
@@ -581,9 +597,27 @@ export default function MembersList() {
     }
   };
 
-  const approvedMembers = members;
-  const pendingJoinRequests = members.filter(m => m.approved === false);
-  const pendingQuotaRequests = members.filter(m => m.quotaRequest && m.quotaRequest.status === 'Pendente');
+  // Ordenação alfabética crescente (A-Z) para a lista telefônica / membros
+  const sortedMembers = useMemo(() => {
+    return [...members].sort((a, b) => {
+      const nameA = (a.displayName || a.name || '').trim();
+      const nameB = (b.displayName || b.name || '').trim();
+      return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+    });
+  }, [members]);
+
+  // Membros aprovados e pedidos pendentes de autorização
+  const approvedMembers = useMemo(() => {
+    return sortedMembers.filter(m => m.approved !== false);
+  }, [sortedMembers]);
+
+  const pendingJoinRequests = useMemo(() => {
+    return sortedMembers.filter(m => m.approved === false);
+  }, [sortedMembers]);
+
+  const pendingQuotaRequests = useMemo(() => {
+    return sortedMembers.filter(m => m.approved !== false && m.quotaRequest && m.quotaRequest.status === 'Pendente');
+  }, [sortedMembers]);
 
   const displayedMembers = useMemo(() => {
     if (memberFilterTab === 'pending') {
@@ -605,16 +639,7 @@ export default function MembersList() {
 
   return (
     <div className="bg-white p-4 space-y-6 rounded-2xl border border-gray-150 shadow-xs">
-      {/* Botão de Retorno ao Início / Bolão Principal */}
-      <div className="flex items-center justify-between pb-1">
-        <button
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm cursor-pointer"
-        >
-          <span>←</span>
-          <span>Voltar ao Bolão Principal (Início)</span>
-        </button>
-      </div>
+
       {confirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-5 rounded-lg shadow-xl max-w-sm w-full">
@@ -656,20 +681,22 @@ export default function MembersList() {
           <span>Todos ({members.length})</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setMemberFilterTab('pending')}
-          className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative ${
-            memberFilterTab === 'pending'
-              ? 'bg-red-600 text-white shadow-xs font-black'
-              : (pendingJoinRequests.length + pendingQuotaRequests.length > 0)
-                ? 'bg-red-100 text-red-800 hover:bg-red-200 border border-red-300 animate-pulse font-black'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
-          }`}
-        >
-          <span>📢</span>
-          <span>Pedidos Pendentes ({pendingJoinRequests.length + pendingQuotaRequests.length})</span>
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setMemberFilterTab('pending')}
+            className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative ${
+              memberFilterTab === 'pending'
+                ? 'bg-red-600 text-white shadow-xs font-black'
+                : (pendingJoinRequests.length + pendingQuotaRequests.length > 0)
+                  ? 'bg-red-100 text-red-800 hover:bg-red-200 border border-red-300 animate-pulse font-black'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+            }`}
+          >
+            <span>📢</span>
+            <span>Pedidos Pendentes ({pendingJoinRequests.length + pendingQuotaRequests.length})</span>
+          </button>
+        )}
 
         <button
           type="button"
@@ -684,18 +711,20 @@ export default function MembersList() {
           <span>Ativos ({approvedMembers.length})</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setMemberFilterTab('unpaid')}
-          className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
-            memberFilterTab === 'unpaid'
-              ? 'bg-amber-600 text-white shadow-xs font-black'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
-          }`}
-        >
-          <span>💳</span>
-          <span>Pagamento Pendente ({approvedMembers.filter(m => m.paymentStatus === 'Pendente').length})</span>
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setMemberFilterTab('unpaid')}
+            className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+              memberFilterTab === 'unpaid'
+                ? 'bg-amber-600 text-white shadow-xs font-black'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+            }`}
+          >
+            <span>💳</span>
+            <span>Pagamento Pendente ({approvedMembers.filter(m => m.paymentStatus === 'Pendente').length})</span>
+          </button>
+        )}
       </div>
 
       {/* Estado Vazio quando na Aba de Pedidos Pendentes e tudo estiver aprovado */}
@@ -707,8 +736,8 @@ export default function MembersList() {
         </div>
       )}
 
-      {/* SEÇÃO 1: Solicitações de Entrada Pendentes (Aguardando Aprovação) */}
-      {pendingJoinRequests.length > 0 && (
+      {/* SEÇÃO 1: Solicitações de Entrada Pendentes (Apenas Admin) */}
+      {isAdmin && pendingJoinRequests.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3 animate-in fade-in">
           <div className="flex items-center gap-2 border-b border-red-100 pb-2">
             <span className="text-xl">📢</span>
@@ -760,8 +789,8 @@ export default function MembersList() {
         </div>
       )}
 
-      {/* SEÇÃO 2: Solicitações de Alteração de Cotas */}
-      {pendingQuotaRequests.length > 0 && (
+      {/* SEÇÃO 2: Solicitações de Alteração de Cotas (Apenas Admin) */}
+      {isAdmin && pendingQuotaRequests.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3 animate-in fade-in">
           <div className="flex items-center gap-2 border-b border-amber-200/50 pb-2">
             <span className="text-xl">🎟️</span>
@@ -825,9 +854,11 @@ export default function MembersList() {
             <span className="bg-amber-50 text-amber-900 font-bold px-2 py-0.5 rounded-full border border-amber-200">
               {totalQuotas} cotas ativas
             </span>
-            <span className="bg-blue-50 text-blue-800 font-bold px-2 py-0.5 rounded-full border border-blue-200">
-              {paidQuotas} pagas (R$ {(paidQuotas * 20).toFixed(2).replace('.', ',')})
-            </span>
+            {isAdmin && (
+              <span className="bg-blue-50 text-blue-800 font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                {paidQuotas} pagas (R$ {(paidQuotas * 20).toFixed(2).replace('.', ',')})
+              </span>
+            )}
           </div>
         </div>
 
@@ -962,16 +993,20 @@ export default function MembersList() {
               <th className="p-3 text-left">Participante</th>
               <th className="p-3 text-center">Função</th>
               <th className="p-3 text-center">Cotas</th>
-              <th className="p-3 text-center">Valor Mensal</th>
-              <th className="p-3 text-center">Pagamento</th>
-              <th className="p-3 text-center font-bold">Status</th>
-              <th className="p-3 text-center">Ações</th>
+              {isAdmin && (
+                <>
+                  <th className="p-3 text-center">Valor Mensal</th>
+                  <th className="p-3 text-center">Pagamento</th>
+                  <th className="p-3 text-center font-bold">Status</th>
+                  <th className="p-3 text-center">Ações</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {displayedMembers.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-gray-400 italic font-medium">
+                <td colSpan={isAdmin ? 7 : 3} className="p-8 text-center text-gray-400 italic font-medium">
                   {memberFilterTab === 'pending'
                     ? 'Nenhum participante na listagem regular (veja os quadros de pedidos pendentes acima).'
                     : memberFilterTab === 'unpaid'
@@ -1048,83 +1083,83 @@ export default function MembersList() {
                       )}
                     </td>
 
-                    <td className="p-3 text-center font-bold text-gray-800">
-                      {canTogglePayment || isOwnRow ? `R$ ${monthlyValue.toFixed(2).replace('.', ',')}` : '---'}
-                    </td>
+                    {isAdmin && (
+                      <>
+                        <td className="p-3 text-center font-bold text-gray-800">
+                          {`R$ ${monthlyValue.toFixed(2).replace('.', ',')}`}
+                        </td>
 
-                    <td className="p-3 text-center">
-                      {canTogglePayment || isOwnRow ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (canTogglePayment) togglePaymentStatus(member);
-                          }}
-                          disabled={!canTogglePayment}
-                          className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
-                            canTogglePayment ? 'cursor-pointer' : 'cursor-default'
-                          } ${
-                            isPaid
-                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
-                              : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                          }`}
-                          title={canTogglePayment ? "Alterar status de pagamento" : "Seu status de pagamento"}
-                        >
-                          {member.paymentStatus || 'Pendente'}
-                        </button>
-                      ) : (
-                        <span className="text-gray-400 font-medium">---</span>
-                      )}
-                    </td>
-
-                    <td className="p-3 text-center font-bold">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                        member.approved 
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                          : 'bg-amber-50 text-amber-700 border border-amber-100'
-                      }`}>
-                        {member.approved ? 'Ativo' : 'Pendente'}
-                      </span>
-                    </td>
-
-                    <td className="p-3">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {canEditMember && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(member)}
-                            className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                            title="Editar Cadastro"
-                          >
-                            ✏️
-                          </button>
-                        )}
-                        {canTogglePayment && (
-                          <button
-                            type="button"
-                            onClick={() => sendWhatsApp(member)}
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                            title="Cobrar via WhatsApp"
-                          >
-                            💬
-                          </button>
-                        )}
-                        {canDeleteMember && (
+                        <td className="p-3 text-center">
                           <button
                             type="button"
                             onClick={() => {
-                              setConfirmation({
-                                action: () => deleteMember(member),
-                                message: `Excluir definitivamente o participante ${member.displayName}?`
-                              });
+                              if (canTogglePayment) togglePaymentStatus(member);
                             }}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                            title="Remover"
+                            disabled={!canTogglePayment}
+                            className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                              canTogglePayment ? 'cursor-pointer' : 'cursor-default'
+                            } ${
+                              isPaid
+                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
+                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                            }`}
+                            title={canTogglePayment ? "Alterar status de pagamento" : "Status de pagamento"}
                           >
-                            🗑️
+                            {member.paymentStatus || 'Pendente'}
                           </button>
-                        )}
-                      </div>
-                    </td>
+                        </td>
+
+                        <td className="p-3 text-center font-bold">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            member.approved 
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                              : 'bg-amber-50 text-amber-700 border border-amber-100'
+                          }`}>
+                            {member.approved ? 'Ativo' : 'Pendente'}
+                          </span>
+                        </td>
+
+                        <td className="p-3">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {canEditMember && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(member)}
+                                className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                title="Editar Cadastro"
+                              >
+                                ✏️
+                              </button>
+                            )}
+                            {canTogglePayment && (
+                              <button
+                                type="button"
+                                onClick={() => sendWhatsApp(member)}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                title="Cobrar via WhatsApp"
+                              >
+                                💬
+                              </button>
+                            )}
+                            {canDeleteMember && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConfirmation({
+                                    action: () => deleteMember(member),
+                                    message: `Excluir definitivamente o participante ${member.displayName}?`
+                                  });
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                title="Remover"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })

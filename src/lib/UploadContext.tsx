@@ -156,7 +156,7 @@ export const getExistingSignatures = async (): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
     // Busca em todos os jogos para pré-carregar assinaturas conhecidas
-    const q = query(collection(db, 'games'));
+    const q = query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(1000));
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();

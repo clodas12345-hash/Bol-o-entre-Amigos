@@ -149,149 +149,146 @@ function generateDeterministicNumbers(seed: number, count: number, max: number):
   return nums.sort((a, b) => a - b);
 }
 
-// Helper to fetch directly from Official Caixa API first without consuming AI quota
+// Helper to fetch directly from Official Caixa API with multi-endpoint fallback
 async function fetchLotofacilFromCaixaApi(contestNumber?: number | string): Promise<LotofacilContestData | null> {
-  try {
-    const url = contestNumber && contestNumber !== 'latest'
-      ? `https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil/${contestNumber}`
-      : 'https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil';
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    clearTimeout(timeoutId);
+  const isLatest = !contestNumber || contestNumber === 'latest';
+  const param = isLatest ? '' : String(contestNumber);
 
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    if (!data || !Array.isArray(data.listaDezenas) || data.listaDezenas.length !== 15) {
-      return null;
-    }
+  const endpoints = [
+    `https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil/${param}`,
+    `https://loteriascaixa-api.herokuapp.com/api/lotofacil/${isLatest ? 'latest' : param}`
+  ];
 
-    const numbers = data.listaDezenas.map((n: string) => Number(n)).sort((a: number, b: number) => a - b);
-    
-    let prize15Winners = 0, prize15Amount = 0;
-    let prize14Winners = 0, prize14Amount = 0;
-    let prize13Winners = 0, prize13Amount = 0;
-    let prize12Winners = 0, prize12Amount = 0;
-    let prize11Winners = 0, prize11Amount = 0;
+  for (const url of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      clearTimeout(timeoutId);
 
-    if (Array.isArray(data.listaRateioPremio)) {
-      for (const p of data.listaRateioPremio) {
-        const faixa = (p.descricaoFaixa || '').toLowerCase();
-        if (faixa.includes('15')) {
-          prize15Winners = Number(p.numeroDeGanhadores) || 0;
-          prize15Amount = Number(p.valorPremio) || 0;
-        } else if (faixa.includes('14')) {
-          prize14Winners = Number(p.numeroDeGanhadores) || 0;
-          prize14Amount = Number(p.valorPremio) || 0;
-        } else if (faixa.includes('13')) {
-          prize13Winners = Number(p.numeroDeGanhadores) || 0;
-          prize13Amount = Number(p.valorPremio) || 0;
-        } else if (faixa.includes('12')) {
-          prize12Winners = Number(p.numeroDeGanhadores) || 0;
-          prize12Amount = Number(p.valorPremio) || 0;
-        } else if (faixa.includes('11')) {
-          prize11Winners = Number(p.numeroDeGanhadores) || 0;
-          prize11Amount = Number(p.valorPremio) || 0;
+      if (!res.ok) continue;
+      const data: any = await res.json();
+      if (!data) continue;
+
+      const rawDezenas = data.listaDezenas || data.dezenas || data.resultado || data.numeros;
+      if (!Array.isArray(rawDezenas) || rawDezenas.length !== 15) continue;
+
+      const numbers = rawDezenas.map((n: any) => Number(n)).sort((a: number, b: number) => a - b);
+      const contestNum = Number(data.numero || data.concurso || contestNumber);
+      const drawDate = data.dataApuracao || data.data || data.data_concurso || data.date || new Date().toLocaleDateString('pt-BR');
+
+      let prize15Winners = 0, prize15Amount = 0;
+      let prize14Winners = 0, prize14Amount = 0;
+
+      const rateioList = data.listaRateioPremio || data.premiacoes || data.rateio;
+      if (Array.isArray(rateioList)) {
+        for (const p of rateioList) {
+          const faixa = (p.descricaoFaixa || p.descricao || p.faixa || '').toString().toLowerCase();
+          if (faixa.includes('15') || faixa.includes('1º')) {
+            prize15Winners = Number(p.numeroDeGanhadores || p.ganhadores) || 0;
+            prize15Amount = Number(p.valorPremio || p.valor) || 0;
+          } else if (faixa.includes('14') || faixa.includes('2º')) {
+            prize14Winners = Number(p.numeroDeGanhadores || p.ganhadores) || 0;
+            prize14Amount = Number(p.valorPremio || p.valor) || 0;
+          }
         }
       }
+
+      console.log(`[Caixa API] Lotofácil #${contestNum} obtida com sucesso de: ${url}`);
+      return {
+        contest: contestNum,
+        date: drawDate,
+        numbers,
+        accumulated: !!(data.acumulado || data.acumulou),
+        nextEstimatedPrize: Number(data.valorEstimadoProximoConcurso || data.valorEstimado) || 0,
+        prize15Winners,
+        prize15Amount,
+        prize14Winners,
+        prize14Amount,
+        createdAt: new Date()
+      };
+    } catch (e) {
+      console.warn(`[Caixa API Fallback] Falha no endpoint ${url}:`, e);
     }
-
-    const formattedData: LotofacilContestData = {
-      contest: Number(data.numero),
-      date: data.dataApuracao || new Date().toLocaleDateString('pt-BR'),
-      numbers,
-      accumulated: !!data.acumulado,
-      nextEstimatedPrize: Number(data.valorEstimadoProximoConcurso) || 0,
-      prize15Winners,
-      prize15Amount,
-      prize14Winners,
-      prize14Amount,
-      prize13Winners,
-      prize13Amount,
-      prize12Winners,
-      prize12Amount,
-      prize11Winners,
-      prize11Amount,
-      createdAt: new Date()
-    };
-
-    return formattedData;
-  } catch (e) {
-    console.warn('Direct Caixa Lotofacil API fetch error:', e);
-    return null;
   }
+
+  return null;
 }
 
-// Helper to fetch directly from Official Caixa API for Mega-Sena
+// Helper to fetch directly from Official Caixa API for Mega-Sena with multi-endpoint fallback
 async function fetchMegaSenaFromCaixaApi(contestNumber?: number | string): Promise<MegaSenaContestData | null> {
-  try {
-    const url = contestNumber && contestNumber !== 'latest'
-      ? `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/${contestNumber}`
-      : 'https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena';
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    clearTimeout(timeoutId);
+  const isLatest = !contestNumber || contestNumber === 'latest';
+  const param = isLatest ? '' : String(contestNumber);
 
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    if (!data || !Array.isArray(data.listaDezenas) || data.listaDezenas.length !== 6) {
-      return null;
-    }
+  const endpoints = [
+    `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/${param}`,
+    `https://loteriascaixa-api.herokuapp.com/api/megasena/${isLatest ? 'latest' : param}`
+  ];
 
-    const numbers = data.listaDezenas.map((n: string) => Number(n)).sort((a: number, b: number) => a - b);
-    let prize6Winners = 0, prize6Amount = 0;
-    let prize5Winners = 0, prize5Amount = 0;
-    let prize4Winners = 0, prize4Amount = 0;
+  for (const url of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      clearTimeout(timeoutId);
 
-    if (Array.isArray(data.listaRateioPremio)) {
-      for (const p of data.listaRateioPremio) {
-        const faixa = (p.descricaoFaixa || '').toLowerCase();
-        if (faixa.includes('6')) {
-          prize6Winners = Number(p.numeroDeGanhadores) || 0;
-          prize6Amount = Number(p.valorPremio) || 0;
-        } else if (faixa.includes('5')) {
-          prize5Winners = Number(p.numeroDeGanhadores) || 0;
-          prize5Amount = Number(p.valorPremio) || 0;
-        } else if (faixa.includes('4')) {
-          prize4Winners = Number(p.numeroDeGanhadores) || 0;
-          prize4Amount = Number(p.valorPremio) || 0;
+      if (!res.ok) continue;
+      const data: any = await res.json();
+      if (!data) continue;
+
+      const rawDezenas = data.listaDezenas || data.dezenas || data.resultado || data.numeros;
+      if (!Array.isArray(rawDezenas) || rawDezenas.length !== 6) continue;
+
+      const numbers = rawDezenas.map((n: any) => Number(n)).sort((a: number, b: number) => a - b);
+      const contestNum = Number(data.numero || data.concurso || contestNumber);
+      const drawDate = data.dataApuracao || data.data || data.data_concurso || data.date || new Date().toLocaleDateString('pt-BR');
+
+      let prize6Winners = 0, prize6Amount = 0;
+      let prize5Winners = 0, prize5Amount = 0;
+
+      const rateioList = data.listaRateioPremio || data.premiacoes || data.rateio;
+      if (Array.isArray(rateioList)) {
+        for (const p of rateioList) {
+          const faixa = (p.descricaoFaixa || p.descricao || p.faixa || '').toString().toLowerCase();
+          if (faixa.includes('6') || faixa.includes('sena') || faixa.includes('1º')) {
+            prize6Winners = Number(p.numeroDeGanhadores || p.ganhadores) || 0;
+            prize6Amount = Number(p.valorPremio || p.valor) || 0;
+          } else if (faixa.includes('5') || faixa.includes('quina') || faixa.includes('2º')) {
+            prize5Winners = Number(p.numeroDeGanhadores || p.ganhadores) || 0;
+            prize5Amount = Number(p.valorPremio || p.valor) || 0;
+          }
         }
       }
+
+      console.log(`[Caixa API] Mega-Sena #${contestNum} obtida com sucesso de: ${url}`);
+      return {
+        contest: contestNum,
+        date: drawDate,
+        numbers,
+        accumulated: !!(data.acumulado || data.acumulou),
+        nextEstimatedPrize: Number(data.valorEstimadoProximoConcurso || data.valorEstimado) || 0,
+        prize6Winners,
+        prize6Amount,
+        prize5Winners,
+        prize5Amount,
+        createdAt: new Date()
+      };
+    } catch (e) {
+      console.warn(`[Caixa API Fallback] Falha no endpoint ${url}:`, e);
     }
-
-    const formattedData: MegaSenaContestData = {
-      contest: Number(data.numero),
-      date: data.dataApuracao || new Date().toLocaleDateString('pt-BR'),
-      numbers,
-      accumulated: !!data.acumulado,
-      nextEstimatedPrize: Number(data.valorEstimadoProximoConcurso) || 0,
-      prize6Winners,
-      prize6Amount,
-      prize5Winners,
-      prize5Amount,
-      prize4Winners,
-      prize4Amount,
-      createdAt: new Date()
-    };
-
-    return formattedData;
-  } catch (e) {
-    console.warn('Direct Caixa Mega-Sena API fetch error:', e);
-    return null;
   }
+
+  return null;
 }
 
 // Helper to fetch and save Lotofácil contest (Direct Official Caixa API first, then empty response for future contests)

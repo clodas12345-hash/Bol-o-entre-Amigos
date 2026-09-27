@@ -482,20 +482,22 @@ export default function UserProfile() {
             <span className="text-[10px] font-black uppercase text-center">Termômetro</span>
           </button>
 
-          <button
-            onClick={() => {
-              setShowReport(!showReport);
-              setShowThermometer(false);
-            }}
-            className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all cursor-pointer ${
-              showReport 
-                ? 'bg-emerald-600 border-emerald-700 text-white shadow-md' 
-                : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'
-            }`}
-          >
-            <span className="text-xl mb-1">📜</span>
-            <span className="text-[10px] font-black uppercase text-center">Termo de Dados</span>
-          </button>
+          {userProfile?.role === 'admin' && (
+            <button
+              onClick={() => {
+                setShowReport(!showReport);
+                setShowThermometer(false);
+              }}
+              className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all cursor-pointer ${
+                showReport 
+                  ? 'bg-emerald-600 border-emerald-700 text-white shadow-md' 
+                  : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              <span className="text-xl mb-1">📜</span>
+              <span className="text-[10px] font-black uppercase text-center">Termo de Dados</span>
+            </button>
+          )}
 
           <Link
             to="/backtest"
@@ -565,30 +567,30 @@ Bolão Lotofácil Gestor — Setembro de 2026`}
       </div>
 
       {/* Painel de Gestão de Bolões, Backup, Importação e Relatórios */}
-      <div className="space-y-4">
-        {userProfile?.role === 'admin' && (
+      {userProfile?.role === 'admin' && (
+        <div className="space-y-4">
           <div className="bg-indigo-50/50 rounded-2xl border border-indigo-100 p-4 sm:p-6 shadow-xs animate-in slide-in-from-bottom duration-300">
             <h3 className="font-black text-sm text-indigo-900 mb-3 flex items-center gap-2">
               <span>⚙️</span> Gestão de Bolões e Grupos
             </h3>
             <PoolManager />
           </div>
-        )}
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6 shadow-xs">
-          <h3 className="font-black text-sm text-gray-900 mb-3 flex items-center gap-2">
-            <span>📊</span> Relatórios Financeiros e Auditoria Detalhada
-          </h3>
-          <DetailedFinancialReport />
-        </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6 shadow-xs">
+            <h3 className="font-black text-sm text-gray-900 mb-3 flex items-center gap-2">
+              <span>📊</span> Relatórios Financeiros e Auditoria Detalhada
+            </h3>
+            <DetailedFinancialReport />
+          </div>
 
-        <div className="bg-emerald-50/50 rounded-2xl border border-emerald-100 p-4 sm:p-6 shadow-xs">
-          <h3 className="font-black text-sm text-emerald-900 mb-3 flex items-center gap-2">
-            <span>💾</span> Backup, Exportação e Importação de Dados
-          </h3>
-          <BackupManager />
+          <div className="bg-emerald-50/50 rounded-2xl border border-emerald-100 p-4 sm:p-6 shadow-xs">
+            <h3 className="font-black text-sm text-emerald-900 mb-3 flex items-center gap-2">
+              <span>💾</span> Backup, Exportação e Importação de Dados
+            </h3>
+            <BackupManager />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Histórico Individual de Pagamentos */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">

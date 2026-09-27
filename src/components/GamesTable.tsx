@@ -22,7 +22,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const { addToast } = useToast();
   const { activePool, isQuotaExceeded, setIsQuotaExceeded } = usePool();
   const { isMobile } = useResponsiveLayout(640);
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
 
   const canCreateGames = can('games_create');
   const canDeleteGames = can('games_delete');
@@ -116,10 +116,13 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
+      const isMegaSena = activePool?.lotteryType === 'megasena';
+      const validDrawDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6];
+
       let targetDate = new Date(now);
       targetDate.setHours(20, 0, 0, 0);
 
-      const isTodayDrawDay = currentDay >= 1 && currentDay <= 6;
+      const isTodayDrawDay = validDrawDays.includes(currentDay);
       const isBeforeDrawTime = currentHour < 20;
       const isDuringDraw = currentHour === 20 && currentMinute <= 45;
 
@@ -142,14 +145,13 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         });
         return;
       } else {
-        let daysToAdd = 1;
-        if (currentDay === 6) {
-          daysToAdd = 2; // Sábado -> Segunda
-        } else if (currentDay === 0) {
-          daysToAdd = 1; // Domingo -> Segunda
+        const candidate = new Date(now);
+        candidate.setDate(candidate.getDate() + 1);
+        candidate.setHours(20, 0, 0, 0);
+        while (!validDrawDays.includes(candidate.getDay())) {
+          candidate.setDate(candidate.getDate() + 1);
         }
-        targetDate.setDate(targetDate.getDate() + daysToAdd);
-        targetDate.setHours(20, 0, 0, 0);
+        targetDate = candidate;
         statusBadge = dayNames[targetDate.getDay()];
       }
 
@@ -168,7 +170,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     calculateNextDraw();
     const interval = setInterval(calculateNextDraw, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activePool?.lotteryType]);
 
   const handleRequestPushPermission = async () => {
     if (!('Notification' in window)) {
@@ -1073,7 +1075,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         <ContestHistoryChecker
           games={games}
           onClose={() => setShowHistoryModal(false)}
-          onOpenVolantesComparator={() => setShowVolantesComparator(true)}
+          onOpenVolantesComparator={isAdmin ? () => setShowVolantesComparator(true) : undefined}
           onApplyResultAsCurrent={(result) => {
             setLatestResult(result);
             addToast(`Concurso ${result.contest} aplicado na tela de conferência!`, 'success');
@@ -1247,7 +1249,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 className="bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer border border-white/15"
                 title="Corrigir resultado manualmente"
               >
-                <span>✏️</span> Corrigir
+                <span>⚙️</span> Corrigir
               </button>
             )}
           </div>
@@ -1591,14 +1593,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 >
                   <span>{areAllExpanded ? '🔒 Recolher' : '🔓 Expandir Todos'}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowVolantesComparator(true)}
-                  className="text-xs font-black text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/50 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-xs active:scale-95"
-                  title="Auditar, varrer e conferir todos os volantes contra os concursos oficiais da Caixa"
-                >
-                  <span>🎯</span> Auditor de Apostas
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowVolantesComparator(true)}
+                    className="text-xs font-black text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/50 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-xs active:scale-95"
+                    title="Auditar, varrer e conferir todos os volantes contra os concursos oficiais da Caixa"
+                  >
+                    <span>🎯</span> Auditor de Apostas
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowFlyerModal(true)}

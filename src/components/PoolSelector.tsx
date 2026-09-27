@@ -10,7 +10,7 @@ export default function PoolSelector() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg border border-white/20 transition cursor-pointer text-white max-w-[170px] sm:max-w-xs"
+        className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg border border-white/20 transition cursor-pointer text-white max-w-[130px] sm:max-w-xs"
         title="Alternar Bolão Ativo"
       >
         <span className="text-[11px] font-black uppercase tracking-wider truncate">
