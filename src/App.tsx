@@ -27,7 +27,9 @@ import PhoneLoginModal from './components/PhoneLoginModal';
 import EditProfileModal from './components/EditProfileModal';
 import SetPasswordModal from './components/SetPasswordModal';
 import BetReleaseManager from './components/BetReleaseManager';
+import Settings from './components/Settings';
 import MemberBetSubmission from './components/MemberBetSubmission';
+import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
@@ -359,9 +361,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
     links.push({ to: '/permissoes', label: 'Ajuda / Papéis', icon: '🛡️' } as any);
 
-    if (can('system_backup_restore')) {
-      links.push({ to: '/backup', label: 'Backup', icon: '⚙️' } as any);
-    }
+    links.push({ to: '/configuracoes', label: 'Configurações', icon: '⚙️' } as any);
 
     return links;
   }, [can, canManageMembers, totalPendingCount]);
@@ -605,18 +605,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                     <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
                   )}
                   
-                  {can('games_official_result_edit') && (
-                    <button
-                      onClick={() => {
-                        setCustomContestInput(displayContestNum ? String(displayContestNum) : '');
-                        setIsEditingContest(true);
-                      }}
-                      className="text-emerald-700 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md text-[10px] cursor-pointer transition-colors font-bold"
-                      title="Editar Concurso Vigente"
-                    >
-                      Alterar
-                    </button>
-                  )}
+
                 </div>
               )}
             </div>
@@ -793,6 +782,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showNewGameModal, setShowNewGameModal] = useState(false);
+  const [showHowToUseModal, setShowHowToUseModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
 
   const { addToast } = useToast();
@@ -1103,16 +1093,22 @@ export default function App() {
                   <div 
                     onClick={() => setShowEditProfileModal(true)}
                     className="bg-white p-4 rounded-xl shadow-xs border border-gray-200 flex items-center justify-between cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group select-none"
-                    title="Clique para editar seus dados de cadastro e chave PIX"
+                    title="Clique para editar seus dados de cadastro"
                   >
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h1 className="text-lg sm:text-xl font-bold text-gray-800 group-hover:text-blue-600 transition flex items-center gap-1.5">
                           <span>👋</span> Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
                         </h1>
-                        <span className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition shadow-2xs">
-                          Editar Cadastro
-                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowHowToUseModal(true);
+                          }}
+                          className="bg-amber-100 text-amber-900 border border-amber-300 font-black px-4 py-1.5 rounded-full hover:bg-amber-200 transition text-[10px] sm:text-xs shadow-sm flex items-center gap-1.5"
+                        >
+                          <span>📖</span> Como usar?
+                        </button>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
                         Perfil: <span className="font-semibold text-blue-600 uppercase">
@@ -1135,9 +1131,6 @@ export default function App() {
                   {activeUser && (
                     <MemberBetSubmission user={activeUser} userData={activeUserData} />
                   )}
-
-                  {/* Gestão de Liberação de Apostas (Apenas Admin) */}
-                  {isUserAdmin && <BetReleaseManager />}
 
                   {/* 1. Tabela de Jogos Cadastrados, Apostas e Resultado Oficial Caixa Unificado */}
                   <GamesTable onOpenNewGame={() => setShowNewGameModal(true)} />
@@ -1176,6 +1169,7 @@ export default function App() {
                   )}
 
                   {/* Modais do Sistema */}
+                  {showHowToUseModal && <HowToUseModal onClose={() => setShowHowToUseModal(false)} />}
                   {showPaymentModal && <PaymentModal onClose={() => setShowPaymentModal(false)} />}
                   {showNewGameModal && <NewGameModal onClose={() => setShowNewGameModal(false)} />}
                   {showEditProfileModal && (
@@ -1236,7 +1230,7 @@ export default function App() {
           <Route path="/profile" element={activeUser ? <UserProfile /> : <Navigate to="/" />} />
           <Route path="/rules" element={activeUser ? <RulesAndNorms /> : <Navigate to="/" />} />
           <Route path="/permissoes" element={activeUser ? <RolesGuide /> : <Navigate to="/" />} />
-          <Route path="/backup" element={activeUser ? <ProtectedRoute permission="system_backup_restore"><BackupManager /></ProtectedRoute> : <Navigate to="/" />} />
+          <Route path="/configuracoes" element={activeUser ? <ProtectedRoute permission="games_create"><Settings /></ProtectedRoute> : <Navigate to="/" />} />
         </Routes>
           </Layout>
         </BrowserRouter>

@@ -21,12 +21,7 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
   const [phone, setPhone] = useState(
     userData?.phone || user?.phoneNumber || ''
   );
-  const [pixKey, setPixKey] = useState(
-    userData?.pixKey || ''
-  );
-  const [pixType, setPixType] = useState<'cpf' | 'telefone' | 'email' | 'aleatoria'>(
-    userData?.pixType || 'telefone'
-  );
+
   const [quotas, setQuotas] = useState<number>(
     Number(userData?.quotas) > 0 ? Number(userData?.quotas) : 1
   );
@@ -51,8 +46,7 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
     const updatedProfileData = {
       displayName: displayName.trim(),
       phone: cleanPhone,
-      pixKey: pixKey.trim(),
-      pixType,
+
       quotas: Math.max(1, quotas),
       notes: notes.trim(),
       approved: true,
@@ -179,36 +173,7 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
-              <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
-                Tipo da Chave
-              </label>
-              <select
-                value={pixType}
-                onChange={(e) => setPixType(e.target.value as any)}
-                className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-3 py-2.5 text-xs font-bold text-gray-900 focus:bg-white focus:border-blue-600 focus:outline-none transition cursor-pointer"
-              >
-                <option value="telefone">Celular</option>
-                <option value="cpf">CPF</option>
-                <option value="email">E-mail</option>
-                <option value="aleatoria">Aleatória</option>
-              </select>
-            </div>
 
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
-                Chave PIX (Para Recebimento de Prêmios)
-              </label>
-              <input
-                type="text"
-                value={pixKey}
-                onChange={(e) => setPixKey(e.target.value)}
-                placeholder="Informe sua chave PIX"
-                className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-bold text-gray-900 focus:bg-white focus:border-blue-600 focus:outline-none transition"
-              />
-            </div>
-          </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5">
             <div className="flex items-center justify-between">

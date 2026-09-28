@@ -42,8 +42,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       if (cached) {
         const parsed = JSON.parse(cached);
         const cNum = Number(parsed?.contest);
-        // Garante que o estado inicial nunca carregue concursos futuros (>= 3788) ou simulados
-        if (cNum > 0 && cNum < 3788 && !parsed?.isSimulated) {
+        // Remove strict filtering to ensure we show the best available info on load
+        if (cNum > 0) {
           return parsed;
         }
       }
