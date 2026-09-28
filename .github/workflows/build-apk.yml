@@ -77,13 +77,19 @@ jobs:
           ./gradlew assembleDebug
 
       - name: Verificar Fingerprint da Assinatura do APK
+        continue-on-error: true
         run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
           echo "=== Fingerprint da assinatura deste APK (compare entre builds) ==="
-          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep -i "SHA256\|SHA1"
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner nao encontrado - pulando verificacao"
+            exit 0
+          fi
+          "$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256\|SHA-1"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
-
