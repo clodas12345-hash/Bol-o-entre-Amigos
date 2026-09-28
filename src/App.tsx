@@ -347,7 +347,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
   const { addToast } = useToast();
   const isHome = location.pathname === '/';
-  const displayContestNum = activePool?.currentContest || currentContest;
+  const displayContestNum = Math.max(currentContest || 0, activePool?.currentContest || 0);
   const canManageMembers = can('members_edit');
 
   const handleSaveCustomContest = async () => {
@@ -638,7 +638,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
               )}
             </div>
             <div className="text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider flex items-center gap-1.5 bg-emerald-100/50 px-2 py-0.5 rounded-md">
-              <span>{activePool?.currentContest ? '📌 Forçado por Admin' : '🟢 Sincronizado'}</span>
+              <span>{activePool?.currentContest > (currentContest || 0) ? '📌 Forçado por Admin' : '🟢 Sincronizado'}</span>
             </div>
           </div>
         </div>

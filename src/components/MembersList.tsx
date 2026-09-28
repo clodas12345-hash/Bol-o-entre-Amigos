@@ -1203,16 +1203,39 @@ export default function MembersList() {
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div>
+              <div className="flex justify-between items-center">
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Nome Completo *</label>
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-xs font-semibold focus:outline-emerald-600 bg-gray-50"
-                  required
-                />
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    const win = window as any;
+                    const isNative = !!(win.Capacitor && win.Capacitor.isNativePlatform());
+                    if (!isNative) {
+                      addToast('A busca na agenda só está disponível no app instalado.', 'info');
+                      return;
+                    }
+                    try {
+                      const permissions = await Contacts.requestPermissions();
+                      if (permissions.contacts !== 'granted') return;
+                      const result: any = await Contacts.pickContact({ projection: { name: true, phones: true } });
+                      if (result.contact) {
+                        if (result.contact.name?.display) setEditName(result.contact.name.display);
+                        if (result.contact.phones && result.contact.phones.length > 0) setEditPhone(result.contact.phones[0].number || '');
+                      }
+                    } catch (e) { addToast('Erro ao acessar agenda.', 'error'); }
+                  }}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  <UserSearch size={14} /> Buscar
+                </button>
               </div>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg p-2 text-xs font-semibold focus:outline-emerald-600 bg-gray-50"
+                required
+              />
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">WhatsApp / Telefone</label>
