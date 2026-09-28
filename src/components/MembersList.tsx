@@ -7,6 +7,8 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
 import { usePermissions } from '../lib/PermissionsContext';
+import { Contacts } from '@capacitor-community/contacts';
+import { UserSearch } from 'lucide-react';
 
 // Helpers de persistência local para contornar problemas de limite de cota do Firestore
 const getLocalMembers = (): any[] => {
@@ -67,6 +69,22 @@ export default function MembersList() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const { addToast } = useToast();
+
+  const handlePickContact = async () => {
+    try {
+      const result: any = await Contacts.pickContact({ projection: { name: true, phones: true } });
+      const contact = result.contact;
+      if (contact) {
+        if (contact.name?.display) setNewDisplayName(contact.name.display);
+        if (contact.phones && contact.phones.length > 0) {
+          setNewPhone(contact.phones[0].number || '');
+        }
+      }
+    } catch (error) {
+      console.error('Error picking contact:', error);
+      addToast('Não foi possível acessar a agenda.', 'error');
+    }
+  };
 
   useEffect(() => {
     fetchMembers();
@@ -879,6 +897,13 @@ export default function MembersList() {
         <form onSubmit={handleAddMember} className="bg-gradient-to-br from-gray-50 to-emerald-50/20 p-4 rounded-xl border border-emerald-200 mb-4 transition-all space-y-3 animate-in slide-in-from-top-2 duration-200">
           <div className="flex justify-between items-center border-b pb-2 border-emerald-100">
             <h3 className="font-bold text-sm text-emerald-950">📋 Cadastro de Novo Contato no Bolão</h3>
+            <button 
+              type="button"
+              onClick={handlePickContact}
+              className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+            >
+              <UserSearch size={12} /> Buscar na Agenda
+            </button>
             <span className="text-[10px] text-emerald-700 font-medium">Chave PIX: <strong>11953292570</strong></span>
           </div>
 

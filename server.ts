@@ -28,7 +28,7 @@ async function generateWithFallback(params: {
     contents, 
     config, 
     primaryModel = "gemini-flash-latest", 
-    fallbackModels = ["gemini-3.1-flash-lite", "gemini-3.1-pro-preview"] 
+    fallbackModels = ["gemini-3.1-flash-lite"] 
   } = params;
   
   // Deduplicate and ensure priority order
@@ -36,7 +36,7 @@ async function generateWithFallback(params: {
   let lastError: any = null;
   
   for (const model of modelsToTry) {
-    const maxRetries = 2;
+    const maxRetries = 3;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`[AI] Attempting content generation with model: ${model} (attempt ${attempt}/${maxRetries})`);
@@ -45,7 +45,6 @@ async function generateWithFallback(params: {
         
         // Model-specific compatibility adjustments
         if (model.includes('lite') && targetConfig.tools) {
-          console.log(`[AI] Removing search tools for lite model ${model} compatibility`);
           delete targetConfig.tools;
         }
         
@@ -66,36 +65,37 @@ async function generateWithFallback(params: {
         const errMsg = err.message || String(err);
         const errJson = JSON.stringify(err);
         
-        console.warn(`[AI] Model ${model} failed (status: ${status}, attempt: ${attempt}/${maxRetries}): ${errMsg}`);
+        console.warn(`[AI] Model ${model} response (status: ${status}, attempt: ${attempt}/${maxRetries}): ${errMsg}`);
 
-        // Check if it's a quota limit or exhaustion - if so, skip immediately to next model without retrying this one
-        const isQuotaOrExhausted = errJson.includes('RESOURCE_EXHAUSTED') || 
-                                   errJson.includes('resource_exhausted') || 
-                                   errMsg.includes('Quota exceeded') || 
-                                   errMsg.includes('quota') || 
-                                   errMsg.includes('PerDay') ||
-                                   errJson.includes('PerDay') ||
-                                   status === 429;
-        if (isQuotaOrExhausted) {
-          console.error(`[AI] Quota limit reached for model ${model}. Cascading immediately to next model.`);
-          break; // Exit retry loop and move to next model
+        // Check if model returned 404 or 429 - skip immediately
+        const isQuotaOr404 = errJson.includes('RESOURCE_EXHAUSTED') || 
+                             errJson.includes('resource_exhausted') || 
+                             errJson.includes('NOT_FOUND') ||
+                             errMsg.includes('Quota exceeded') || 
+                             errMsg.includes('not available') ||
+                             errMsg.includes('quota') || 
+                             errMsg.includes('PerDay') ||
+                             status === 429 ||
+                             status === 404;
+        if (isQuotaOr404) {
+          console.warn(`[AI] Quota limit or model unavailable (status: ${status}) for model ${model}.`);
+          break;
         }
         
         // If it's a transient server error (503, 500, 502) and we haven't reached maxRetries, retry once quickly
         if (attempt < maxRetries && (status === 503 || status === 500 || status === 502 || errMsg.includes('503'))) {
-          const delay = 800;
-          console.log(`[AI] Transient error detected (${status}). Quick retry for ${model} in ${delay}ms...`);
+          const delay = 600;
+          console.log(`[AI] Transient status ${status}. Quick retry for ${model} in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
-          // Cascade immediately to the next model in the fallback pool
           break;
         }
       }
     }
   }
   
-  // If we reach here, all models failed
-  console.error('[AI] All models in fallback pool failed. Last error:', lastError);
+  // If we reach here, models failed
+  console.warn('[AI] Models temporarily unavailable. Last info:', lastError?.message || lastError);
   const finalError = new Error(lastError?.message || `A Inteligência Artificial atingiu o limite temporário de requisições. Por favor, tente novamente em instantes.`);
   (finalError as any).status = lastError?.status || 429;
   throw finalError;
@@ -391,45 +391,34 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nenhuma imagem fornecida para análise.' });
     }
 
-    const prompt = `Você é um leitor inteligente especialista de nível superior para leitura de bilhetes, apostas e comprovantes das Loterias Caixa (Lotofácil e Mega-Sena).
-Sua missão é realizar uma análise COMPLETA, PROFUNDA e MINUCIOSA da imagem enviada para extrair TODOS os dados essenciais com 100% de precisão.
+    const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para leitura e extração de dados de bilhetes, apostas e comprovantes das Loterias Caixa (Lotofácil e Mega-Sena), com especialização na tela do Aplicativo Loterias Caixa ("Apostas da Compra" ou "Meus Jogos" com círculos roxos/brancos).
 
-Siga estas orientações passo a passo para garantir a extração perfeita:
+DIRETRIZES IMPORTANTES DE ANÁLISE DE IMAGEM:
 
-1. NÚMERO DO CONCURSO (EXTREMAMENTE IMPORTANTE):
-   - Inspecione todo o documento/imagem em busca do número do concurso.
-   - Procure por marcas como: "Concurso 3790", "Conc. 3790", "Concurso nº 3790", "Sorteio 3790", "C. 3790", "Concurso: 3790", "Sorteio nº 3790", "LOTOFÁCIL CONCURSO 3200", ou números de 4 dígitos isolados no cabeçalho ou nas informações da aposta.
-   - Retorne APENAS os dígitos numéricos (exemplo: "3790"). Se absolutamente não houver, retorne "".
+1. RECONHECIMENTO DE CÍRCULOS NUMÉRICOS (Loterias Caixa App):
+   - Os números das dezenas jogadas estão contidos dentro de CÍRCULOS COLORIDOS (roxo com texto branco, ou cinza, ou verde).
+   - Você deve varrer cada círculo horizontalmente da esquerda para a direita, linha por linha.
+   - Cada jogo é um conjunto compacto de círculos (geralmente de 15 a 20 círculos para Lotofácil, e 6 a 15 círculos para Mega-Sena).
+   - IMPORTANTE: Não ignore nenhum círculo! Números como "1", "2", "9" ou dezenas no fim como "25" são vitais e devem ser lidos perfeitamente.
+   - Os jogos são separados verticalmente por textos como "Efetivada", "Prêmio Pago", "Lotofácil", ou uma linha divisória. Se houver mais de um bloco de círculos empilhados verticalmente, você DEVE extrair todos eles como jogos separados dentro do array "games".
 
-2. DATA DO SORTEIO OU DA APOSTA:
-   - Procure por qualquer data presente no comprovante ou captura do aplicativo.
-   - Exemplos de rótulos: "Data do Sorteio: 23/09/2026", "Data da Aposta", "Sorteio em 23/09/2026", "Data de Aplicação", "Data de Emissão", "23/09/2026".
-   - Converta a data encontrada rigorosamente para o formato ISO "YYYY-MM-DD" (ex: "2026-09-23"). Se não encontrar nenhuma data visível, retorne a data de hoje.
+2. IDENTIFICAÇÃO DO CONCURSO E DATA (Rótulos do App):
+   - Procure pelo número do concurso que aparece logo abaixo ou acima do título da loteria, normalmente próximo à data (exemplo: "15/09/2026 Conc. 3780" ou "Concurso 3780" -> retornar "3780" como contest).
+   - Se a data do concurso estiver descrita (ex: "15/09/2026"), converta para o formato ISO "YYYY-MM-DD" (ex: "2026-09-15" como date).
 
-3. TEIMOSINHA (CONCURSOS CONSECUTIVOS):
-   - Verifique cuidadosamente se o jogo possui Teimosinha ativada.
-   - Procure por textos como: "Teimosinha", "Teim.", "Concursos consecutivos", "3 Concursos", "6 Concursos", "12 Concursos", "18 Concursos", "24 Concursos", "Quantidade de Concursos: 6", "Teimosinha: Sim".
-   - Se for Teimosinha: defina "isTeimosinha": true e "teimosinhaCount": número do total de concursos (ex: 3, 6, 12, 18, 24).
-   - Se NÃO for Teimosinha: defina "isTeimosinha": false e "teimosinhaCount": 1.
+3. REGRA DE SEGURANÇA E HIGIENIZAÇÃO:
+   - Certifique-se de que cada jogo da Lotofácil possui exatamente entre 15 e 20 dezenas válidas (números entre 01 e 25).
+   - Ordene as dezenas de cada jogo individual em ordem crescente.
 
-4. IDENTIFICAÇÃO DOS JOGOS E DEZENAS JOGADAS:
-   - Se for COMPROVANTE IMPRESSO DE PAPEL DE LOTÉRICA: identifique as linhas de números apostados (ex: blocos de 15 a 20 números de 01 a 25 na Lotofácil, ou 6 a 20 números de 01 a 60 na Mega-Sena).
-   - Se for CAPTURA DE TELA DE APLICATIVO OU SITE (App Loterias Caixa, Carrinho de Apostas, Comprovante Digital): identifique as dezenas marcadas/selecionadas! Elas aparecem destacadas em círculos coloridos (geralmente roxo, verde, azul ou com preenchimento forte).
-   - Verifique e re-verifique cada jogo individual para não omitir dezenas nem duplicar apostas sem necessidade.
-   - Ordene as dezenas de cada jogo em ordem crescente.
-
-5. VERIFICAÇÃO DE DUPLICATAS E RE-INSPEÇÃO:
-   - Verifique rigorosamente a imagem duas vezes antes de emitir o JSON. Certifique-se de que não confundiu dois volantes semelhantes e que leu corretamente todos os campos.
-
-Retorne estritamente um objeto JSON válido neste formato exato (sem comentários e sem formatação markdown extra):
+Formato de retorno estrito em formato JSON (sem bloco markdown, sem comentários, sem textos extras):
 {
   "success": true,
-  "date": "2026-09-23",
-  "contest": "3790",
-  "isTeimosinha": true,
-  "teimosinhaCount": 6,
+  "date": "2026-09-15",
+  "contest": "3780",
+  "isTeimosinha": false,
+  "teimosinhaCount": 1,
   "games": [
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    [2, 3, 4, 6, 9, 11, 13, 14, 15, 16, 17, 19, 21, 22, 23, 25]
   ],
   "message": ""
 }`;

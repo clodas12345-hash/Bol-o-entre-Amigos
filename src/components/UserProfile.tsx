@@ -251,8 +251,7 @@ export default function UserProfile() {
     gameDay.setHours(0, 0, 0, 0);
     const isFuture = gameDay.getTime() > today.getTime();
 
-    const limitContest = g.poolId?.toLowerCase().includes('mega') ? 2780 : 3788;
-    const isPendingFuture = isFuture || isFutureContestTitle || (contestNumber !== null && contestNumber >= limitContest);
+    const isPendingFuture = isFuture || isFutureContestTitle || !targetResult?.numbers?.length;
 
     const pInfo = isPendingFuture
       ? { prizeAmount: 0 }

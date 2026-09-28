@@ -4,7 +4,7 @@ import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
-import { calculateGamePrize, MEGASENA_STATS, LOTOFACIL_STATS } from '../lib/prizes';
+import { calculateGamePrize, MEGASENA_STATS, LOTOFACIL_STATS, getCorrectGameCost } from '../lib/prizes';
 import PrizeSplitModal from './PrizeSplitModal';
 import ContestHistoryChecker from './ContestHistoryChecker';
 import StatsThermometer from './StatsThermometer';
@@ -13,6 +13,7 @@ import VolantesHistoryComparator from './VolantesHistoryComparator';
 import GameHistory, { parseDateSafely } from './GameHistory';
 import { triggerResultNotification } from '../lib/autoNotificationService';
 import { usePermissions } from '../lib/PermissionsContext';
+import { fetchLotteryResultDirectly } from '../lib/apiHelper';
 
 interface GamesTableProps {
   onOpenNewGame?: () => void;
@@ -60,7 +61,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         if (Array.isArray(parsed)) {
           return parsed.filter(r => {
             const cNum = Number(r?.contest);
-            return cNum > 0 && cNum < 3788 && !r?.isSimulated;
+            return cNum > 0 && !r?.isSimulated;
           });
         }
       }
@@ -281,9 +282,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   // Aba selecionada: 'today' (apenas jogos de hoje), 'future' (apostas futuras) ou 'history' (jogos de dias passados)
   const [gamesTab, setGamesTab] = useState<'today' | 'future' | 'history'>('today');
 
-  // Controle de grupos de concursos expandidos/retraídos
-  // Ao iniciar o app, todas as informações do dia ficam abertas por padrão.
+  // Controle de grupos de concursos expandidos/retraídos e limites de renderização rápida
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [expandedLimits, setExpandedLimits] = useState<Record<string, number>>({});
 
   const isGroupExpanded = (groupKey: string, isToday: boolean, isFirstGroup?: boolean): boolean => {
     if (expandedGroups[groupKey] !== undefined) {
@@ -341,37 +342,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     // 2. Se não estiver na memória salva, consulta a API e salva automaticamente no banco para as próximas consultas
     setIsUpdatingResult(true);
     try {
-      const res = await fetch(resultsApi, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contest: String(targetNum) })
-      });
-      const data = await res.json();
-      if (data.success && data.result) {
-        const formatted = {
-          contest: Number(data.result.contest) || targetNum,
-          date: data.result.date || new Date().toLocaleDateString('pt-BR'),
-          numbers: data.result.numbers,
-          accumulated: !!data.result.accumulated,
-          createdAt: new Date(),
-          isManual: false
-        };
-
-        const limitContest = isMegaSena ? 2780 : 3788;
-        const isOfficialDraw = formatted.contest > 0 && 
-                              formatted.contest < limitContest && 
-                              Array.isArray(formatted.numbers) && 
-                              formatted.numbers.length === (isMegaSena ? 6 : 15);
-
-        if (isOfficialDraw) {
-          await addDoc(collection(db, resultsCollection), formatted);
-          // Trigger automatic result published notification
-          triggerResultNotification(formatted.contest);
+      const data = await fetchLotteryResultDirectly(isMegaSena ? 'megasena' : 'lotofacil', targetNum);
+      if (data && Array.isArray(data.numbers) && data.numbers.length === (isMegaSena ? 6 : 15)) {
+        setLatestResult(data);
+        addToast(`Concurso #${data.contest} carregado com sucesso!`, 'success');
+        if (data.contest > 0) {
+          triggerResultNotification(data.contest);
         }
-        setLatestResult(formatted);
       } else {
-        const errorMsg = data.message || `Concurso #${targetNum} não encontrado.`;
-        addToast(`Aviso: ${errorMsg}`, 'info');
+        addToast(`Aviso: Concurso #${targetNum} ainda não foi apurado ou não está disponível.`, 'info');
       }
     } catch (err: any) {
       console.error("Erro ao buscar concurso:", err);
@@ -385,42 +364,17 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const handleFetchLatestCaixa = async () => {
     if (isUpdatingResult) return;
     setIsUpdatingResult(true);
+    addToast('🔄 Buscando resultado oficial mais recente da Caixa...', 'info');
     try {
-      const res = await fetch(resultsApi, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contest: 'latest' })
-      });
-      const data = await res.json();
-      if (data.success && data.result) {
-        const formatted = {
-          contest: Number(data.result.contest) || 0,
-          date: data.result.date || new Date().toLocaleDateString('pt-BR'),
-          numbers: data.result.numbers,
-          accumulated: !!data.result.accumulated,
-          createdAt: new Date(),
-          isManual: false
-        };
-        // Salva na memória caso ainda não exista e seja um sorteio oficial já realizado
-        const limitContest = isMegaSena ? 2780 : 3788;
-        const isOfficialDraw = formatted.contest > 0 && 
-                              formatted.contest < limitContest && 
-                              Array.isArray(formatted.numbers) && 
-                              formatted.numbers.length === (isMegaSena ? 6 : 15);
-
-        const alreadyExists = savedResultsList.some(r => Number(r.contest) === formatted.contest);
-        if (!alreadyExists && isOfficialDraw) {
-          await addDoc(collection(db, resultsCollection), formatted);
-          // Trigger automatic result published notification
-          triggerResultNotification(formatted.contest);
+      const data = await fetchLotteryResultDirectly(isMegaSena ? 'megasena' : 'lotofacil', 'latest');
+      if (data && Array.isArray(data.numbers) && data.numbers.length === (isMegaSena ? 6 : 15)) {
+        setLatestResult(data);
+        addToast(`🎉 Concurso #${data.contest} atualizado com sucesso!`, 'success');
+        if (data.contest > 0) {
+          triggerResultNotification(data.contest);
         }
-        setLatestResult(formatted);
       } else {
-        const errorMsg = data.message || 'Não foi possível obter o resultado oficial da Caixa.';
-        addToast(errorMsg, 'error');
-        if (errorMsg.includes('antigo') || errorMsg.includes('limite')) {
-          setShowManualResultModal(true);
-        }
+        addToast('Não foi possível obter o resultado oficial mais recente no momento. Tente novamente em instantes.', 'error');
       }
     } catch (err: any) {
       console.error("Erro ao buscar resultado da Caixa:", err);
@@ -439,7 +393,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     const qGames = query(collection(db, 'games'), orderBy('date', 'desc'), limit(500));
     const unsubGames = onSnapshot(qGames, snapshot => {
       const allDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      const list = allDocs.filter((g: any) => {
+      let list = allDocs.filter((g: any) => {
         if (!activePool) return true;
         if (g.poolId === activePool.id) return true;
         // Suporte retroativo para jogos cadastrados sem poolId ou com ID padrão
@@ -451,17 +405,23 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         return false;
       });
 
+      if (list.length === 0 && allDocs.length > 0) {
+        list = allDocs;
+      }
+
       list.sort((a: any, b: any) => {
         const dateA = a.date && typeof a.date.toDate === 'function' ? a.date.toDate().getTime() : 0;
         const dateB = b.date && typeof b.date.toDate === 'function' ? b.date.toDate().getTime() : 0;
         return dateB - dateA;
       });
       setGames(list);
-      try {
-        localStorage.setItem('bolao_cache_games', JSON.stringify(list));
-      } catch (cacheErr) {
-        console.warn('Failed to save games to localStorage cache:', cacheErr);
-      }
+      setTimeout(() => {
+        try {
+          localStorage.setItem('bolao_cache_games', JSON.stringify(list));
+        } catch (cacheErr) {
+          console.warn('Failed to save games to localStorage cache:', cacheErr);
+        }
+      }, 0);
     }, err => {
       console.warn('Games snapshot error, loading cache:', err);
       if (isQuotaError(err)) {
@@ -473,38 +433,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       }
     });
 
-    // Função para limpar qualquer resultado futuro simulado que possa ter ficado gravado no Firestore
-    const cleanFutureResults = async () => {
-      // Evita rodar múltiplas vezes na mesma sessão para economizar cota de escrita
-      if (sessionStorage.getItem('bolao_cleanup_done')) return;
-
-      try {
-        const limitContest = isMegaSena ? 2780 : 3788;
-        const qFuture = query(
-          collection(db, resultsCollection),
-          where('contest', '>=', limitContest)
-        );
-        const snap = await getDocs(qFuture);
-        
-        if (!snap.empty) {
-          const batch = writeBatch(db);
-          snap.forEach((d) => {
-            batch.delete(d.ref);
-            console.log(`[Database Cleanup] Agendado para deletar concurso futuro simulado: #${d.data().contest}`);
-          });
-          await batch.commit();
-        }
-        sessionStorage.setItem('bolao_cleanup_done', 'true');
-      } catch (err: any) {
-        console.warn('Erro ao limpar resultados futuros do banco:', err);
-        if (isQuotaError(err)) {
-          setIsQuotaExceeded(true);
-        }
-      }
-    };
-    cleanFutureResults();
-
-    // Escuta todo o histórico de resultados salvos na memória local do Firestore
+    // Escuta todo o histórico de resultados salvos no Firestore em tempo real
     const qAllResults = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(150));
     const unsubResults = onSnapshot(qAllResults, snapshot => {
       if (!snapshot.empty) {
@@ -513,34 +442,38 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         const uniqueMap = new Map<number, any>();
         list.forEach((item: any) => {
           const cNum = Number(item.contest);
-          if (cNum && !uniqueMap.has(cNum)) {
+          if (cNum && !item.isSimulated && !uniqueMap.has(cNum)) {
             uniqueMap.set(cNum, item);
           }
         });
         const sorted = Array.from(uniqueMap.values()).sort((a, b) => Number(b.contest) - Number(a.contest));
         setSavedResultsList(sorted);
-        try {
-          localStorage.setItem('bolao_cache_results', JSON.stringify(sorted));
-        } catch (cacheErr) {
-          console.warn('Failed to save results to localStorage cache:', cacheErr);
-        }
-
-        // Atualiza para o concurso vigente mais recente (deve ser menor que o limite de concurso futuro: 3788 para Lotofácil / 2780 para MegaSena)
-        const limitContest = isMegaSena ? 2780 : 3788;
-        const officialSorted = sorted.filter((r: any) => Number(r.contest) < limitContest);
-        const defaultLatest = officialSorted.length > 0 ? officialSorted[0] : sorted[0];
-
-        setLatestResult((prev: any) => {
-          const nextLatest = prev && sorted.some((r: any) => Number(r.contest) === Number(prev.contest)) ? prev : defaultLatest;
-          if (nextLatest) {
-            try {
-              localStorage.setItem('bolao_cache_latest_result', JSON.stringify(nextLatest));
-            } catch (cacheErr) {
-              console.warn('Failed to save latestResult to cache:', cacheErr);
-            }
+        setTimeout(() => {
+          try {
+            localStorage.setItem('bolao_cache_results', JSON.stringify(sorted));
+          } catch (cacheErr) {
+            console.warn('Failed to save results to localStorage cache:', cacheErr);
           }
-          return nextLatest;
-        });
+        }, 0);
+
+        // Atualiza para o concurso mais recente
+        const defaultLatest = sorted.length > 0 ? sorted[0] : null;
+
+        if (defaultLatest) {
+          setLatestResult((prev: any) => {
+            const nextLatest = prev && sorted.some((r: any) => Number(r.contest) === Number(prev.contest)) ? prev : defaultLatest;
+            if (nextLatest) {
+              setTimeout(() => {
+                try {
+                  localStorage.setItem('bolao_cache_latest_result', JSON.stringify(nextLatest));
+                } catch (cacheErr) {
+                  console.warn('Failed to save latestResult to cache:', cacheErr);
+                }
+              }, 0);
+            }
+            return nextLatest;
+          });
+        }
       }
     }, err => {
       console.warn('Results snapshot error, loading cache:', err);
@@ -552,7 +485,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         try {
           const list = JSON.parse(cached);
           if (Array.isArray(list)) {
-            setSavedResultsList(list.filter((r: any) => Number(r.contest) < (isMegaSena ? 2780 : 3788) && !r.isSimulated));
+            setSavedResultsList(list.filter((r: any) => Number(r.contest) > 0 && !r.isSimulated));
           }
         } catch {}
       }
@@ -561,7 +494,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         try {
           const parsed = JSON.parse(cachedLatest);
           const cNum = Number(parsed?.contest);
-          if (cNum > 0 && cNum < (isMegaSena ? 2780 : 3788) && !parsed?.isSimulated) {
+          if (cNum > 0 && !parsed?.isSimulated) {
             setLatestResult(parsed);
           }
         } catch {}
@@ -612,10 +545,12 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     : [];
 
   const handleDeleteGame = async (gameId: string) => {
+    // Atualização otimista imediata da interface (0ms de latência percebida)
+    setGames(prev => prev.filter(g => g.id !== gameId));
+    setDeletingId(null);
     try {
       await deleteDoc(doc(db, 'games', gameId));
       addToast('Aposta removida com sucesso.', 'info');
-      setDeletingId(null);
     } catch (err) {
       console.error('Erro ao deletar jogo:', err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
@@ -629,15 +564,26 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       return;
     }
 
-    setIsDeletingGroup(true);
-    try {
-      const deletePromises = groupToDelete.games.map((g: any) =>
-        deleteDoc(doc(db, 'games', g.id))
-      );
-      await Promise.all(deletePromises);
+    const idsToRemove = new Set(groupToDelete.games.map((g: any) => g.id));
+    const count = groupToDelete.games.length;
+    const title = groupToDelete.contestTitle;
 
-      addToast(`Todas as ${groupToDelete.games.length} apostas do ${groupToDelete.contestTitle} foram excluídas com sucesso.`, 'success');
-      setGroupToDelete(null);
+    // Atualização otimista na tela em 0ms
+    setGames(prev => prev.filter(g => !idsToRemove.has(g.id)));
+    setGroupToDelete(null);
+    setIsDeletingGroup(true);
+
+    try {
+      // Usa lote de gravação (writeBatch) do Firestore: muito mais rápido do que dezenas de requisições isoladas
+      const batch = writeBatch(db);
+      groupToDelete.games.forEach((g: any) => {
+        if (g.id) {
+          batch.delete(doc(db, 'games', g.id));
+        }
+      });
+      await batch.commit();
+
+      addToast(`Todas as ${count} apostas do ${title} foram excluídas com sucesso.`, 'success');
     } catch (err) {
       console.error('Erro ao excluir grupo de apostas:', err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
@@ -788,29 +734,26 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     const isHigherThanLatest = contestNumber !== null && latestContestNum > 0 && contestNumber > latestContestNum;
     const isFutureContestTitle = String(game.contest || '').toLowerCase().includes('futuro');
 
-    // Uma aposta é estritamente PENDENTE / FUTURA se:
+    // Uma aposta é estritamente PENDENTE / FUTURA apenas se:
     // 1. Sua data de sorteio está no futuro (amanhã, próxima semana, etc.)
-    // 2. Ou seu concurso é superior ao último sorteio oficial apurado pela Caixa
-    // 3. Ou o título/status indica aposta futura
-    // 4. Ou seu concurso é diferente do concurso atual e não possui resultado salvo no histórico
+    // 2. Ou seu concurso é maior que o último sorteio oficial apurado (ex: 3792 > 3791)
+    // 3. Ou o título indica explicitamente "Concurso Futuro"
     const isPendingFuture = Boolean(
       dateInfo.isFuture ||
       isHigherThanLatest ||
-      isFutureContestTitle ||
-      (contestNumber !== null && !foundResultForContest && contestNumber !== latestContestNum) ||
-      (!foundResultForContest && !latestResult)
+      isFutureContestTitle
     );
 
-    let targetResult = isPendingFuture
-      ? null
-      : (foundResultForContest || (contestNumber === latestContestNum ? latestResult : null));
+    let targetResult = foundResultForContest || (contestNumber === latestContestNum ? latestResult : null);
 
     const resDrawn = (targetResult && Array.isArray(targetResult.numbers))
       ? targetResult.numbers.map((n: any) => Number(n))
       : [];
 
-    const prizeInfo = (isPendingFuture || resDrawn.length === 0)
-      ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Sorteio', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
+    const prizeInfo = isPendingFuture
+      ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aposta Futura', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
+      : resDrawn.length === 0
+      ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: contestNumber ? `Concurso #${contestNumber} Não Apurado` : 'Aguardando Sorteio', statusText: 'Pendente', badgeColor: 'bg-amber-50 text-amber-800 border border-amber-200' }
       : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
 
     return { ...game, gameNumbers, prizeInfo, contestNumber, isPendingFuture, ...dateInfo };
@@ -834,45 +777,41 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   // Garante que o concurso mais recente oficial da Caixa fique sempre fixado e exibido na tela
   useEffect(() => {
     if (savedResultsList.length > 0) {
-      const limitContest = isMegaSena ? 2780 : 3788;
-      const officialSorted = savedResultsList.filter((r: any) => Number(r.contest) < limitContest);
-      const latestOfficial = officialSorted.length > 0 ? officialSorted[0] : savedResultsList[0];
+      const validResults = savedResultsList.filter((r: any) => !r.isSimulated && Number(r.contest) > 0);
+      const latestOfficial = validResults.length > 0 ? validResults[0] : savedResultsList[0];
       if (latestOfficial && (!latestResult || Number(latestOfficial.contest) > Number(latestResult.contest))) {
         setLatestResult(latestOfficial);
       }
     }
   }, [savedResultsList, isMegaSena]);
 
-  // Consulta silenciosa do sorteio mais recente oficial na Caixa ao inicializar
+  // Consulta automática do sorteio mais recente oficial na Caixa ao inicializar e em segundo plano
   useEffect(() => {
-    const fetchLatestSilently = async () => {
+    const autoSyncResult = async () => {
       try {
-        const res = await fetch(resultsApi, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contest: 'latest' })
-        });
-        const data = await res.json();
-        if (data.success && data.result) {
-          const formatted = {
-            contest: Number(data.result.contest) || 0,
-            date: data.result.date || new Date().toLocaleDateString('pt-BR'),
-            numbers: data.result.numbers,
-            accumulated: !!data.result.accumulated,
-            createdAt: new Date(),
-            isManual: false
-          };
-          const limitContest = isMegaSena ? 2780 : 3788;
-          if (formatted.contest > 0 && formatted.contest < limitContest && Array.isArray(formatted.numbers)) {
-            setLatestResult(formatted);
-          }
+        const data = await fetchLotteryResultDirectly(isMegaSena ? 'megasena' : 'lotofacil', 'latest');
+        if (data && Array.isArray(data.numbers) && data.numbers.length === (isMegaSena ? 6 : 15)) {
+          setLatestResult((prev: any) => {
+            if (!prev || Number(data.contest) >= Number(prev.contest)) {
+              return data;
+            }
+            return prev;
+          });
         }
       } catch (err) {
         console.warn('Silently fetched latest contest error:', err);
       }
     };
-    fetchLatestSilently();
-  }, [resultsApi, isMegaSena]);
+
+    autoSyncResult();
+
+    // Polling automático a cada 60 segundos
+    const interval = setInterval(() => {
+      autoSyncResult();
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [isMegaSena]);
 
   // Lista de jogos da aba selecionada ('today' | 'future' | 'history')
   const currentTabGames = useMemo(() => {
@@ -955,7 +894,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
       const group = map.get(key)!;
       group.games.push(game);
-      group.totalCost += Number(game.cost) || 3.5;
+      group.totalCost += getCorrectGameCost(game, isMegaSena);
       group.totalPrize += Number(game.prizeInfo.prizeAmount) || 0;
       if (game.prizeInfo.isWinner) {
         group.winningGamesCount++;
@@ -1619,11 +1558,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             {gamesTab === 'today' ? (
               <div>
                 <span className="text-3xl block mb-2">🎯</span>
-                <p className="text-gray-800 text-sm font-bold mb-1">
+                <p className="text-gray-800 text-sm font-bold mb-3">
                   Nenhuma aposta cadastrada para o sorteio de hoje {selectedMonthFilter !== 'all' ? `no mês ${selectedMonthFilter}` : ''}.
-                </p>
-                <p className="text-gray-500 text-xs mb-4">
-                  Apostas programadas para os próximos concursos estão guardadas na aba "Apostas Futuras".
                 </p>
                 <div className="flex items-center justify-center gap-2 flex-wrap">
                   {futureGames.length > 0 && (
@@ -1655,11 +1591,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             ) : gamesTab === 'future' ? (
               <div>
                 <span className="text-3xl block mb-2">⏳</span>
-                <p className="text-gray-800 text-sm font-bold mb-1">
+                <p className="text-gray-800 text-sm font-bold mb-3">
                   Nenhuma aposta futura agendada no momento {selectedMonthFilter !== 'all' ? `no mês ${selectedMonthFilter}` : ''}.
-                </p>
-                <p className="text-gray-500 text-xs mb-4">
-                  Cadastre novos bilhetes ou use a Teimosinha para programar jogos para os próximos sorteios.
                 </p>
                 <div className="flex items-center justify-center gap-2 flex-wrap">
                   {onOpenNewGame && (
@@ -1857,10 +1790,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                   </div>
 
                   {/* Visualização Expandida ou Retraída das Apostas */}
-                  {isExpanded ? (
-                    <div className="divide-y divide-gray-100 animate-fadeIn">
-                      {group.games.map((game: any, gameIndex: number) => {
-                        const hitsInfo = game.prizeInfo;
+                  {isExpanded ? (() => {
+                    const displayLimit = expandedLimits[group.key] || 15;
+                    const visibleGames = group.games.slice(0, displayLimit);
+                    const hasMore = group.games.length > displayLimit;
+
+                    return (
+                      <div className="divide-y divide-gray-100 animate-fadeIn">
+                        {visibleGames.map((game: any, gameIndex: number) => {
+                          const hitsInfo = game.prizeInfo;
 
                         return (
                           <div 
@@ -2029,8 +1967,21 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                           </div>
                         );
                       })}
-                    </div>
-                  ) : (
+
+                        {hasMore && (
+                          <div className="p-3 text-center bg-purple-50/60 border-t border-purple-100">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLimits(prev => ({ ...prev, [group.key]: group.games.length }))}
+                              className="px-4 py-2 bg-purple-900 hover:bg-purple-950 text-white text-xs font-black rounded-xl transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                            >
+                              <span>⚡</span> Exibir todas as {group.games.length} apostas (mais {group.games.length - displayLimit} restantes)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })() : (
                     <div 
                       onClick={() => toggleGroup(group.key, !!group.isToday, isFirstGroup)}
                       className="px-4 py-2.5 bg-gray-50/70 hover:bg-gray-100 cursor-pointer flex items-center justify-between text-xs text-gray-600 transition"

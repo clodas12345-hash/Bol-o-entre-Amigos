@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
-import { calculateGamePrize } from '../lib/prizes';
+import { calculateGamePrize, getCorrectGameCost } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
@@ -38,8 +38,8 @@ export default function FinancialDashboard() {
         const allGames = gameSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const resList = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         
-        // Filtra jogos pelo bolão ativo ou retrocompatibilidade
-        const filteredGames = allGames.filter((g: any) => {
+        // Filtra jogos pelo bolão ativo ou retrocompatibilidade com fallback
+        let filteredGames = allGames.filter((g: any) => {
           if (!activePool) return true;
           if (g.poolId === activePool.id) return true;
           const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
@@ -48,6 +48,10 @@ export default function FinancialDashboard() {
           if (!g.poolId && isPrincipalPool) return true;
           return false;
         });
+
+        if (filteredGames.length === 0 && allGames.length > 0) {
+          filteredGames = allGames;
+        }
 
         setPayments(payList);
         setGames(filteredGames);
@@ -137,8 +141,8 @@ export default function FinancialDashboard() {
   // Total arrecadado considera o maior entre os pagamentos avulsos registrados e o cálculo automático dos pagos
   const totalArrecadado = Math.max(paymentsTotal, paidMembersTotal);
 
-  // Total investido em apostas registradas (apenas bilhetes únicos)
-  const totalGastoApostas = uniqueGames.reduce((sum, g) => sum + (Number(g.cost) || 3.50), 0);
+  const isMegaSena = activePool?.lotteryType === 'megasena';
+  const totalGastoApostas = uniqueGames.reduce((sum, g) => sum + getCorrectGameCost(g, isMegaSena), 0);
 
   // Cálculo de Prêmios Ganhos (apenas bilhetes únicos)
   const latestResult = results[0];
@@ -151,8 +155,8 @@ export default function FinancialDashboard() {
     const contestMatch = g.contest ? String(g.contest).match(/#(\d+)/) : null;
     const contestNum = contestMatch ? Number(contestMatch[1]) : null;
 
-    if (isFutureContestTitle || (contestNum !== null && (contestNum >= 3788 || (latestResult?.contest && contestNum > Number(latestResult.contest))))) {
-      return sum; // Future contest games contribute 0 to prizes won
+    if (isFutureContestTitle || (contestNum !== null && latestResult?.contest && contestNum > Number(latestResult.contest) && !results.some(r => Number(r.contest) === contestNum))) {
+      return sum; // Jogos de concursos futuros sem sorteio apurado contribuem com 0 aos prêmios ganhos
     }
 
     const gameNumbers = Array.isArray(g.numbers) ? g.numbers.map((n: any) => Number(n)) : [];

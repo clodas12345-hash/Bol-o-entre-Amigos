@@ -40,14 +40,16 @@ import { PermissionsProvider, usePermissions } from './lib/PermissionsContext';
 import { PendingRequestsProvider, usePendingRequests } from './lib/PendingRequestsContext';
 import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from './lib/formatters';
 import { PermissionKey } from './lib/permissions';
+import { fetchLotteryResultDirectly } from './lib/apiHelper';
 
 import logoImg from './assets/images/bolao_logo_app.png';
 
 function BackgroundUploadStatus() {
-  const { queue, clearCompleted, isProcessing } = useUpload();
+  const { queue, clearCompleted, retryFailed, isProcessing } = useUpload();
   const [minimized, setMinimized] = useState(false);
+  const [closed, setClosed] = useState(false);
   
-  if (queue.length === 0) return null;
+  if (queue.length === 0 || closed) return null;
 
   const totalItems = queue.length;
   const completedItems = queue.filter(item => item.status === 'success' || item.status === 'error' || item.status === 'duplicate').length;
@@ -55,26 +57,32 @@ function BackgroundUploadStatus() {
   const isCurrentlyAnalyzing = queue.some(item => item.status === 'ocr');
 
   return (
-    <div className={`fixed bottom-4 right-4 z-[100] transition-all duration-500 ease-in-out ${minimized ? 'w-12 h-12' : 'w-72 sm:w-80'}`}>
+    <div className={`fixed bottom-4 right-4 z-[100] transition-all duration-300 ease-in-out ${minimized ? 'w-14 h-14' : 'w-72 sm:w-80 max-w-[calc(100vw-2rem)]'}`}>
       {minimized ? (
         <button 
           onClick={() => setMinimized(false)}
-          className="w-12 h-12 bg-indigo-900 text-white rounded-full shadow-2xl flex items-center justify-center relative overflow-hidden group animate-bounce-slow cursor-pointer"
+          className="w-14 h-14 bg-gradient-to-tr from-indigo-950 via-blue-900 to-indigo-900 text-white rounded-full shadow-2xl flex items-center justify-center relative overflow-hidden group hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-indigo-400/30"
+          title="Ver progresso de envio dos bilhetes"
         >
           {isProcessing ? (
-            <div className="absolute inset-0 bg-indigo-600 animate-pulse opacity-50" />
+            <div className="absolute inset-0 bg-amber-400/20 animate-pulse" />
           ) : null}
-          <span className="relative z-10 text-lg">
-            {isCurrentlyAnalyzing ? '🔍' : '📤'}
-          </span>
+          <div className="flex flex-col items-center justify-center relative z-10">
+            <span className="text-base leading-none">
+              {isCurrentlyAnalyzing ? '🔍' : '📤'}
+            </span>
+            <span className="text-[9px] font-black mt-0.5 text-amber-300">
+              {completedItems}/{totalItems}
+            </span>
+          </div>
           {isProcessing && (
-            <div className="absolute top-0 right-0 w-3 h-3 bg-amber-400 rounded-full border-2 border-white" />
+            <div className="absolute top-1 right-1 w-3 h-3 bg-amber-400 rounded-full border-2 border-indigo-950 animate-ping" />
           )}
         </button>
       ) : (
-        <div className="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-gray-100 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+        <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.35)] border border-indigo-100 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
           {/* Header */}
-          <div className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white p-3.5 flex justify-between items-center">
+          <div className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white p-3.5 flex justify-between items-center select-none">
             <div className="flex items-center gap-2.5">
               <div className="relative">
                 {isProcessing ? (
@@ -91,14 +99,16 @@ function BackgroundUploadStatus() {
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setMinimized(true)}
-                className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer"
-                title="Minimizar"
-              >
-                <span className="text-xs">➖</span>
-              </button>
+            <div className="flex items-center gap-1.5">
+              {failedItems > 0 && !isProcessing && (
+                <button 
+                  onClick={retryFailed} 
+                  className="bg-amber-400 hover:bg-amber-300 text-indigo-950 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer shadow-xs flex items-center gap-1"
+                  title="Tentar processar novamente as fotos que deram tempo esgotado"
+                >
+                  <span>🔄</span> Reprocessar
+                </button>
+              )}
               {!isProcessing && (
                 <button 
                   onClick={clearCompleted} 
@@ -107,17 +117,31 @@ function BackgroundUploadStatus() {
                   Limpar
                 </button>
               )}
+              <button 
+                onClick={() => setMinimized(true)}
+                className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer text-xs"
+                title="Minimizar janela para flutuante"
+              >
+                ➖
+              </button>
+              <button 
+                onClick={() => setClosed(true)}
+                className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer text-xs text-red-200 hover:text-white"
+                title="Fechar alerta"
+              >
+                ✕
+              </button>
             </div>
           </div>
 
-          {/* List */}
-          <div className="max-h-64 overflow-y-auto p-2.5 space-y-2 bg-gray-50/30">
+          {/* List - Smooth Touch Scroll */}
+          <div className="max-h-48 sm:max-h-56 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-2 bg-gray-50/40 divide-y divide-gray-100/50">
             {queue.map((item) => (
               <div key={item.id} className={`p-2.5 rounded-2xl border transition-all duration-300 ${
-                item.status === 'success' ? 'bg-emerald-50/50 border-emerald-100' : 
-                item.status === 'error' ? 'bg-red-50/50 border-red-100' :
-                item.status === 'duplicate' ? 'bg-amber-50/50 border-amber-100' :
-                'bg-white border-gray-100 shadow-sm'
+                item.status === 'success' ? 'bg-emerald-50/60 border-emerald-100' : 
+                item.status === 'error' ? 'bg-red-50/60 border-red-100' :
+                item.status === 'duplicate' ? 'bg-amber-50/60 border-amber-100' :
+                'bg-white border-gray-100 shadow-xs'
               }`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -168,16 +192,20 @@ function BackgroundUploadStatus() {
           </div>
           
           {isProcessing && (
-            <div className="px-3.5 py-2 bg-indigo-50 border-t border-indigo-100">
+            <div className="px-3.5 py-1.5 bg-indigo-50/80 border-t border-indigo-100 flex items-center justify-between">
               <p className="text-[9px] text-indigo-700 font-bold flex items-center gap-1.5">
-                <span className="animate-bounce">💡</span> Você pode navegar normalmente enquanto a IA trabalha.
+                <span className="animate-bounce">💡</span> Você pode navegar na tela normalmente.
               </p>
+              <button 
+                onClick={() => setMinimized(true)}
+                className="text-[9px] font-black text-indigo-900 underline hover:no-underline cursor-pointer"
+              >
+                Minimizar
+              </button>
             </div>
           )}
         </div>
       )}
-
-
     </div>
   );
 }
@@ -672,7 +700,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                 </p>
                 <div className="mt-2.5 flex items-center gap-2 flex-wrap">
                   <a
-                    href="https://console.firebase.google.com/project/bolaoeamigos-6caa4/usage"
+                    href="https://console.firebase.google.com/project/bolao-entre-amigos-78804/firestore/databases/(default)/data?openUpgradeDialog=true"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg transition-colors cursor-pointer uppercase shadow-sm"
@@ -845,21 +873,16 @@ export default function App() {
   }, [phoneUser?.sessionUser?.uid]);
 
   useEffect(() => {
-    // Verificação na inicialização: limpa qualquer estado de 'concursos futuros' ou simulados da memória
-    // garantindo que o estado de exibição comece sempre com o concurso vigente real.
-    const sanitizeContestsMemory = async () => {
+    // Inicialização e sincronização automática dos sorteios oficiais
+    const syncLatestLotteryResults = async () => {
       try {
-        const LOTOFACIL_LIMIT = 3788;
-        const MEGASENA_LIMIT = 2780;
-
-        // 1. Limpeza do cache do último resultado na memória local
+        // 1. Limpeza apenas de dados explicitamente marcados como simulados/inválidos no cache
         const cachedLatest = localStorage.getItem('bolao_cache_latest_result');
         if (cachedLatest) {
           try {
             const parsed = JSON.parse(cachedLatest);
             const num = Number(parsed?.contest);
-            if (!num || num >= LOTOFACIL_LIMIT || parsed?.isSimulated || parsed?.isManual) {
-              console.log(`[Memory Sanitizer] Concurso futuro/simulado removido do cache: #${num}`);
+            if (!num || parsed?.isSimulated) {
               localStorage.removeItem('bolao_cache_latest_result');
             }
           } catch {
@@ -867,99 +890,32 @@ export default function App() {
           }
         }
 
-        // 2. Limpeza do histórico de resultados na memória local
-        const cachedResults = localStorage.getItem('bolao_cache_results');
-        if (cachedResults) {
-          try {
-            const list = JSON.parse(cachedResults);
-            if (Array.isArray(list)) {
-              const cleaned = list.filter((r: any) => {
-                const cNum = Number(r?.contest);
-                return cNum > 0 && cNum < LOTOFACIL_LIMIT && !r?.isSimulated;
-              });
-              localStorage.setItem('bolao_cache_results', JSON.stringify(cleaned));
-            }
-          } catch {
-            localStorage.removeItem('bolao_cache_results');
-          }
+        // 2. Busca o resultado oficial mais recente da Lotofácil e Mega-Sena de forma resiliente
+        const lotoResult = await fetchLotteryResultDirectly('lotofacil', 'latest');
+        if (lotoResult && lotoResult.contest > 0) {
+          console.log(`[Auto-Sync] Sorteio oficial Lotofácil #${lotoResult.contest} sincronizado`);
         }
 
-        // 3. Limpeza do termômetro estatístico na memória local
-        const cachedStats = localStorage.getItem('bolao_cache_stats_results');
-        if (cachedStats) {
-          try {
-            const sList = JSON.parse(cachedStats);
-            if (Array.isArray(sList)) {
-              const cleanedStats = sList.filter((r: any) => {
-                const cNum = Number(r?.contest);
-                return cNum > 0 && cNum < LOTOFACIL_LIMIT && !r?.isSimulated;
-              });
-              localStorage.setItem('bolao_cache_stats_results', JSON.stringify(cleanedStats));
-            }
-          } catch {
-            localStorage.removeItem('bolao_cache_stats_results');
-          }
-        }
-
-        // 4. Limpeza no Firestore de concursos futuros ou simulados gravados indevidamente
-        try {
-          const qFutureLoto = query(
-            collection(db, 'lotofacil_results'),
-            where('contest', '>=', LOTOFACIL_LIMIT)
-          );
-          const snapLoto = await getDocs(qFutureLoto);
-          if (!snapLoto.empty) {
-            for (const d of snapLoto.docs) {
-              await deleteDoc(d.ref).catch(() => {});
-            }
-          }
-
-          const qFutureMega = query(
-            collection(db, 'megasena_results'),
-            where('contest', '>=', MEGASENA_LIMIT)
-          );
-          const snapMega = await getDocs(qFutureMega);
-          if (!snapMega.empty) {
-            for (const d of snapMega.docs) {
-              await deleteDoc(d.ref).catch(() => {});
-            }
-          }
-        } catch (dbErr) {
-          console.warn('[Memory Sanitizer] Verificação no banco:', dbErr);
-        }
-
-        // 5. Garantir que o concurso vigente real seja consultado
-        try {
-          const res = await fetch('/api/lotofacil/results', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contest: 'latest' })
-          });
-          const data = await res.json();
-          if (data.success && data.result) {
-            const contestNum = Number(data.result.contest);
-            if (contestNum > 0 && contestNum < LOTOFACIL_LIMIT) {
-              const officialResult = {
-                contest: contestNum,
-                date: data.result.date || new Date().toLocaleDateString('pt-BR'),
-                numbers: data.result.numbers,
-                accumulated: !!data.result.accumulated,
-                createdAt: new Date(),
-                isManual: false
-              };
-              localStorage.setItem('bolao_cache_latest_result', JSON.stringify(officialResult));
-            }
-          }
-        } catch {
-          // Offline ou fallback silencioso
+        const megaResult = await fetchLotteryResultDirectly('megasena', 'latest');
+        if (megaResult && megaResult.contest > 0) {
+          console.log(`[Auto-Sync] Sorteio oficial Mega-Sena #${megaResult.contest} sincronizado`);
         }
       } catch (err) {
-        console.warn('Erro ao sanitizar concursos futuros:', err);
+        console.warn('[Auto-Sync] Erro na sincronização inicial de resultados:', err);
       }
     };
 
-    sanitizeContestsMemory();
+    syncLatestLotteryResults();
 
+    // Sincronização periódica em segundo plano (a cada 2 minutos)
+    const interval = setInterval(() => {
+      syncLatestLotteryResults();
+    }, 120000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     let unsubUserRealtime = () => {};
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {

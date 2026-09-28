@@ -26,9 +26,9 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * Salva ou baixa um arquivo de forma universal e compatível com:
- * 1. Android APK nativo (Capacitor WebView) -> grava no armazenamento e abre diálogo nativo para Salvar/Compartilhar (Downloads, Drive, WhatsApp, etc.)
- * 2. Navegador Web (Desktop / Mobile) -> dispara download tradicional via Blob e <a download>
+ * Esquema de backup solicitado pelo usuário:
+ * - Em plataforma nativa (Android/iOS com Capacitor): Grava o arquivo na pasta Documentos e abre o pop-up de Compartilhar/Salvar (Share.share).
+ * - Em navegador Web: Dispara download via Blob e <a download>.
  */
 export async function downloadOrShareFile(options: FileDownloadOptions): Promise<{
   success: boolean;
@@ -40,72 +40,43 @@ export async function downloadOrShareFile(options: FileDownloadOptions): Promise
 
   if (isNative) {
     try {
-      // 1. Grava no diretório Cache / Documents do app Android
-      let fileUri: string = '';
-
+      let fileUri = '';
       if (isBase64) {
-        const writeRes = await Filesystem.writeFile({
+        const result = await Filesystem.writeFile({
           path: fileName,
           data: content,
-          directory: Directory.Cache
+          directory: Directory.Documents
         });
-        fileUri = writeRes.uri;
+        fileUri = result.uri;
       } else {
-        const writeRes = await Filesystem.writeFile({
+        const result = await Filesystem.writeFile({
           path: fileName,
           data: content,
-          directory: Directory.Cache,
+          directory: Directory.Documents,
           encoding: Encoding.UTF8
         });
-        fileUri = writeRes.uri;
+        fileUri = result.uri;
       }
 
-      // Também grava uma cópia permanente no Documents
-      try {
-        if (isBase64) {
-          await Filesystem.writeFile({
-            path: fileName,
-            data: content,
-            directory: Directory.Documents
-          });
-        } else {
-          await Filesystem.writeFile({
-            path: fileName,
-            data: content,
-            directory: Directory.Documents,
-            encoding: Encoding.UTF8
-          });
-        }
-      } catch (docErr) {
-        console.warn('Aviso ao salvar cópia em Documents:', docErr);
-      }
-
-      // 2. Aciona o compartilhamento nativo do Android com o arquivo anexado
-      // Isso permite ao usuário escolher "Salvar no dispositivo", "Downloads", "Google Drive", "WhatsApp", etc.
-      try {
-        await Share.share({
-          title: fileName,
-          text: `Backup dos dados do Bolão: ${fileName}`,
-          url: fileUri,
-          dialogTitle: 'Salvar ou Compartilhar Arquivo de Backup'
-        });
-      } catch (shareErr: any) {
-        // Se o usuário fechar a tela de compartilhamento sem escolher, não é um erro fatal
-        console.log('Diálogo de compartilhamento finalizado:', shareErr);
-      }
+      // Abre o menu de compartilhamento do Android para salvar no Google Drive, WhatsApp ou onde preferir
+      await Share.share({
+        title: 'Backup Completo Bolão de Amigos',
+        text: 'Arquivo completo de backup com todos os dados do bolão.',
+        url: fileUri,
+        dialogTitle: 'Salvar ou Compartilhar Backup'
+      });
 
       return {
         success: true,
         method: 'native',
-        message: 'Arquivo salvo com sucesso no dispositivo!'
+        message: 'Backup gerado com sucesso!'
       };
     } catch (err: any) {
-      console.error('Erro ao salvar arquivo no Android via Filesystem:', err);
-      // Tenta fallback para navegador
+      console.error('Erro ao salvar no celular:', err);
     }
   }
 
-  // Fallback / Navegador Web:
+  // Navegador Web
   try {
     let blob: Blob;
     if (isBase64) {
@@ -121,15 +92,14 @@ export async function downloadOrShareFile(options: FileDownloadOptions): Promise
     }
 
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = url;
+    downloadAnchor.download = fileName;
+    downloadAnchor.style.display = 'none';
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
 
-    // Revoga a URL com segurança após 60s para não cancelar o download
     setTimeout(() => {
       try {
         URL.revokeObjectURL(url);

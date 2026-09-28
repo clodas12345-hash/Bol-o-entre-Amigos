@@ -312,3 +312,25 @@ export function calculateGamePrize(
     missingDrawnNumbers,
   };
 }
+
+/**
+ * Retorna o custo correto e oficial de uma aposta por concurso,
+ * garantindo que o custo por concurso de 17 apostas simples de 15 dezenas seja R$ 59,50 (17 x R$ 3,50),
+ * e não o valor total acumulado da teimosinha (R$ 952,00).
+ */
+export function getCorrectGameCost(game: any, isMega: boolean = false): number {
+  const numsArray = Array.isArray(game.numbers) ? game.numbers : (Array.isArray(game.gameNumbers) ? game.gameNumbers : []);
+  const len = numsArray.length > 0 ? numsArray.length : (isMega ? 6 : 15);
+  const officialPrices = isMega ? MEGASENA_PRICES : LOTOFACIL_PRICES;
+  
+  if (!isMega) {
+    if (len === 15) return 3.50;
+    if (officialPrices[len]) return officialPrices[len];
+    return 3.50;
+  } else {
+    if (len === 6) return 5.00;
+    if (officialPrices[len]) return officialPrices[len];
+    return 5.00;
+  }
+}
+

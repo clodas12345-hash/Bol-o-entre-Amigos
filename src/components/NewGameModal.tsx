@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, setDoc, doc, writeBatch, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
@@ -56,6 +56,7 @@ const formatDateToMonthRef = (date: Date): string => {
 
 export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps) {
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
+  const [isNumbersExpanded, setIsNumbersExpanded] = useState(false);
   const [contest, setContest] = useState('');
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().split('T')[0]);
   
@@ -65,8 +66,8 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
   };
   const [monthRef, setMonthRef] = useState(getCurrentMonthStr());
 
-  const [isTeimosinha, setIsTeimosinha] = useState(true);
-  const [teimosinhaCount, setTeimosinhaCount] = useState<number>(6);
+  const [isTeimosinha, setIsTeimosinha] = useState(false);
+  const [teimosinhaCount, setTeimosinhaCount] = useState<number>(3);
 
   const { queue, addToQueue, isProcessing: isUploading } = useUpload();
 
@@ -156,6 +157,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
     }
 
     setSelectedNumbers(bestGame);
+    setIsNumbersExpanded(true);
     addToast('🎲 Jogo balanceado gerado com sucesso (Padrão 8 Ímpares / 7 Pares / 5-6 Primos)!', 'info');
   };
 
@@ -165,6 +167,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
     const shuffled = allNums.sort(() => 0.5 - Math.random());
     const picked = shuffled.slice(0, totalNumbersToPick).sort((a, b) => a - b);
     setSelectedNumbers(picked);
+    setIsNumbersExpanded(true);
   };
 
   // Salvamento manual caso o usuário marque as dezenas no volante sem enviar foto
@@ -194,7 +197,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
       const unitTotal = prices[selectedNumbers.length] || (isMegaSena ? 5.00 : 3.50);
       const numbersKey = [...selectedNumbers].sort((a, b) => a - b).join('-');
 
-      const writePromises: Promise<any>[] = [];
+      const gamesToSave: any[] = [];
       let savedCount = 0;
       let duplicateCount = 0;
 
@@ -226,7 +229,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             const sig = `contest::${currentContestNum}::${numbersKey}`;
             existingSigs.add(sig);
             savedCount++;
-            writePromises.push(addDoc(collection(db, 'games'), {
+            gamesToSave.push({
               poolId: targetPoolId,
               numbers: selectedNumbers,
               numbersKey,
@@ -237,7 +240,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
               date: Timestamp.fromDate(new Date(currDate)),
               receiptURL,
               createdAt: serverTimestamp(),
-            }));
+            });
           }
           currDate.setDate(currDate.getDate() + 1);
         }
@@ -261,7 +264,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
           const sig = startContestNum > 0 ? `contest::${startContestNum}::${numbersKey}` : `date::${dateIso}::${numbersKey}`;
           existingSigs.add(sig);
           savedCount++;
-          writePromises.push(addDoc(collection(db, 'games'), {
+          gamesToSave.push({
             poolId: targetPoolId,
             numbers: selectedNumbers,
             numbersKey,
@@ -272,15 +275,17 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             date: Timestamp.fromDate(parsedDate),
             receiptURL,
             createdAt: serverTimestamp(),
-          }));
+          });
         }
       }
 
-      if (writePromises.length > 0) {
-        await Promise.race([
-          Promise.all(writePromises),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite excedido ao salvar.')), 4000))
-        ]);
+      if (gamesToSave.length > 0) {
+        const batch = writeBatch(db);
+        gamesToSave.forEach(gamePayload => {
+          const docRef = doc(collection(db, 'games'));
+          batch.set(docRef, gamePayload);
+        });
+        await batch.commit();
 
         if (duplicateCount > 0) {
           addToast(`✨ ${savedCount} aposta(s) salva(s)! (${duplicateCount} duplicata(s) ignorada(s)).`, 'success');
@@ -420,40 +425,88 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             </button>
           </div>
 
-          {/* Volante de Dezenas (1 a 25 ou 1 a 60) */}
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-bold text-purple-950 flex items-center gap-1">
-                <span>🎯</span> Selecione as Dezenas ({selectedNumbers.length}/{stats.maxNumbers})
-              </label>
-              <button
-                type="button"
-                onClick={() => setSelectedNumbers([])}
-                className="text-[11px] text-red-600 hover:underline font-semibold cursor-pointer"
-              >
-                Limpar Dezenas
-              </button>
+          {/* Volante de Dezenas (Retraído por Padrão) */}
+          <div className="bg-purple-50/70 border border-purple-200 rounded-2xl overflow-hidden transition">
+            {/* Header com Ação de Expandir/Recolher */}
+            <div 
+              onClick={() => setIsNumbersExpanded(!isNumbersExpanded)}
+              className="p-3 bg-purple-100/80 hover:bg-purple-200/80 cursor-pointer select-none flex items-center justify-between gap-2 border-b border-purple-200/60 transition"
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                  <span>🎯</span> Escolher Dezenas Manualmente
+                </span>
+                <span className="text-[11px] font-bold bg-white text-purple-900 px-2.5 py-0.5 rounded-full border border-purple-200">
+                  {selectedNumbers.length}/{stats.maxNumbers} {selectedNumbers.length === 1 ? 'dezena' : 'dezenas'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {selectedNumbers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedNumbers([]);
+                    }}
+                    className="text-[11px] text-red-600 hover:underline font-bold cursor-pointer mr-1"
+                  >
+                    Limpar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white text-purple-950 border border-purple-200 shadow-2xs transition"
+                >
+                  {isNumbersExpanded ? '▲ Recolher Dezenas' : '▼ Escolher Dezenas'}
+                </button>
+              </div>
             </div>
 
-            <div className={`grid ${isMegaSena ? 'grid-cols-10' : 'grid-cols-5'} gap-1.5 p-2 bg-purple-50/50 border border-purple-200 rounded-xl max-h-56 overflow-y-auto`}>
-              {Array.from({ length: stats.totalNumbers }, (_, i) => i + 1).map((num) => {
-                const isSelected = selectedNumbers.includes(num);
-                return (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => toggleNumber(num)}
-                    className={`aspect-square rounded-lg font-black text-xs transition flex items-center justify-center cursor-pointer ${
-                      isSelected
-                        ? 'bg-purple-700 text-white shadow-md scale-105 ring-2 ring-purple-400'
-                        : 'bg-white text-gray-800 hover:bg-purple-100 border border-gray-200'
-                    }`}
-                  >
-                    {String(num).padStart(2, '0')}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Preview Resumido das Dezenas quando Retraído */}
+            {!isNumbersExpanded && selectedNumbers.length > 0 && (
+              <div 
+                onClick={() => setIsNumbersExpanded(true)}
+                className="p-3 bg-white hover:bg-purple-50/50 cursor-pointer transition flex items-center justify-between gap-2 border-t border-purple-100"
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-gray-500">Dezenas Marcadas:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedNumbers.map(n => (
+                      <span key={n} className="w-5 h-5 rounded bg-purple-900 text-white font-black text-[10px] flex items-center justify-center">
+                        {String(n).padStart(2, '0')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className="text-[10px] text-purple-700 font-bold hover:underline">Ajustar ▲</span>
+              </div>
+            )}
+
+            {/* Grid do Volante de Dezenas (Expandido) */}
+            {isNumbersExpanded && (
+              <div className="p-3 space-y-2 bg-white animate-fadeIn">
+                <div className={`grid ${isMegaSena ? 'grid-cols-10' : 'grid-cols-5'} gap-1.5 p-2 bg-purple-50/50 border border-purple-200 rounded-xl max-h-56 overflow-y-auto`}>
+                  {Array.from({ length: stats.totalNumbers }, (_, i) => i + 1).map((num) => {
+                    const isSelected = selectedNumbers.includes(num);
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => toggleNumber(num)}
+                        className={`aspect-square rounded-lg font-black text-xs transition flex items-center justify-center cursor-pointer ${
+                          isSelected
+                            ? 'bg-purple-700 text-white shadow-md scale-105 ring-2 ring-purple-400'
+                            : 'bg-white text-gray-800 hover:bg-purple-100 border border-gray-200'
+                        }`}
+                      >
+                        {String(num).padStart(2, '0')}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Estatísticas em Tempo Real do Jogo Selecionado */}
@@ -573,14 +626,16 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || isUploading || selectedNumbers.length < stats.minNumbers}
-              className="flex-1 bg-purple-700 hover:bg-purple-800 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm disabled:opacity-50 cursor-pointer"
+              disabled={isSubmitting || isUploading}
+              className="flex-[2] bg-purple-700 hover:bg-purple-800 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm disabled:opacity-50 cursor-pointer"
             >
               {isSubmitting
-                ? 'Salvando Aposta...'
+                ? 'Salvando...'
                 : isUploading
-                ? 'Processando Fila...'
-                : `Salvar Aposta Manual (${selectedNumbers.length} dezenas)`}
+                ? 'Processando...'
+                : selectedNumbers.length >= stats.minNumbers
+                ? `Salvar Aposta (${selectedNumbers.length} dezenas)`
+                : 'Salvar Aposta'}
             </button>
           </div>
         </form>

@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
-import { calculateGamePrize } from '../lib/prizes';
+import { doc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { calculateGamePrize, getCorrectGameCost } from '../lib/prizes';
 import { useToast } from './NotificationManager';
 import PrizeSplitModal from './PrizeSplitModal';
 import { usePermissions } from '../lib/PermissionsContext';
@@ -74,6 +76,37 @@ export default function GameHistory({
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [groupToDelete, setGroupToDelete] = useState<any>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  const [showSweepModal, setShowSweepModal] = useState(false);
+  const [sweepTargetContest, setSweepTargetContest] = useState<number>(3780);
+  const [isExecutingSweep, setIsExecutingSweep] = useState(false);
+
+  const handleConfirmDeleteGroup = async () => {
+    if (!groupToDelete || !groupToDelete.games || groupToDelete.games.length === 0) {
+      setGroupToDelete(null);
+      return;
+    }
+
+    setIsDeletingGroup(true);
+    try {
+      const batch = writeBatch(db);
+      groupToDelete.games.forEach((g: any) => {
+        if (g.id) {
+          batch.delete(doc(db, 'games', g.id));
+        }
+      });
+      await batch.commit();
+
+      addToast(`Todas as ${groupToDelete.games.length} apostas do ${groupToDelete.contestTitle} foram excluídas com sucesso.`, 'success');
+      setGroupToDelete(null);
+    } catch (err) {
+      console.error('Erro ao excluir grupo de apostas:', err);
+      addToast('Erro ao excluir apostas do concurso.', 'error');
+    } finally {
+      setIsDeletingGroup(false);
+    }
+  };
 
   // Avaliação dos jogos e filtragem para ARQUIVAMENTO AUTOMÁTICO (apenas datas passadas)
   const processedGames = useMemo(() => {
@@ -107,7 +140,7 @@ export default function GameHistory({
         : [];
 
       const isFutureContestTitle = String(game.contest || '').toLowerCase().includes('futuro');
-      const isPendingFuture = isFuture || isFutureContestTitle || (contestNumber !== null && contestNumber >= 3788);
+      const isPendingFuture = isFuture || isFutureContestTitle || !targetResult?.numbers?.length;
 
       const prizeInfo = (isPendingFuture || !targetResult)
         ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Sorteio (Zerado)', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
@@ -228,7 +261,7 @@ export default function GameHistory({
 
       const grp = map.get(key)!;
       grp.games.push(game);
-      grp.totalCost += Number(game.cost) || 3.5;
+      grp.totalCost += getCorrectGameCost(game, false);
       grp.totalPrize += Number(game.prizeInfo.prizeAmount) || 0;
       if (game.prizeInfo.isWinner) grp.winningGamesCount++;
     });
@@ -244,6 +277,50 @@ export default function GameHistory({
 
     return list;
   }, [filteredArchivedGames]);
+
+  // Identifica grupos de apostas replicados (mesmos jogos de 16 dezenas espalhados em vários concursos)
+  const duplicatedContestsCluster = useMemo(() => {
+    return groupedContests.filter(c => 
+      c.games.length >= 10 && c.games.some(g => (g.gameNumbers?.length || 0) >= 16)
+    );
+  }, [groupedContests]);
+
+  const handleExecuteSweep = async () => {
+    if (!sweepTargetContest) return;
+
+    setIsExecutingSweep(true);
+    try {
+      const targetNumber = Number(sweepTargetContest);
+      const groupsToRemove = duplicatedContestsCluster.filter(c => c.contestNumber !== targetNumber);
+
+      const gamesToDelete: any[] = [];
+      groupsToRemove.forEach(grp => {
+        grp.games.forEach(g => {
+          if (g.id) gamesToDelete.push(g);
+        });
+      });
+
+      if (gamesToDelete.length === 0) {
+        addToast('Nenhum concurso replicado para remover.', 'info');
+        setShowSweepModal(false);
+        return;
+      }
+
+      const batch = writeBatch(db);
+      gamesToDelete.forEach(g => {
+        batch.delete(doc(db, 'games', g.id));
+      });
+      await batch.commit();
+
+      addToast(`🧹 Varredura concluída com sucesso! Mantido apenas o Concurso #${targetNumber} e removidos ${groupsToRemove.length} concursos duplicados (${gamesToDelete.length} apostas excluídas).`, 'success');
+      setShowSweepModal(false);
+    } catch (err) {
+      console.error('Erro na varredura de concursos:', err);
+      addToast('Erro ao executar varredura de concursos.', 'error');
+    } finally {
+      setIsExecutingSweep(false);
+    }
+  };
 
   // Estatísticas Gerais do Histórico Arquivado
   const statsSummary = useMemo(() => {
@@ -339,9 +416,6 @@ export default function GameHistory({
           <h2 className="text-lg sm:text-xl font-black flex items-center gap-2">
             <span>📜</span> Histórico & Arquivo de Concursos
           </h2>
-          <p className="text-xs text-purple-200 mt-0.5">
-            Os concursos são arquivados automaticamente nesta seção após a data do sorteio, mantendo a tela principal focada nas apostas vigentes.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -448,7 +522,18 @@ export default function GameHistory({
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {duplicatedContestsCluster.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setShowSweepModal(true)}
+                className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-gray-950 font-black text-xs rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5 animate-pulse"
+                title="Detectou concursos com apostas replicadas. Clique para manter apenas 1 concurso e remover as duplicatas."
+              >
+                <span>🧹</span> Varredura de Replicados ({duplicatedContestsCluster.length})
+              </button>
+            )}
+
             <button
               onClick={expandAll}
               className="px-2.5 py-2 bg-white hover:bg-gray-100 text-purple-900 border border-gray-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
@@ -509,9 +594,6 @@ export default function GameHistory({
           <div className="p-8 text-center bg-white rounded-xl border border-gray-200 shadow-2xs">
             <span className="text-4xl block mb-2">📜</span>
             <h3 className="font-bold text-gray-800 text-base mb-1">Nenhum concurso arquivado encontrado.</h3>
-            <p className="text-xs text-gray-500 max-w-md mx-auto">
-              Os jogos dos concursos são movidos automaticamente para o histórico após a data do sorteio ter passado.
-            </p>
             {(searchContestQuery || selectedMonthFilter !== 'all' || selectedPrizeFilter !== 'all' || selectedNumbersFilter.length > 0) && (
               <button
                 onClick={() => {
@@ -590,6 +672,18 @@ export default function GameHistory({
                       title="Enviar balanço deste concurso arquivado no WhatsApp"
                     >
                       <span>📲</span> WhatsApp
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setGroupToDelete(group);
+                      }}
+                      className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                      title="Excluir todas as apostas deste concurso do histórico"
+                    >
+                      <span>🗑️</span> Excluir
                     </button>
 
                     <button
@@ -829,6 +923,121 @@ export default function GameHistory({
                 className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-2"
               >
                 {isDeletingAll ? 'Excluindo...' : 'Sim, Excluir Tudo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Exclusão de Concurso Específico */}
+      {groupToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[65] backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-red-100 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-2xl">
+              🗑️
+            </div>
+            <div>
+              <h3 className="font-black text-gray-900 text-base">Excluir {groupToDelete.contestTitle}?</h3>
+              <p className="text-xs text-gray-600 mt-1">
+                Deseja remover permanentemente este concurso com <strong>{groupToDelete.games.length} apostas</strong> do histórico?
+              </p>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setGroupToDelete(null)}
+                disabled={isDeletingGroup}
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl cursor-pointer transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteGroup}
+                disabled={isDeletingGroup}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center gap-1"
+              >
+                {isDeletingGroup ? 'Excluindo...' : 'Sim, Excluir Concurso'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Varredura de Concursos Replicados */}
+      {showSweepModal && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-[65] backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-amber-200 space-y-4 text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-900 flex items-center justify-center text-2xl font-black">
+                🧹
+              </div>
+              <div>
+                <h3 className="font-black text-gray-900 text-base">Varredura de Concursos Replicados</h3>
+                <p className="text-xs text-gray-500">Detectados {duplicatedContestsCluster.length} concursos com jogos idênticos</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-950 space-y-1">
+              <p className="font-bold">Selecione qual Concurso Real você deseja MANTER:</p>
+              <p className="text-[11px] text-amber-900">
+                Os demais concursos serão automaticamente excluídos do banco de dados, corrigindo duplicatas acidentais.
+              </p>
+            </div>
+
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {duplicatedContestsCluster.map(grp => {
+                const cNum = grp.contestNumber || 3780;
+                const isSelected = sweepTargetContest === cNum;
+                return (
+                  <label
+                    key={grp.key}
+                    onClick={() => setSweepTargetContest(cNum)}
+                    className={`flex items-center justify-between p-3 rounded-xl border transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-purple-50 border-purple-600 ring-2 ring-purple-300'
+                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="sweepContest"
+                        checked={isSelected}
+                        onChange={() => setSweepTargetContest(cNum)}
+                        className="accent-purple-700 w-4 h-4 cursor-pointer"
+                      />
+                      <div>
+                        <span className="font-black text-sm text-gray-900">{grp.contestTitle}</span>
+                        <span className="text-[11px] text-gray-500 block">• Data: {grp.dateStr} ({grp.games.length} apostas)</span>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <span className="bg-purple-900 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                        Manter Este
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowSweepModal(false)}
+                disabled={isExecutingSweep}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteSweep}
+                disabled={isExecutingSweep || !sweepTargetContest}
+                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-gray-950 text-xs font-black rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {isExecutingSweep ? 'Limpando...' : '🧹 Limpar Outros Concursos'}
               </button>
             </div>
           </div>

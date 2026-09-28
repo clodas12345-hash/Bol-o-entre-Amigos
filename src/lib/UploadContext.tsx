@@ -4,6 +4,7 @@ import { db, isQuotaError } from './firebase';
 import { useToast } from '../components/NotificationManager';
 import { usePool } from './PoolContext';
 import { LOTOFACIL_PRICES, MEGASENA_PRICES } from './prizes';
+import { getApiUrl, safeFetchJson } from './apiHelper';
 
 export interface QueueItem {
   id: string;
@@ -13,12 +14,14 @@ export interface QueueItem {
   progress: number;
   message: string;
   durationMs?: number;
+  options?: any;
 }
 
 interface UploadContextType {
   queue: QueueItem[];
   addToQueue: (files: File[], options: { poolId: string; contest?: string; gameDate?: string; monthRef?: string; isTeimosinha?: boolean; teimosinhaCount?: number }) => Promise<void>;
   clearCompleted: () => void;
+  retryFailed: () => Promise<void>;
   isProcessing: boolean;
 }
 
@@ -66,7 +69,7 @@ export const checkGameDuplicateInFirestore = async (
     ? `contest::${contestNum}::${normalizedKey}`
     : `date::${dateStr || ''}::${normalizedKey}`;
 
-  // 1. Verificação rápida no cache da sessão / lote atual
+  // 1. Verificação ultra-rápida no cache da sessão / lote atual (Sem consumo de leitura do banco de dados!)
   if (inMemorySigs.has(sig)) {
     return { 
       isDuplicate: true, 
@@ -74,81 +77,7 @@ export const checkGameDuplicateInFirestore = async (
     };
   }
 
-  try {
-    // 2. Consulta direta no Firestore pelo número do concurso
-    if (contestNum > 0) {
-      const qContest = query(
-        collection(db, 'games'),
-        where('contestNumber', '==', contestNum)
-      );
-      const snapContest = await getDocs(qContest);
-
-      for (const d of snapContest.docs) {
-        const docData = d.data();
-        const existingNumbersKey = docData.numbersKey || (
-          Array.isArray(docData.numbers) 
-            ? docData.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b).join('-')
-            : ''
-        );
-
-        if (existingNumbersKey === normalizedKey) {
-          inMemorySigs.add(sig);
-          return { 
-            isDuplicate: true, 
-            reason: docData.contest || `Concurso #${contestNum}` 
-          };
-        }
-      }
-    }
-
-    // 3. Consulta secundária pelo conjunto de dezenas (numbersKey)
-    // Garante encontrar jogos onde o concurso foi registrado como texto (ex: "Concurso #3790")
-    if (normalizedKey) {
-      const qNumbersKey = query(
-        collection(db, 'games'),
-        where('numbersKey', '==', normalizedKey)
-      );
-      const snapNumbers = await getDocs(qNumbersKey);
-
-      for (const d of snapNumbers.docs) {
-        const docData = d.data();
-        let docContestNum = typeof docData.contestNumber === 'number' ? docData.contestNumber : 0;
-        if (!docContestNum && docData.contest) {
-          const match = String(docData.contest).match(/\b(\d{3,5})\b/);
-          docContestNum = match ? parseInt(match[1], 10) : 0;
-        }
-
-        // Se ambos possuem concurso e coincidem: duplicata confirmada!
-        if (contestNum > 0 && docContestNum === contestNum) {
-          inMemorySigs.add(sig);
-          return { 
-            isDuplicate: true, 
-            reason: docData.contest || `Concurso #${contestNum}` 
-          };
-        }
-
-        // Se não houver número formal de concurso, compara pela data do jogo
-        if (contestNum === 0 && dateStr) {
-          let docDateStr = '';
-          if (docData.date) {
-            if (typeof docData.date.toDate === 'function') docDateStr = docData.date.toDate().toISOString().split('T')[0];
-            else if (docData.date instanceof Date) docDateStr = docData.date.toISOString().split('T')[0];
-            else if (typeof docData.date === 'string') docDateStr = docData.date.split('T')[0];
-          }
-          if (docDateStr && docDateStr === dateStr) {
-            inMemorySigs.add(sig);
-            return { 
-              isDuplicate: true, 
-              reason: `Sorteio de ${dateStr}` 
-            };
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Aviso: Falha ao consultar duplicidade no Firestore, prosseguindo com verificação local:', err);
-  }
-
+  // O cache local pré-carregado é a única fonte necessária e evita 100% de leituras duplicadas.
   return { isDuplicate: false };
 };
 
@@ -222,8 +151,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext('2d');
             if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
               ctx.drawImage(img, 0, 0, w, h);
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.7), mimeType: 'image/jpeg' });
+              resolve({ base64: canvas.toDataURL('image/jpeg', 0.78), mimeType: 'image/jpeg' });
             } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
           };
           img.src = e.target?.result as string;
@@ -235,14 +166,24 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       updateItem(item.id, { status: 'ocr', progress: 40, message: 'Analisando bilhete...' });
 
-      const res = await fetch('/api/lotofacil/ocr-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: [compressed] })
-      });
+      const apiUrl = getApiUrl('/api/lotofacil/ocr-receipt');
+      const fetchRes = await safeFetchJson<any>(
+        apiUrl,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images: [compressed] })
+        },
+        120000
+      );
 
-      const data = await res.json();
-      if (!res.ok || !data.success || !data.games?.length) throw new Error(data.message || 'IA não encontrou jogos legíveis');
+      if (!fetchRes.success || !fetchRes.data?.success || !fetchRes.data?.games?.length) {
+        const noticeMsg = fetchRes.data?.message || fetchRes.message || 'Imagem sem dezenas legíveis. Marque manualmente.';
+        updateItem(item.id, { status: 'error', progress: 100, message: noticeMsg, durationMs: Date.now() - startTime });
+        return;
+      }
+
+      const data = fetchRes.data;
 
       updateItem(item.id, { status: 'saving', progress: 70, message: 'Verificando duplicidades no banco...' });
 
@@ -264,8 +205,14 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       let savedCount = 0;
       let duplicateCount = 0;
-      const isTeim = isTeimosinha === true || isTeimosinha === 'true' || Number(isTeimosinha) === 1;
-      const teimCount = teimosinhaCount && Number(teimosinhaCount) > 0 ? Number(teimosinhaCount) : 1;
+      // Prioritize IA extraction for Teimosinha if present, otherwise fall back to manual options
+      const isTeim = typeof data.isTeimosinha === 'boolean' 
+        ? data.isTeimosinha 
+        : (isTeimosinha === true || isTeimosinha === 'true' || Number(isTeimosinha) === 1);
+        
+      const teimCount = typeof data.isTeimosinha === 'boolean'
+        ? (data.isTeimosinha ? (Number(data.teimosinhaCount) || 1) : 1)
+        : (teimosinhaCount && Number(teimosinhaCount) > 0 ? Number(teimosinhaCount) : 1);
 
       for (let i = 0; i < validGames.length; i++) {
         const gameNums = validGames[i];
@@ -275,8 +222,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
         if (isTeim && startContestNum > 0) {
           let currDate = new Date(parsedDate);
+          if (isNaN(currDate.getTime())) currDate = new Date();
+          const validDrawDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6];
+
           for (let k = 0; k < teimCount; k++) {
-            while (currDate.getDay() === 0) {
+            while (!validDrawDays.includes(currDate.getDay())) {
               currDate.setDate(currDate.getDate() + 1);
             }
             const currentContestNum = startContestNum + k;
@@ -389,8 +339,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         durationMs: Date.now() - startTime 
       });
 
+      // Automatically remove saved items from queue after 3.5 seconds to keep list clean
+      setTimeout(() => {
+        setQueue(prev => prev.filter(q => q.id !== item.id));
+      }, 3500);
+
     } catch (err: any) {
-      console.error('Background upload error:', err);
+      console.warn('Aviso no envio em segundo plano:', err.message || err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
       updateItem(item.id, { status: 'error', progress: 100, message: err.message || 'Erro inesperado' });
     }
@@ -403,7 +358,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       name: file.name,
       status: 'pending',
       progress: 0,
-      message: 'Aguardando...'
+      message: 'Aguardando...',
+      options
     }));
 
     setQueue(prev => [...prev, ...newItems]);
@@ -412,11 +368,28 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const poolId = options.poolId || 'default_lotofacil_pool';
     const existingSigs = await getExistingSignatures();
 
-    // Process items sequentially in background
-    for (const item of newItems) {
-      await processQueueItem(item, options, existingSigs);
+    // Process items sequentially in background with slight pacing to avoid rate limits
+    for (let idx = 0; idx < newItems.length; idx++) {
+      if (idx > 0) await new Promise(r => setTimeout(r, 800));
+      await processQueueItem(newItems[idx], options, existingSigs);
     }
   }, [pools, setIsQuotaExceeded]);
+
+  const retryFailed = useCallback(async () => {
+    // Clean up already saved/successful items from the list immediately
+    setQueue(prev => prev.filter(item => item.status === 'error' || item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving'));
+
+    const failedItems = queue.filter(item => item.status === 'error');
+    if (failedItems.length === 0) return;
+
+    const existingSigs = await getExistingSignatures();
+    for (let idx = 0; idx < failedItems.length; idx++) {
+      if (idx > 0) await new Promise(r => setTimeout(r, 800));
+      const item = failedItems[idx];
+      updateItem(item.id, { status: 'pending', progress: 10, message: 'Re-analisando...' });
+      await processQueueItem(item, item.options || {}, existingSigs);
+    }
+  }, [queue]);
 
   const clearCompleted = () => {
     setQueue(prev => prev.filter(item => item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving'));
@@ -425,7 +398,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const isProcessing = queue.some(item => item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate');
 
   return (
-    <UploadContext.Provider value={{ queue, addToQueue, clearCompleted, isProcessing }}>
+    <UploadContext.Provider value={{ queue, addToQueue, clearCompleted, retryFailed, isProcessing }}>
       {children}
     </UploadContext.Provider>
   );

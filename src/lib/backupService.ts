@@ -167,10 +167,10 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
 
   const jsonString = JSON.stringify(backupData, null, 2);
   const now = new Date();
-  const dia = String(now.getDate()).padStart(2, '0');
-  const mes = String(now.getMonth() + 1).padStart(2, '0');
-  const ano = now.getFullYear();
-  const fileName = `backup_bolao_data.${dia}.${mes}.${ano}.json`;
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const fileName = `Backup_Bolão_Amigos_${day}_${month}_${year}.json`;
   
   await downloadOrShareFile({
     fileName,

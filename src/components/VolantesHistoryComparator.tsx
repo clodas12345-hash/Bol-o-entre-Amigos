@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { calculateGamePrize, LOTOFACIL_PRICES } from '../lib/prizes';
 import { useToast } from './NotificationManager';
+import { fetchLotteryResultDirectly } from '../lib/apiHelper';
 
 interface VolantesHistoryComparatorProps {
   games: any[];
@@ -69,21 +70,20 @@ export default function VolantesHistoryComparator({
   // Função para buscar um concurso específico na API da Caixa
   const fetchContestData = async (contestNum: number): Promise<ContestInfo | null> => {
     try {
-      const res = await fetch(`/api/lotofacil/contest/${contestNum}`);
-      const data = await res.json();
-      if (data.success && data.result) {
+      const data = await fetchLotteryResultDirectly('lotofacil', contestNum);
+      if (data && Array.isArray(data.numbers) && data.numbers.length === 15) {
         return {
-          contest: data.result.contest,
-          date: data.result.date,
-          numbers: Array.isArray(data.result.numbers) ? data.result.numbers.map(Number) : [],
-          accumulated: data.result.accumulated,
-          prize15Winners: data.result.prize15Winners,
-          prize15Amount: data.result.prize15Amount,
-          prize14Winners: data.result.prize14Winners,
-          prize14Amount: data.result.prize14Amount,
-          prize13Winners: data.result.prize13Winners,
-          prize12Winners: data.result.prize12Winners,
-          prize11Winners: data.result.prize11Winners
+          contest: data.contest,
+          date: data.date,
+          numbers: data.numbers,
+          accumulated: data.accumulated,
+          prize15Winners: data.prize15Winners,
+          prize15Amount: data.prize15Amount,
+          prize14Winners: data.prize14Winners,
+          prize14Amount: data.prize14Amount,
+          prize13Winners: data.prize13Winners,
+          prize12Winners: data.prize12Winners,
+          prize11Winners: data.prize11Winners
         };
       }
     } catch (e) {
@@ -95,25 +95,20 @@ export default function VolantesHistoryComparator({
   // Busca também o concurso mais recente oficial da Caixa para jogos sem concurso definido
   const fetchLatestCaixa = async () => {
     try {
-      const res = await fetch('/api/lotofacil/results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contest: 'latest' })
-      });
-      const data = await res.json();
-      if (data.success && data.result) {
+      const data = await fetchLotteryResultDirectly('lotofacil', 'latest');
+      if (data && Array.isArray(data.numbers) && data.numbers.length === 15) {
         const info: ContestInfo = {
-          contest: data.result.contest,
-          date: data.result.date,
-          numbers: Array.isArray(data.result.numbers) ? data.result.numbers.map(Number) : [],
-          accumulated: data.result.accumulated,
-          prize15Winners: data.result.prize15Winners,
-          prize15Amount: data.result.prize15Amount,
-          prize14Winners: data.result.prize14Winners,
-          prize14Amount: data.result.prize14Amount,
-          prize13Winners: data.result.prize13Winners,
-          prize12Winners: data.result.prize12Winners,
-          prize11Winners: data.result.prize11Winners
+          contest: data.contest,
+          date: data.date,
+          numbers: data.numbers,
+          accumulated: data.accumulated,
+          prize15Winners: data.prize15Winners,
+          prize15Amount: data.prize15Amount,
+          prize14Winners: data.prize14Winners,
+          prize14Amount: data.prize14Amount,
+          prize13Winners: data.prize13Winners,
+          prize12Winners: data.prize12Winners,
+          prize11Winners: data.prize11Winners
         };
         setLatestCaixaContest(info);
         setContestsCache(prev => ({ ...prev, [info.contest]: info }));
