@@ -1,6 +1,7 @@
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatFirstAndLastName } from '../lib/formatters';
+import { downloadOrShareFile } from '../lib/fileDownloadHelper';
 
 export default function ExportButton() {
   const exportToCSV = async () => {
@@ -37,15 +38,11 @@ export default function ExportButton() {
         csvContent += `${mes},"${memberName}",${val},${dataStr}\n`;
       });
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `prestacao_contas_bolao_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      await downloadOrShareFile({
+        fileName: `prestacao_contas_bolao_${new Date().toISOString().split('T')[0]}.csv`,
+        content: csvContent,
+        mimeType: 'text/csv;charset=utf-8;'
+      });
     } catch (err) {
       console.error('Erro ao exportar CSV:', err);
     }

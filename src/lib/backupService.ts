@@ -1,5 +1,6 @@
 import { collection, getDocs, addDoc, query, where, orderBy, limit, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { downloadOrShareFile } from './fileDownloadHelper';
 
 export const COLLECTIONS_TO_BACKUP = [
   'pools',
@@ -165,21 +166,17 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
   }
 
   const jsonString = JSON.stringify(backupData, null, 2);
-  const blob = new Blob([jsonString], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
   const now = new Date();
   const dia = String(now.getDate()).padStart(2, '0');
   const mes = String(now.getMonth() + 1).padStart(2, '0');
   const ano = now.getFullYear();
   const fileName = `backup_bolao_data.${dia}.${mes}.${ano}.json`;
   
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  await downloadOrShareFile({
+    fileName,
+    content: jsonString,
+    mimeType: 'application/json'
+  });
 
   recordBackupCompleted();
 

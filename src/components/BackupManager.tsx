@@ -13,6 +13,7 @@ import {
   saveDailyCloudBackupToFirestore,
   getBackupsHistory
 } from '../lib/backupService';
+import { downloadOrShareFile } from '../lib/fileDownloadHelper';
 
 interface CollectionStat {
   name: string;
@@ -228,18 +229,18 @@ export default function BackupManager() {
     return tomorrow.getMonth() !== today.getMonth();
   };
 
-  const downloadHistoryBackup = (historyItem: any) => {
+  const downloadHistoryBackup = async (historyItem: any) => {
     try {
       const data = JSON.parse(historyItem.data);
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `backup_bolao_historico_${historyItem.monthRef.replace('/', '_')}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const jsonString = JSON.stringify(data, null, 2);
+      const fileName = `backup_bolao_historico_${historyItem.monthRef.replace('/', '_')}.json`;
+      
+      await downloadOrShareFile({
+        fileName,
+        content: jsonString,
+        mimeType: 'application/json'
+      });
+
       addToast(`Backup de ${historyItem.monthRef} baixado com sucesso!`, 'success');
     } catch (err) {
       console.error(err);
@@ -521,7 +522,13 @@ export default function BackupManager() {
         printWin.document.close();
         addToast('🎉 PDF gerado! Selecione "Salvar como PDF" na janela de impressão.', 'success');
       } else {
-        addToast('Janela bloqueada pelo navegador. Permita pop-ups para gerar o PDF.', 'error');
+        const fileName = `relatorio_bolao_${formattedStart.replace(/\//g, '-')}_a_${formattedEnd.replace(/\//g, '-')}.html`;
+        await downloadOrShareFile({
+          fileName,
+          content: htmlContent,
+          mimeType: 'text/html'
+        });
+        addToast('📄 Relatório exportado com sucesso! Salve ou abra para imprimir.', 'success');
       }
 
     } catch (err) {

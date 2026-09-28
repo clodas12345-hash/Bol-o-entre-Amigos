@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { useToast } from './NotificationManager';
+import { downloadOrShareFile } from '../lib/fileDownloadHelper';
 
 interface Game {
   id: string;
@@ -15,7 +16,7 @@ interface LottoFlyerGeneratorProps {
 export default function LottoFlyerGenerator({ games, onClose }: LottoFlyerGeneratorProps) {
   const { addToast } = useToast();
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     if (games.length === 0) {
       addToast('Nenhum jogo selecionado para impressão.', 'error');
       return;
@@ -109,7 +110,16 @@ export default function LottoFlyerGenerator({ games, onClose }: LottoFlyerGenera
       gamesOnPage++;
     });
 
-    doc.save('volantes_lotofacil.pdf');
+    const dataUri = doc.output('datauristring');
+    const base64 = dataUri.split(',')[1] || '';
+
+    await downloadOrShareFile({
+      fileName: 'volantes_lotofacil.pdf',
+      content: base64,
+      mimeType: 'application/pdf',
+      isBase64: true
+    });
+
     addToast('PDF gerado com sucesso!', 'success');
     onClose();
   };

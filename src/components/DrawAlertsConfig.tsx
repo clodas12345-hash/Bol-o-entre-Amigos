@@ -3,6 +3,7 @@ import { doc, updateDoc, getDoc, collection, query, orderBy, limit, onSnapshot }
 import { db, auth, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { downloadOrShareFile } from '../lib/fileDownloadHelper';
 
 interface AlertPreferences {
   pushEnabled: boolean;
@@ -270,7 +271,7 @@ export default function DrawAlertsConfig() {
   };
 
   // Download de Arquivo .ICS (Compatível com iPhone/Apple Calendar, Android, Outlook e Mac)
-  const handleDownloadIcsFile = () => {
+  const handleDownloadIcsFile = async () => {
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -294,15 +295,11 @@ export default function DrawAlertsConfig() {
       'END:VCALENDAR'
     ].join('\r\n');
 
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'sorteios_lotofacil_lembrete.ics';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    await downloadOrShareFile({
+      fileName: 'sorteios_lotofacil_lembrete.ics',
+      content: icsContent,
+      mimeType: 'text/calendar;charset=utf-8'
+    });
 
     addToast('📅 Arquivo .ics baixado! Abra para sincronizar com seu calendário.', 'success');
   };
