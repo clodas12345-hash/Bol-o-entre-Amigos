@@ -34,14 +34,63 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync
 
+      - name: Decodificar Keystore Fixa a partir do Segredo
+        run: |
+          echo "Tamanho do segredo (deve ser próximo de 3664):"
+          echo -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | wc -c
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > release.keystore
+            echo "✅ release.keystore decodificado a partir do segredo DEBUG_KEYSTORE_BASE64"
+            ls -la release.keystore
+          else
+            echo "⚠️ Segredo DEBUG_KEYSTORE_BASE64 não encontrado — build vai usar assinatura aleatória"
+          fi
+
+      - name: Configurar Keystore Fixo para Assinatura Consistente
+        run: |
+          mkdir -p ~/.android
+          if [ -f "release.keystore" ]; then
+            cp release.keystore ~/.android/debug.keystore
+            echo "✅ Keystore fixo configurado em ~/.android/debug.keystore (garante mesma assinatura em todos os builds)"
+          fi
+
+      - name: Forçar signingConfig do App para Usar o Keystore Fixo
+        run: |
+          node -e '
+          const fs = require("fs");
+          const path = "android/app/build.gradle";
+          let content = fs.readFileSync(path, "utf8");
+          const marker = "android.signingConfigs.debug.storeFile";
+          if (!content.includes(marker)) {
+            content += `
+
+android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
+android.signingConfigs.debug.storePassword = "android"
+android.signingConfigs.debug.keyAlias = "androiddebugkey"
+android.signingConfigs.debug.keyPassword = "android"
+android.buildTypes.debug.signingConfig = android.signingConfigs.debug
+`;
+            fs.writeFileSync(path, content, "utf8");
+            console.log("✅ signingConfig do buildType debug forçado a usar ~/.android/debug.keystore");
+          } else {
+            console.log("ℹ️ signingConfig já estava forçado (pasta android versionada) — nada a fazer");
+          }
+          '
+
       - name: Build Android APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      - name: Verificar Fingerprint da Assinatura do APK
+        run: |
+          echo "=== Fingerprint da assinatura deste APK (compare entre builds) ==="
+          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep -i "SHA256\|SHA1"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
