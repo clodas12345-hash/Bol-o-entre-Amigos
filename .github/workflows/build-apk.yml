@@ -56,26 +56,19 @@ jobs:
 
       - name: Forçar signingConfig do App para Usar o Keystore Fixo
         run: |
-          node -e '
-          const fs = require("fs");
-          const path = "android/app/build.gradle";
-          let content = fs.readFileSync(path, "utf8");
-          const marker = "android.signingConfigs.debug.storeFile";
-          if (!content.includes(marker)) {
-            content += `
+          if grep -q "android.signingConfigs.debug.storeFile" android/app/build.gradle; then
+            echo "ℹ️ signingConfig já estava forçado (pasta android versionada) — nada a fazer"
+            exit 0
+          fi
+          cat >> android/app/build.gradle << 'EOF'
 
-android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
-android.signingConfigs.debug.storePassword = "android"
-android.signingConfigs.debug.keyAlias = "androiddebugkey"
-android.signingConfigs.debug.keyPassword = "android"
-android.buildTypes.debug.signingConfig = android.signingConfigs.debug
-`;
-            fs.writeFileSync(path, content, "utf8");
-            console.log("✅ signingConfig do buildType debug forçado a usar ~/.android/debug.keystore");
-          } else {
-            console.log("ℹ️ signingConfig já estava forçado (pasta android versionada) — nada a fazer");
-          }
-          '
+          android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
+          android.signingConfigs.debug.storePassword = "android"
+          android.signingConfigs.debug.keyAlias = "androiddebugkey"
+          android.signingConfigs.debug.keyPassword = "android"
+          android.buildTypes.debug.signingConfig = android.signingConfigs.debug
+          EOF
+          echo "✅ signingConfig do buildType debug forçado a usar ~/.android/debug.keystore"
 
       - name: Build Android APK
         run: |
