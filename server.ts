@@ -729,7 +729,27 @@ async function startServer() {
     app.use(express.static('dist'));
   }
   
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    
+    // Sincroniza a chave do Gemini com o Firestore de forma segura para uso pelo APK
+    const saveApiKeyToFirestore = async () => {
+      try {
+        if (process.env.GEMINI_API_KEY) {
+          await setDoc(doc(db, 'system_config', 'gemini'), {
+            apiKey: process.env.GEMINI_API_KEY,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          console.log('[Firebase] Chave do Gemini salva/sincronizada no Firestore com sucesso.');
+        } else {
+          console.warn('[Firebase] Aviso: GEMINI_API_KEY nao encontrada nas variaveis de ambiente.');
+        }
+      } catch (err) {
+        console.warn('[Firebase] Erro ao sincronizar chave do Gemini para o Firestore:', err);
+      }
+    };
+    saveApiKeyToFirestore();
+  });
 }
 
 startServer();

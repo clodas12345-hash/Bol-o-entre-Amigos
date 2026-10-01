@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp, orderBy, limit } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp, orderBy, limit, getDoc, doc } from 'firebase/firestore';
 import { db, isQuotaError } from './firebase';
 import { useToast } from '../components/NotificationManager';
 import { usePool } from './PoolContext';
@@ -51,6 +51,69 @@ const formatDateToMonthRef = (date: Date): string => {
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const yyyy = date.getFullYear();
   return `${mm}/${yyyy}`;
+};
+
+const performClientSideOcr = async (base64Image: string, apiKey: string): Promise<any> => {
+  const cleanBase64 = base64Image.replace(/^data:[^;]+;base64,/, '').trim();
+  const model = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para leitura e extração de dados de bilhetes, apostas e comprovantes das Loterias Caixa (Lotofácil e Mega-Sena), com especialização na tela do Aplicativo Loterias Caixa ("Apostas da Compra" ou "Meus Jogos" com círculos roxos/brancos).
+DIRETRIZES IMPORTANTES DE ANÁLISE DE IMAGEM:
+1. RECONHECIMENTO DE CÍRCULOS NUMÉRICOS:
+   - Os números das dezenas jogadas estão contidos dentro de CÍRCULOS COLORIDOS (roxo com texto branco, ou cinza, ou verde).
+   - Você deve varrer cada círculo horizontalmente da esquerda para a direita, linha por linha.
+   - Cada jogo é um conjunto compacto de dezenas (geralmente de 15 a 20 dezenas para Lotofácil, e 6 a 15 dezenas para Mega-Sena).
+   - IMPORTANTE: Não ignore nenhum círculo! Números como "1", "2", "9" ou dezenas no fim como "25" são vitais e devem ser lidos perfeitamente.
+   - Os jogos são separados verticalmente por textos como "Efetivada", "Prêmio Pago", "Lotofácil", ou uma linha divisória. Se houver mais de um bloco de círculos empilhados verticalmente, você DEVE extrair todos eles como jogos separados dentro do array "games".
+2. IDENTIFICAÇÃO DO CONCURSO E DATA (Rótulos do App):
+   - Procure pelo número do concurso que aparece logo abaixo ou acima do título da loteria, normalmente próximo à data (exemplo: "15/09/2026 Conc. 3780" ou "Concurso 3780" -> retornar "3780" como contest).
+   - Se a data do concurso estiver descrita (ex: "15/09/2026"), converta para o formato ISO "YYYY-MM-DD" (ex: "2026-09-15" como date).
+
+Retorne APENAS um JSON puro (sem formatação markdown) no seguinte formato:
+{
+  "success": true,
+  "date": "YYYY-MM-DD",
+  "contest": "Número do concurso",
+  "isTeimosinha": false,
+  "teimosinhaCount": 1,
+  "games": [
+    [1, 3, 7, ...],
+    [2, 4, 10, ...]
+  ]
+}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: cleanBase64
+              }
+            }
+          ]
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Erro na API do Gemini: ${response.statusText}`);
+  }
+
+  const result = await response.json();
+  const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+  // Extract JSON from response
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const cleanJson = jsonMatch ? jsonMatch[0] : text;
+  return JSON.parse(cleanJson.replace(/```json|```/gi, '').trim());
 };
 
 /**
@@ -120,6 +183,18 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const { addToast } = useToast();
   const { pools, setIsQuotaExceeded } = usePool();
 
+  const getGeminiApiKey = async (): Promise<string | null> => {
+    try {
+      const docSnap = await getDoc(doc(db, 'system_config', 'gemini'));
+      if (docSnap.exists()) {
+        return docSnap.data().apiKey || null;
+      }
+    } catch (e) {
+      console.warn('Could not fetch Gemini API Key from Firestore:', e);
+    }
+    return null;
+  };
+
   const updateItem = (id: string, updates: Partial<QueueItem>) => {
     setQueue(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   };
@@ -168,38 +243,64 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       const apiUrl = getApiUrl('/api/lotofacil/ocr-receipt');
       let fetchRes: any = null;
-      const maxRetries = 2;
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          fetchRes = await safeFetchJson<any>(
-            apiUrl,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ images: [compressed] })
-            },
-            120000
-          );
+      const isNativePlatform = typeof window !== 'undefined' && 
+        (window.location.protocol === 'capacitor:' || 
+         window.location.protocol === 'ionic:' || 
+         window.location.protocol === 'file:' || 
+         (window as any).Capacitor?.isNativePlatform?.() || 
+         window.navigator?.userAgent?.includes('Android') || 
+         window.navigator?.userAgent?.includes('Capacitor'));
 
-          if (fetchRes.success) {
-            break;
+      let usedClientSideFallback = false;
+
+      if (isNativePlatform) {
+        const apiKey = await getGeminiApiKey();
+        if (apiKey) {
+          try {
+            updateItem(item.id, { status: 'ocr', progress: 50, message: 'Processando OCR local...' });
+            const ocrResult = await performClientSideOcr(compressed.base64, apiKey);
+            fetchRes = { success: true, data: { success: true, ...ocrResult } };
+            usedClientSideFallback = true;
+          } catch (err: any) {
+            console.error('[UploadQueue] Erro no OCR direto do cliente no APK:', err);
           }
+        }
+      }
 
-          console.warn(`[UploadQueue] Tentativa ${attempt} falhou:`, fetchRes.message);
-          if (attempt < maxRetries) {
-            updateItem(item.id, { 
-              message: `Instabilidade de rede. Reconectando (${attempt}/${maxRetries})...`,
-              progress: 40 + (attempt * 10)
-            });
-            await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos antes de tentar novamente
-          }
-        } catch (e: any) {
-          console.error(`[UploadQueue] Erro inesperado na tentativa ${attempt}:`, e);
-          if (attempt === maxRetries) {
-            fetchRes = { success: false, message: e.message || 'Erro de conexão' };
-          } else {
-            await new Promise(r => setTimeout(r, 2000));
+      if (!usedClientSideFallback) {
+        const maxRetries = 2;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            fetchRes = await safeFetchJson<any>(
+              apiUrl,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images: [compressed] })
+              },
+              120000
+            );
+
+            if (fetchRes.success) {
+              break;
+            }
+
+            console.warn(`[UploadQueue] Tentativa ${attempt} falhou:`, fetchRes.message);
+            if (attempt < maxRetries) {
+              updateItem(item.id, { 
+                message: `Instabilidade de rede. Reconectando (${attempt}/${maxRetries})...`,
+                progress: 40 + (attempt * 10)
+              });
+              await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos antes de tentar novamente
+            }
+          } catch (e: any) {
+            console.error(`[UploadQueue] Erro inesperado na tentativa ${attempt}:`, e);
+            if (attempt === maxRetries) {
+              fetchRes = { success: false, message: e.message || 'Erro de conexão' };
+            } else {
+              await new Promise(r => setTimeout(r, 2000));
+            }
           }
         }
       }
