@@ -1056,15 +1056,6 @@ export default function App() {
                         <h1 className="text-lg sm:text-xl font-bold text-gray-800 group-hover:text-blue-600 transition flex items-center gap-1.5">
                           <span>👋</span> Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
                         </h1>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowHowToUseModal(true);
-                          }}
-                          className="bg-amber-100 text-amber-900 border border-amber-300 font-black px-4 py-1.5 rounded-full hover:bg-amber-200 transition text-[10px] sm:text-xs shadow-sm flex items-center gap-1.5"
-                        >
-                          <span>📖</span> Como usar?
-                        </button>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
                         Perfil: <span className="font-semibold text-blue-600 uppercase">
