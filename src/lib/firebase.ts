@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache, getFirestore } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, getFirestore, disableNetwork } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from './firebaseConfig';
 
@@ -26,6 +26,21 @@ try {
 } catch (err) {
   console.warn('Firestore already initialized or failed to initialize with settings, falling back to getFirestore:', err);
   dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+}
+
+// Desativa conexões de rede do Firestore na Web para evitar erros de conexão gRPC/stream no console
+const isNative = typeof window !== 'undefined' && 
+  (window.location.protocol === 'capacitor:' || 
+   window.location.protocol === 'ionic:' || 
+   window.location.protocol === 'file:' || 
+   (window as any).Capacitor?.isNativePlatform?.() || 
+   window.navigator?.userAgent?.includes('Android') || 
+   window.navigator?.userAgent?.includes('Capacitor'));
+
+if (!isNative && dbInstance) {
+  disableNetwork(dbInstance).catch(err => {
+    console.warn('[Firebase] Não foi possível desativar a rede do Firestore no navegador:', err);
+  });
 }
 
 export const isQuotaError = (err: any): boolean => {
