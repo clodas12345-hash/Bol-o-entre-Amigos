@@ -27,7 +27,7 @@ async function generateWithFallback(params: {
   const { 
     contents, 
     config, 
-    primaryModel = "gemini-flash-latest", 
+    primaryModel = "gemini-3.8-flash", 
     fallbackModels = ["gemini-3.1-flash-lite"] 
   } = params;
   
