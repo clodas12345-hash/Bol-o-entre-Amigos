@@ -119,7 +119,7 @@ export default function PrizeSplitModal({
               </button>
             </div>
 
-            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100">
+            <div className="max-h-60 overflow-y-auto overscroll-contain touch-pan-y border border-gray-200 rounded-xl divide-y divide-gray-100">
               {eligibleMembers.length === 0 ? (
                 <div className="p-4 text-center text-xs text-gray-400">
                   Nenhum membro elegível com os critérios selecionados.

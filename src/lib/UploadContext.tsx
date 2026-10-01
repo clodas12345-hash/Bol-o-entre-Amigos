@@ -190,6 +190,41 @@ export const getExistingSignatures = async (): Promise<Set<string>> => {
   return signatures;
 };
 
+export const formatErrorMessage = (rawMsg: string): string => {
+  if (!rawMsg) return 'ERRO AO PROCESSAR';
+  const lower = String(rawMsg).toLowerCase();
+  if (
+    lower.includes('failed to fetch') || 
+    lower.includes('network') || 
+    lower.includes('abort') || 
+    lower.includes('timeout') || 
+    lower.includes('conexão') || 
+    lower.includes('connection')
+  ) {
+    return 'FALHA DE CONEXÃO';
+  }
+  if (
+    lower.includes('nenhuma dezena') || 
+    lower.includes('sem dezenas') || 
+    lower.includes('não contém') || 
+    lower.includes('legíveis') || 
+    lower.includes('sem dezenas legíveis') || 
+    lower.includes('no valid tens')
+  ) {
+    return 'NENHUMA DEZENA VÁLIDA';
+  }
+  if (lower.includes('quota') || lower.includes('exceeded') || lower.includes('429') || lower.includes('rate limit')) {
+    return 'LIMITE DE REQUISIÇÕES (IA)';
+  }
+  if (lower.includes('not found') || lower.includes('404')) {
+    return 'MODELO DE IA INDISPONÍVEL';
+  }
+  if (lower.includes('ocr') && lower.includes('falharam')) {
+    return 'FALHA NA LEITURA (IA)';
+  }
+  return rawMsg.toUpperCase();
+};
+
 export function UploadProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const { addToast } = useToast();
@@ -351,7 +386,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!fetchRes || !fetchRes.success || !fetchRes.data?.success || !fetchRes.data?.games?.length) {
-        const noticeMsg = fetchRes?.data?.message || fetchRes?.message || 'Imagem sem dezenas legíveis. Marque manualmente.';
+        const rawNotice = fetchRes?.data?.message || fetchRes?.message || 'Nenhuma dezena válida';
+        const noticeMsg = formatErrorMessage(rawNotice);
         updateItem(item.id, { status: 'error', progress: 100, message: noticeMsg, durationMs: Date.now() - startTime });
         return;
       }
@@ -520,7 +556,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.warn('Aviso no envio em segundo plano:', err.message || err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
-      updateItem(item.id, { status: 'error', progress: 100, message: err.message || 'Erro inesperado' });
+      const friendlyError = formatErrorMessage(err?.message || 'Falha de processamento');
+      updateItem(item.id, { status: 'error', progress: 100, message: friendlyError });
     }
   };
 

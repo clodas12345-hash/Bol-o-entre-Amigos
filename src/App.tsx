@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
@@ -48,6 +48,19 @@ function BackgroundUploadStatus() {
   const { queue, clearCompleted, retryFailed, isProcessing } = useUpload();
   const [minimized, setMinimized] = useState(false);
   const [closed, setClosed] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Rola estritamente dentro do container do painel de uploads, sem interferir na janela ou em outros modais
+    if (!minimized && containerRef.current) {
+      const container = containerRef.current;
+      const activeItem = container.querySelector<HTMLElement>('.animate-pulse-item');
+      if (activeItem) {
+        const targetScroll = activeItem.offsetTop - container.offsetTop;
+        container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+      }
+    }
+  }, [queue, minimized]);
   
   if (queue.length === 0 || closed) return null;
 
@@ -135,14 +148,18 @@ function BackgroundUploadStatus() {
           </div>
 
           {/* List - Smooth Touch Scroll */}
-          <div className="max-h-48 sm:max-h-56 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-2 bg-gray-50/40 divide-y divide-gray-100/50">
-            {queue.map((item) => (
-              <div key={item.id} className={`p-2.5 rounded-2xl border transition-all duration-300 ${
-                item.status === 'success' ? 'bg-emerald-50/60 border-emerald-100' : 
-                item.status === 'error' ? 'bg-red-50/60 border-red-100' :
-                item.status === 'duplicate' ? 'bg-amber-50/60 border-amber-100' :
-                'bg-white border-gray-100 shadow-xs'
-              }`}>
+          <div ref={containerRef} className="max-h-48 sm:max-h-56 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-2 bg-gray-50/40 divide-y divide-gray-100/50">
+            {queue.map((item) => {
+              const isActive = item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate';
+              return (
+                <div key={item.id} className={`p-2.5 rounded-2xl border transition-all duration-300 ${
+                  isActive ? 'animate-pulse-item bg-indigo-50/40' : ''
+                } ${
+                  item.status === 'success' ? 'bg-emerald-50/60 border-emerald-100' : 
+                  item.status === 'error' ? 'bg-red-50/60 border-red-100' :
+                  item.status === 'duplicate' ? 'bg-amber-50/60 border-amber-100' :
+                  'bg-white border-gray-100 shadow-xs'
+                }`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-1">
@@ -188,8 +205,9 @@ function BackgroundUploadStatus() {
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
+        </div>
           
           {isProcessing && (
             <div className="px-3.5 py-1.5 bg-indigo-50/80 border-t border-indigo-100 flex items-center justify-between">
