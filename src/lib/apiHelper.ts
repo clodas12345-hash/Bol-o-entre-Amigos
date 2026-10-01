@@ -5,7 +5,7 @@ import { collection, doc, setDoc, getDocs, query, orderBy, limit, where } from '
 // URL base do backend no Cloud Run para quando o app roda nativamente no APK
 export const BACKEND_BASE_URL = 
   import.meta.env.VITE_API_URL || 
-  'https://ais-pre-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+  'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
 
 /**
  * Retorna a URL completa para chamadas de API, garantindo compatibilidade entre:

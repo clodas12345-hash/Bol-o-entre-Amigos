@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { doc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { calculateGamePrize, getCorrectGameCost } from '../lib/prizes';
@@ -81,6 +81,7 @@ export default function GameHistory({
   const [showSweepModal, setShowSweepModal] = useState(false);
   const [sweepTargetContest, setSweepTargetContest] = useState<number>(3780);
   const [isExecutingSweep, setIsExecutingSweep] = useState(false);
+  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
 
   const handleConfirmDeleteGroup = async () => {
     if (!groupToDelete || !groupToDelete.games || groupToDelete.games.length === 0) {
@@ -278,6 +279,32 @@ export default function GameHistory({
     return list;
   }, [filteredArchivedGames]);
 
+  // Agrupa os concursos arquivados por Mês/Ano (pastas)
+  const contestsByMonth = useMemo(() => {
+    const map = new Map<string, typeof groupedContests>();
+    groupedContests.forEach(group => {
+      const month = group.monthStr || 'Outros';
+      if (!map.has(month)) {
+        map.set(month, []);
+      }
+      map.get(month)!.push(group);
+    });
+    return Array.from(map.entries()).sort((a, b) => {
+      const [mA, yA] = a[0].split('/').map(Number);
+      const [mB, yB] = b[0].split('/').map(Number);
+      if (yA && yB && yA !== yB) return yB - yA;
+      if (mA && mB) return mB - mA;
+      return b[0].localeCompare(a[0]);
+    });
+  }, [groupedContests]);
+
+  // Auto-expandir a primeira pasta (mês mais recente) ao abrir a tela
+  useEffect(() => {
+    if (contestsByMonth.length > 0 && Object.keys(expandedMonths).length === 0) {
+      setExpandedMonths({ [contestsByMonth[0][0]]: true });
+    }
+  }, [contestsByMonth]);
+
   // Identifica grupos de apostas replicados (mesmos jogos de 16 dezenas espalhados em vários concursos)
   const duplicatedContestsCluster = useMemo(() => {
     return groupedContests.filter(c => 
@@ -425,14 +452,6 @@ export default function GameHistory({
               className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-xl transition cursor-pointer"
             >
               ✕ Fechar
-            </button>
-          )}
-          {archivedGames.length > 0 && onDeleteAllArchived && can('games_delete') && (
-            <button
-              onClick={() => setShowDeleteAllConfirm(true)}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
-            >
-              <span>🗑️</span> Excluir Tudo
             </button>
           )}
         </div>
@@ -609,240 +628,284 @@ export default function GameHistory({
             )}
           </div>
         ) : (
-          groupedContests.map(group => {
-            const isExpanded = expandedContests[group.key] ?? false;
+          contestsByMonth.map(([monthName, groups]) => {
+            const isMonthExpanded = expandedMonths[monthName] ?? false;
+            const totalGamesInMonth = groups.reduce((sum, g) => sum + g.games.length, 0);
+            const totalPrizeInMonth = groups.reduce((sum, g) => sum + g.totalPrize, 0);
 
             return (
-              <div
-                key={group.key}
-                className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden transition"
-              >
-                {/* Header do Concurso Arquivado */}
+              <div key={monthName} className="space-y-2 border border-purple-100/60 bg-purple-50/10 p-2 sm:p-3 rounded-2xl shadow-3xs">
+                {/* Pasta do Mês */}
                 <div
-                  onClick={() => toggleContestExpand(group.key)}
-                  className="p-3.5 sm:px-4 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5 bg-gray-100/90 hover:bg-gray-200/80 cursor-pointer select-none transition border-b border-gray-200"
+                  onClick={() => setExpandedMonths(prev => ({ ...prev, [monthName]: !prev[monthName] }))}
+                  className="flex items-center justify-between p-3 bg-white hover:bg-purple-50/40 border border-purple-100 rounded-xl cursor-pointer select-none transition shadow-2xs"
                 >
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="bg-gray-300 text-gray-800 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                      <span>📁</span> Arquivado
-                    </span>
-
-                    <span className="font-black text-sm sm:text-base text-purple-950">
-                      {group.contestTitle}
-                    </span>
-
-                    <span className="text-xs text-gray-600">
-                      • Data: <strong>{group.dateStr}</strong>
-                    </span>
-
-                    <span className="text-xs bg-white text-gray-700 border border-gray-200 px-2 py-0.5 rounded-md font-semibold">
-                      {group.games.length} {group.games.length === 1 ? 'aposta' : 'apostas'}
-                    </span>
-
-                    {group.totalCost > 0 && (
-                      <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-semibold">
-                        Custo: R$ {group.totalCost.toFixed(2)}
-                      </span>
-                    )}
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl sm:text-2xl animate-pulse">📁</span>
+                    <div>
+                      <h4 className="font-extrabold text-sm sm:text-base text-purple-950 uppercase tracking-wide">
+                        {monthName}
+                      </h4>
+                      <p className="text-[10px] sm:text-xs text-gray-500 font-semibold mt-0.5">
+                        {groups.length} {groups.length === 1 ? 'concurso' : 'concursos'} • {totalGamesInMonth} {totalGamesInMonth === 1 ? 'aposta' : 'apostas'}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                    {group.totalPrize > 0 && (
-                      <span className="bg-amber-400 text-gray-950 font-black text-xs px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1">
-                        <span>🎉</span> R$ {group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  <div className="flex items-center gap-3">
+                    {totalPrizeInMonth > 0 && (
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-lg border border-emerald-200 shadow-3xs">
+                        🏆 R$ {totalPrizeInMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const text = encodeURIComponent(
-                          `🍀 *HISTÓRICO DO BOLÃO - ${group.contestTitle}* 🍀\n\n` +
-                          `📅 Data do Sorteio: ${group.dateStr}\n` +
-                          `🎟️ Total de Apostas Arquivadas: ${group.games.length}\n` +
-                          `💰 Custo Total: R$ ${group.totalCost.toFixed(2)}\n` +
-                          `🏆 Prêmios Conquistados: R$ ${group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
-                          `⭐ Apostas Premiadas: ${group.winningGamesCount}\n\n` +
-                          `📊 Veja o arquivo completo no app do Bolão!`
-                        );
-                        window.open(`https://wa.me/?text=${text}`, '_blank');
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer"
-                      title="Enviar balanço deste concurso arquivado no WhatsApp"
-                    >
-                      <span>📲</span> WhatsApp
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setGroupToDelete(group);
-                      }}
-                      className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
-                      title="Excluir todas as apostas deste concurso do histórico"
-                    >
-                      <span>🗑️</span> Excluir
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleContestExpand(group.key);
-                      }}
-                      className="text-xs font-bold px-2.5 py-1 rounded-lg transition cursor-pointer shadow-xs bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-200"
-                    >
-                      <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
-                    </button>
+                    <span className="text-purple-700 font-bold text-xs sm:text-sm">
+                      {isMonthExpanded ? '▲ Recolher' : '▼ Abrir'}
+                    </span>
                   </div>
                 </div>
 
-                {/* Exibição dos Jogos Arquivados quando Expandido */}
-                {isExpanded ? (
-                  <div className="divide-y divide-gray-100 animate-fadeIn p-2 sm:p-3 space-y-3">
-                    {group.targetResult && Array.isArray(group.targetResult.numbers) && (
-                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-purple-950">🎰 Resultado Oficial do Concurso:</span>
-                          <div className="flex flex-wrap gap-1">
-                            {group.targetResult.numbers.map((num: any) => (
-                              <span key={num} className="w-6 h-6 rounded-full bg-purple-900 text-white font-black text-[10px] flex items-center justify-center">
-                                {String(num).padStart(2, '0')}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {group.games.map((game, gameIndex) => {
-                      const hitsInfo = game.prizeInfo;
-                      const drawnNumbers = Array.isArray(game.targetResult?.numbers) ? game.targetResult.numbers.map((n: any) => Number(n)) : [];
+                {/* Lista de Concursos dentro do Mês (quando pasta está aberta) */}
+                {isMonthExpanded && (
+                  <div className="pl-1 sm:pl-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
+                    {groups.map(group => {
+                      const isExpanded = expandedContests[group.key] ?? false;
 
                       return (
                         <div
-                          key={game.id || gameIndex}
-                          className={`p-3.5 sm:p-4 transition rounded-xl ${
-                            hitsInfo.isWinner
-                              ? 'bg-gradient-to-r from-emerald-100 via-amber-50 to-teal-100 border-2 border-emerald-500 shadow-md'
-                              : 'bg-white border border-gray-200 hover:bg-gray-50'
-                          }`}
+                          key={group.key}
+                          className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden transition"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-900 text-xs font-black flex items-center justify-center">
-                                #{gameIndex + 1}
+                          {/* Header do Concurso Arquivado */}
+                          <div
+                            onClick={() => toggleContestExpand(group.key)}
+                            className="p-3.5 sm:px-4 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5 bg-gray-100/90 hover:bg-gray-200/80 cursor-pointer select-none transition border-b border-gray-200"
+                          >
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="bg-gray-300 text-gray-800 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                <span>📁</span> Arquivado
                               </span>
-                              <span className="font-bold text-sm text-gray-800">
-                                Aposta {gameIndex + 1}
+
+                              <span className="font-black text-sm sm:text-base text-purple-950">
+                                {group.contestTitle}
                               </span>
-                              {game.monthStr && (
-                                <span className="text-[10px] bg-purple-50 text-purple-800 border border-purple-200 font-bold px-1.5 py-0.5 rounded">
-                                  Mês: {game.monthStr}
-                                </span>
-                              )}
-                              {game.cost && (
-                                <span className="text-xs text-gray-500">
-                                  • R$ {Number(game.cost).toFixed(2)}
+
+                              <span className="text-xs text-gray-600">
+                                • Data: <strong>{group.dateStr}</strong>
+                              </span>
+
+                              <span className="text-xs bg-white text-gray-700 border border-gray-200 px-2 py-0.5 rounded-md font-semibold">
+                                {group.games.length} {group.games.length === 1 ? 'aposta' : 'apostas'}
+                              </span>
+
+                              {group.totalCost > 0 && (
+                                <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-semibold">
+                                  Custo: R$ {group.totalCost.toFixed(2)}
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs px-3 py-1 rounded-md shadow-xs ${hitsInfo.badgeColor}`}>
-                                {hitsInfo.statusText}
-                              </span>
-
-                              {hitsInfo.prizeAmount > 0 && (
-                                <button
-                                  onClick={() => setSplitModalData({
-                                    totalPrize: hitsInfo.prizeAmount,
-                                    contestName: `Jogo Arquivado #${gameIndex + 1} (${group.contestTitle})`
-                                  })}
-                                  className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-black px-2.5 py-1 rounded shadow transition cursor-pointer flex items-center gap-1"
-                                >
-                                  <span>💰</span> Dividir Cota
-                                </button>
+                            <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                              {group.totalPrize > 0 && (
+                                <span className="bg-amber-400 text-gray-950 font-black text-xs px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1">
+                                  <span>🎉</span> R$ {group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
                               )}
 
-                              {game.receiptURL && (
-                                <button
-                                  onClick={() => setSelectedReceiptUrl(game.receiptURL)}
-                                  className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
-                                >
-                                  Ver Bilhete
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const text = encodeURIComponent(
+                                    `🍀 *HISTÓRICO DO BOLÃO - ${group.contestTitle}* 🍀\n\n` +
+                                    `📅 Data do Sorteio: ${group.dateStr}\n` +
+                                    `🎟️ Total de Apostas Arquivadas: ${group.games.length}\n` +
+                                    `💰 Custo Total: R$ ${group.totalCost.toFixed(2)}\n` +
+                                    `🏆 Prêmios Conquistados: R$ ${group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
+                                    `⭐ Apostas Premiadas: ${group.winningGamesCount}\n\n` +
+                                    `📊 Veja o arquivo completo no app do Bolão!`
+                                  );
+                                  window.open(`https://wa.me/?text=${text}`, '_blank');
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer"
+                                title="Enviar balanço deste concurso arquivado no WhatsApp"
+                              >
+                                <span>📲</span> WhatsApp
+                              </button>
 
-                              {onDeleteGame && can('games_delete') && (
-                                <button
-                                  onClick={() => setDeletingId(game.id)}
-                                  className="text-xs text-red-600 hover:text-red-800 font-bold underline cursor-pointer"
-                                >
-                                  Excluir
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setGroupToDelete(group);
+                                }}
+                                className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                                title="Excluir todas as apostas deste concurso do histórico"
+                              >
+                                <span>🗑️</span> Excluir
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleContestExpand(group.key);
+                                }}
+                                className="text-xs font-bold px-2.5 py-1 rounded-lg transition cursor-pointer shadow-xs bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-200"
+                              >
+                                <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
+                              </button>
                             </div>
                           </div>
 
-                          {/* Dezenas do Jogo Arquivado */}
-                          <div className="flex flex-wrap gap-1.5 items-center mt-2">
-                            {game.gameNumbers.map((num: number) => {
-                              const isHit = drawnNumbers.includes(num);
-                              return (
-                                <span
-                                  key={num}
-                                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-bold text-xs flex items-center justify-center transition shadow-xs ${
-                                    isHit
-                                      ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 font-black scale-105'
-                                      : 'bg-gray-100 text-gray-700 border border-gray-200'
-                                  }`}
-                                >
-                                  {String(num).padStart(2, '0')}
-                                </span>
-                              );
-                            })}
-                          </div>
-
-                          {/* Detalhamento do Resultado */}
-                          {drawnNumbers.length > 0 && (
-                            <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-                              {hitsInfo.matchedNumbers && hitsInfo.matchedNumbers.length > 0 ? (
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-bold text-emerald-800 flex items-center gap-1">
-                                    <span>🎯</span> Acertos ({hitsInfo.matchedNumbers.length}):
-                                  </span>
-                                  <div className="flex items-center gap-1 flex-wrap">
-                                    {hitsInfo.matchedNumbers.map((n: number) => (
-                                      <span key={n} className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-black text-[11px] border border-emerald-300">
-                                        {String(n).padStart(2, '0')}
-                                      </span>
-                                    ))}
+                          {/* Exibição dos Jogos Arquivados quando Expandido */}
+                          {isExpanded ? (
+                            <div className="divide-y divide-gray-100 animate-fadeIn p-2 sm:p-3 space-y-3">
+                              {group.targetResult && Array.isArray(group.targetResult.numbers) && (
+                                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-purple-950">🎰 Resultado Oficial do Concurso:</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {group.targetResult.numbers.map((num: any) => (
+                                        <span key={num} className="w-6 h-6 rounded-full bg-purple-900 text-white font-black text-[10px] flex items-center justify-center">
+                                          {String(num).padStart(2, '0')}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
                                 </div>
-                              ) : (
-                                <span className="text-gray-500 font-medium">Nenhum acerto gravado para este concurso.</span>
                               )}
+
+                              {group.games.map((game, gameIndex) => {
+                                const hitsInfo = game.prizeInfo;
+                                const drawnNumbers = Array.isArray(game.targetResult?.numbers) ? game.targetResult.numbers.map((n: any) => Number(n)) : [];
+
+                                return (
+                                  <div
+                                    key={game.id || gameIndex}
+                                    className={`p-3.5 sm:p-4 transition rounded-xl ${
+                                      hitsInfo.isWinner
+                                        ? 'bg-gradient-to-r from-emerald-100 via-amber-50 to-teal-100 border-2 border-emerald-500 shadow-md'
+                                        : 'bg-white border border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-900 text-xs font-black flex items-center justify-center">
+                                          #{gameIndex + 1}
+                                        </span>
+                                        <span className="font-bold text-sm text-gray-800">
+                                          Aposta {gameIndex + 1}
+                                        </span>
+                                        {game.monthStr && (
+                                          <span className="text-[10px] bg-purple-50 text-purple-800 border border-purple-200 font-bold px-1.5 py-0.5 rounded">
+                                            Mês: {game.monthStr}
+                                          </span>
+                                        )}
+                                        {game.cost && (
+                                          <span className="text-xs text-gray-500">
+                                            • R$ {Number(game.cost).toFixed(2)}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-xs px-3 py-1 rounded-md shadow-xs ${hitsInfo.badgeColor}`}>
+                                          {hitsInfo.statusText}
+                                        </span>
+
+                                        {hitsInfo.prizeAmount > 0 && (
+                                          <button
+                                            onClick={() => setSplitModalData({
+                                              totalPrize: hitsInfo.prizeAmount,
+                                              contestName: `Jogo Arquivado #${gameIndex + 1} (${group.contestTitle})`
+                                            })}
+                                            className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-black px-2.5 py-1 rounded shadow transition cursor-pointer flex items-center gap-1"
+                                          >
+                                            <span>💰</span> Dividir Cota
+                                          </button>
+                                        )}
+
+                                        {game.receiptURL && (
+                                          <button
+                                            onClick={() => setSelectedReceiptUrl(game.receiptURL)}
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                                          >
+                                            Ver Bilhete
+                                          </button>
+                                        )}
+
+                                        {onDeleteGame && can('games_delete') && (
+                                          <button
+                                            onClick={() => setDeletingId(game.id)}
+                                            className="text-xs text-red-600 hover:text-red-800 font-bold underline cursor-pointer"
+                                          >
+                                            Excluir
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Dezenas do Jogo Arquivado */}
+                                    <div className="flex flex-wrap gap-1.5 items-center mt-2">
+                                      {game.gameNumbers.map((num: number) => {
+                                        const isHit = drawnNumbers.includes(num);
+                                        return (
+                                          <span
+                                            key={num}
+                                            className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-bold text-xs flex items-center justify-center transition shadow-xs ${
+                                              isHit
+                                                ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 font-black scale-105'
+                                                : 'bg-gray-100 text-gray-700 border border-gray-200'
+                                            }`}
+                                          >
+                                            {String(num).padStart(2, '0')}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Detalhamento do Resultado */}
+                                    {drawnNumbers.length > 0 && (
+                                      <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                                        {hitsInfo.matchedNumbers && hitsInfo.matchedNumbers.length > 0 ? (
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-bold text-emerald-800 flex items-center gap-1">
+                                              <span>🎯</span> Acertos ({hitsInfo.matchedNumbers.length}):
+                                            </span>
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                              {hitsInfo.matchedNumbers.map((n: number) => (
+                                                <span key={n} className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-black text-[11px] border border-emerald-300">
+                                                  {String(n).padStart(2, '0')}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="text-gray-500 font-medium">Nenhum acerto gravado para este concurso.</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => toggleContestExpand(group.key)}
+                              className="px-4 py-2.5 bg-gray-50/70 hover:bg-gray-100 cursor-pointer flex items-center justify-between text-xs text-gray-600 transition"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-400">🔒</span>
+                                <span>{group.games.length} apostas arquivadas.</span>
+                              </div>
+                              <span className="font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1">
+                                Ver Apostas ▼
+                              </span>
                             </div>
                           )}
                         </div>
                       );
                     })}
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => toggleContestExpand(group.key)}
-                    className="px-4 py-2.5 bg-gray-50/70 hover:bg-gray-100 cursor-pointer flex items-center justify-between text-xs text-gray-600 transition"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-400">🔒</span>
-                      <span>{group.games.length} apostas arquivadas.</span>
-                    </div>
-                    <span className="font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1">
-                      Ver Apostas ▼
-                    </span>
                   </div>
                 )}
               </div>
