@@ -167,18 +167,45 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       updateItem(item.id, { status: 'ocr', progress: 40, message: 'Analisando bilhete...' });
 
       const apiUrl = getApiUrl('/api/lotofacil/ocr-receipt');
-      const fetchRes = await safeFetchJson<any>(
-        apiUrl,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ images: [compressed] })
-        },
-        120000
-      );
+      let fetchRes: any = null;
+      const maxRetries = 2;
 
-      if (!fetchRes.success || !fetchRes.data?.success || !fetchRes.data?.games?.length) {
-        const noticeMsg = fetchRes.data?.message || fetchRes.message || 'Imagem sem dezenas legíveis. Marque manualmente.';
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          fetchRes = await safeFetchJson<any>(
+            apiUrl,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ images: [compressed] })
+            },
+            120000
+          );
+
+          if (fetchRes.success) {
+            break;
+          }
+
+          console.warn(`[UploadQueue] Tentativa ${attempt} falhou:`, fetchRes.message);
+          if (attempt < maxRetries) {
+            updateItem(item.id, { 
+              message: `Instabilidade de rede. Reconectando (${attempt}/${maxRetries})...`,
+              progress: 40 + (attempt * 10)
+            });
+            await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos antes de tentar novamente
+          }
+        } catch (e: any) {
+          console.error(`[UploadQueue] Erro inesperado na tentativa ${attempt}:`, e);
+          if (attempt === maxRetries) {
+            fetchRes = { success: false, message: e.message || 'Erro de conexão' };
+          } else {
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+      }
+
+      if (!fetchRes || !fetchRes.success || !fetchRes.data?.success || !fetchRes.data?.games?.length) {
+        const noticeMsg = fetchRes?.data?.message || fetchRes?.message || 'Imagem sem dezenas legíveis. Marque manualmente.';
         updateItem(item.id, { status: 'error', progress: 100, message: noticeMsg, durationMs: Date.now() - startTime });
         return;
       }

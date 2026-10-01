@@ -2,7 +2,7 @@ import { usePool } from '../lib/PoolContext';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-export default function PoolSelector() {
+export default function PoolSelector({ variant = 'light' }: { variant?: 'dark' | 'light' }) {
   const { pools, activePool, setActivePoolId } = usePool();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -10,13 +10,17 @@ export default function PoolSelector() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg border border-white/20 transition cursor-pointer text-white max-w-[130px] sm:max-w-xs"
+        className={
+          variant === 'dark'
+            ? "flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg border border-white/20 transition cursor-pointer text-white max-w-[130px] sm:max-w-xs font-bold"
+            : "flex items-center justify-between w-full sm:w-72 gap-1.5 bg-gray-50 hover:bg-gray-100 px-3.5 py-2.5 rounded-xl border border-gray-300 transition cursor-pointer text-gray-800 font-bold shadow-2xs"
+        }
         title="Alternar Bolão Ativo"
       >
-        <span className="text-[11px] font-black uppercase tracking-wider truncate">
+        <span className="text-xs font-black uppercase tracking-wider truncate">
           {activePool?.name || 'Bolão Principal'}
         </span>
-        <span className={`text-[9px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+        <span className={`text-[10px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {isOpen && (

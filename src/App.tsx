@@ -425,24 +425,8 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       {!hideHeader && (
         <header className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white py-3 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-              {/* Logo & Botão Voltar */}
+              {/* Logo */}
               <div className="flex items-center gap-1.5 sm:gap-2">
-                  {!isHome && (
-                    <button
-                      onClick={() => {
-                        if (window.history.length > 1) {
-                          navigate(-1);
-                        } else {
-                          navigate('/');
-                        }
-                      }}
-                      className="px-2 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                      title="Voltar ao Início"
-                    >
-                      <span>←</span>
-                      <span className="hidden sm:inline text-[11px]">Início</span>
-                    </button>
-                  )}
                   <div 
                     onClick={() => navigate('/')}
                     className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-1.5 sm:gap-2.5 hover:opacity-95 transition cursor-pointer py-0.5 shrink-0"
@@ -453,10 +437,8 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                   </div>
                 </div>
 
-              {/* Seleção de Bolão, Chat & Notificações */}
+              {/* Chat & Notificações */}
               <div className="flex items-center gap-1 sm:gap-2">
-                <PoolSelector />
-
                 {/* Ícone do Chat ao lado da Notificação */}
                 <button
                   onClick={() => {
@@ -719,6 +701,25 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
           </div>
         )}
         {children}
+
+        {!isHome && (
+          <div className="mt-8 mb-4 flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <button
+              onClick={() => {
+                if (window.history.length > 1) {
+                  navigate(-1);
+                } else {
+                  navigate('/');
+                }
+              }}
+              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white font-extrabold text-xs shadow-md hover:scale-102 hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 border border-white/10"
+              title="Voltar à página inicial"
+            >
+              <span>←</span> Voltar para o Início
+            </button>
+          </div>
+        )}
+
         <BackgroundUploadStatus />
       </main>
 
