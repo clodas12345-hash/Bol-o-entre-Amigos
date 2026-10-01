@@ -758,7 +758,7 @@ export default function GameHistory({
                           </div>
 
                           {/* Exibição dos Jogos Arquivados quando Expandido */}
-                          {isExpanded ? (
+                          {isExpanded && (
                             <div className="divide-y divide-gray-100 animate-fadeIn p-2 sm:p-3 space-y-3">
                               {group.targetResult && Array.isArray(group.targetResult.numbers) && (
                                 <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -888,19 +888,6 @@ export default function GameHistory({
                                   </div>
                                 );
                               })}
-                            </div>
-                          ) : (
-                            <div
-                              onClick={() => toggleContestExpand(group.key)}
-                              className="px-4 py-2.5 bg-gray-50/70 hover:bg-gray-100 cursor-pointer flex items-center justify-between text-xs text-gray-600 transition"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="text-gray-400">🔒</span>
-                                <span>{group.games.length} apostas arquivadas.</span>
-                              </div>
-                              <span className="font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1">
-                                Ver Apostas ▼
-                              </span>
                             </div>
                           )}
                         </div>

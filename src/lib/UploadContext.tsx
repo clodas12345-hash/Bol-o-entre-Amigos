@@ -59,10 +59,17 @@ const performClientSideOcr = async (base64Image: string, apiKey: string): Promis
   let lastError: any = null;
 
   const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para extração de dados de bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
-DIRETRIZES:
-1. Extraia todas as dezenas jogadas nos círculos coloridos roxos, verdes ou cinzas.
-2. Identifique o concurso (ex: Conc. 3756 -> retornar "3756" como contest) e data (ex: 07/08/2026 -> retornar "2026-08-07" como date).
-3. Identifique Teimosinhas se houver (ex: "6 Teimosinhas" -> isTeimosinha: true, teimosinhaCount: 6).
+DIRETRIZES CRÍTICAS:
+1. DEZENAS: Extraia todas as dezenas jogadas nos círculos coloridos roxos, verdes ou cinzas.
+2. NÚMERO DO CONCURSO (MUITO CRÍTICO):
+   - Procure EXCLUSIVAMENTE a palavra "CONCURSO", "CONC." ou "CONCURSO Nº" associada ao cabeçalho da modalidade (ex: "LOTOFÁCIL CONCURSO 3696" -> retornar "3696" como contest).
+   - NUNCA CONFUNDA COM:
+     * Número de Terminal (ex: "TERM 03012" ou "TERM 3012" -> ISSO É O TERMINAL DA MÁQUINA, NUNCA O CONCURSO!).
+     * Código da Lotérica (ex: "LOT 3012" ou "AG 3012").
+     * Número de Pedido, Compra, Transação, NSU ou Código de Segurança.
+   - Em bilhetes de 2026, os concursos da Lotofácil estão na faixa entre 3600 e 3900.
+3. DATA DO SORTEIO: Identifique a data do sorteio (ex: 28/05/2026 -> retornar "2026-05-28" como date).
+4. TEIMOSINHA: Identifique Teimosinhas se houver (ex: "2 Teimosinhas" -> isTeimosinha: true, teimosinhaCount: 2). Se for aposta simples sem teimosinha, retorne isTeimosinha: false, teimosinhaCount: 1.
 
 Retorne APENAS o JSON puro (sem markdown):
 {
@@ -399,7 +406,16 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const receiptURL = compressed.base64;
       const parsedDate = data.date ? parseDateSafely(data.date) : parseDateSafely(gameDate);
       const contestStr = data.contest ? String(data.contest).trim() : (contest || '').trim();
-      const startContestNum = parseInt(contestStr, 10) || 0;
+      let startContestNum = parseInt(contestStr, 10) || 0;
+
+      // Trava de Proteção Ativa: Previne gravações incorretas no Firestore
+      // Em 2026, os concursos da Lotofácil são sempre >= 3500. Números como 3012 vêm de terminal da máquina da lotérica lido por engano.
+      const ticketYear = parsedDate.getFullYear();
+      if (!isMegaSena && ticketYear >= 2026 && startContestNum > 0 && startContestNum < 3500) {
+        console.warn(`[Segurança Firestore] Concurso inconsistente ignorado (#${startContestNum}) para o ano ${ticketYear}. Prevenindo gravação de número de terminal no banco.`);
+        startContestNum = parseInt((contest || '').trim(), 10) || 0;
+      }
+
       const currentMonth = data.date ? formatDateToMonthRef(parsedDate) : (monthRef || formatDateToMonthRef(new Date()));
       
       const rawGames = data.games.map((g: any) => 
