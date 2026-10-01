@@ -55,65 +55,77 @@ const formatDateToMonthRef = (date: Date): string => {
 
 const performClientSideOcr = async (base64Image: string, apiKey: string): Promise<any> => {
   const cleanBase64 = base64Image.replace(/^data:[^;]+;base64,/, '').trim();
-  const model = 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  let lastError: any = null;
 
-  const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para leitura e extração de dados de bilhetes, apostas e comprovantes das Loterias Caixa (Lotofácil e Mega-Sena), com especialização na tela do Aplicativo Loterias Caixa ("Apostas da Compra" ou "Meus Jogos" com círculos roxos/brancos).
-DIRETRIZES IMPORTANTES DE ANÁLISE DE IMAGEM:
-1. RECONHECIMENTO DE CÍRCULOS NUMÉRICOS:
-   - Os números das dezenas jogadas estão contidos dentro de CÍRCULOS COLORIDOS (roxo com texto branco, ou cinza, ou verde).
-   - Você deve varrer cada círculo horizontalmente da esquerda para a direita, linha por linha.
-   - Cada jogo é um conjunto compacto de dezenas (geralmente de 15 a 20 dezenas para Lotofácil, e 6 a 15 dezenas para Mega-Sena).
-   - IMPORTANTE: Não ignore nenhum círculo! Números como "1", "2", "9" ou dezenas no fim como "25" são vitais e devem ser lidos perfeitamente.
-   - Os jogos são separados verticalmente por textos como "Efetivada", "Prêmio Pago", "Lotofácil", ou uma linha divisória. Se houver mais de um bloco de círculos empilhados verticalmente, você DEVE extrair todos eles como jogos separados dentro do array "games".
-2. IDENTIFICAÇÃO DO CONCURSO E DATA (Rótulos do App):
-   - Procure pelo número do concurso que aparece logo abaixo ou acima do título da loteria, normalmente próximo à data (exemplo: "15/09/2026 Conc. 3780" ou "Concurso 3780" -> retornar "3780" como contest).
-   - Se a data do concurso estiver descrita (ex: "15/09/2026"), converta para o formato ISO "YYYY-MM-DD" (ex: "2026-09-15" como date).
+  const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para extração de dados de bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
+DIRETRIZES:
+1. Extraia todas as dezenas jogadas nos círculos coloridos roxos, verdes ou cinzas.
+2. Identifique o concurso (ex: Conc. 3756 -> retornar "3756" como contest) e data (ex: 07/08/2026 -> retornar "2026-08-07" como date).
+3. Identifique Teimosinhas se houver (ex: "6 Teimosinhas" -> isTeimosinha: true, teimosinhaCount: 6).
 
-Retorne APENAS um JSON puro (sem formatação markdown) no seguinte formato:
+Retorne APENAS o JSON puro (sem markdown):
 {
   "success": true,
   "date": "YYYY-MM-DD",
-  "contest": "Número do concurso",
+  "contest": "Número",
   "isTeimosinha": false,
   "teimosinhaCount": 1,
-  "games": [
-    [1, 3, 7, ...],
-    [2, 4, 10, ...]
-  ]
+  "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
 }`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: prompt },
+  for (const model of modelsToTry) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // Limite estrito de 30 segundos por tentativa de IA
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
             {
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: cleanBase64
-              }
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: cleanBase64
+                  }
+                }
+              ]
             }
           ]
-        }
-      ]
-    })
-  });
+        }),
+        signal: controller.signal
+      });
 
-  if (!response.ok) {
-    throw new Error(`Erro na API do Gemini: ${response.statusText}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Erro ${response.status} com modelo ${model}`);
+      }
+
+      const result = await response.json();
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const cleanJson = jsonMatch ? jsonMatch[0] : text;
+      const parsed = JSON.parse(cleanJson.replace(/```json|```/gi, '').trim());
+      
+      if (parsed && Array.isArray(parsed.games) && parsed.games.length > 0) {
+        console.log(`[Client OCR] Success with model: ${model}`);
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[Client OCR] Modelo ${model} falhou ou retornou inválido:`, err);
+      lastError = err;
+    }
   }
 
-  const result = await response.json();
-  const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  
-  // Extract JSON from response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  const cleanJson = jsonMatch ? jsonMatch[0] : text;
-  return JSON.parse(cleanJson.replace(/```json|```/gi, '').trim());
+  throw lastError || new Error('Todos os modelos de OCR falharam');
 };
 
 /**
@@ -217,7 +229,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX = 1000;
+            const MAX = 1280; // Reduzido para resolução máxima recomendada de 1280px
             let w = img.width, h = img.height;
             if (w > h ? w > MAX : h > MAX) {
               if (w > h) { h *= MAX / w; w = MAX; }
@@ -229,7 +241,40 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               ctx.imageSmoothingEnabled = true;
               ctx.imageSmoothingQuality = 'medium';
               ctx.drawImage(img, 0, 0, w, h);
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.72), mimeType: 'image/jpeg' });
+              
+              // Pré-processamento profissional de imagem para OCR (Escala de cinza + Contraste)
+              try {
+                const imageData = ctx.getImageData(0, 0, w, h);
+                const data = imageData.data;
+                
+                // Aumento de contraste em exatamente 20% (+51 na escala de -255 a 255)
+                const contrast = 51;
+                const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+                
+                for (let i = 0; i < data.length; i += 4) {
+                  const r = data[i];
+                  const g = data[i + 1];
+                  const b = data[i + 2];
+                  
+                  // 1. Conversão para Tons de Cinza usando fórmula de luminância perceptiva (ITU-R BT.709)
+                  const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                  
+                  // 2. Aumento de Contraste para destacar números impressos e remover sombras/ruídos de fundo
+                  let val = factor * (gray - 128) + 128;
+                  if (val < 0) val = 0;
+                  if (val > 255) val = 255;
+                  
+                  data[i] = val;     // Vermelho
+                  data[i + 1] = val; // Verde
+                  data[i + 2] = val; // Azul
+                  // data[i + 3] (Alpha) permanece inalterado
+                }
+                ctx.putImageData(imageData, 0, 0);
+              } catch (preprocessErr) {
+                console.warn('[OCR Preprocessing] Erro ao pré-processar imagem, prosseguindo com a original:', preprocessErr);
+              }
+
+              resolve({ base64: canvas.toDataURL('image/jpeg', 0.60), mimeType: 'image/jpeg' });
             } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
           };
           img.src = e.target?.result as string;
@@ -244,13 +289,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const apiUrl = getApiUrl('/api/lotofacil/ocr-receipt');
       let fetchRes: any = null;
 
-      const isNativePlatform = typeof window !== 'undefined' && 
-        (window.location.protocol === 'capacitor:' || 
-         window.location.protocol === 'ionic:' || 
-         window.location.protocol === 'file:' || 
-         (window as any).Capacitor?.isNativePlatform?.() || 
-         window.navigator?.userAgent?.includes('Android') || 
-         window.navigator?.userAgent?.includes('Capacitor'));
+      const isWebPreview = typeof window !== 'undefined' && 
+        (window.location.hostname.includes('run.app') || 
+         window.location.hostname.includes('google.com') || 
+         window.location.href.includes('ais-dev') || 
+         window.location.href.includes('ais-pre'));
+
+      const isNativePlatform = !isWebPreview;
 
       let usedClientSideFallback = false;
 
@@ -279,7 +324,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images: [compressed] })
               },
-              120000
+              35000 // Otimizado de 120s para 35s para evitar travamento em redes oscilantes
             );
 
             if (fetchRes.success) {

@@ -27,8 +27,8 @@ async function generateWithFallback(params: {
   const { 
     contents, 
     config, 
-    primaryModel = "gemini-3.8-flash", 
-    fallbackModels = ["gemini-3.1-flash-lite"] 
+    primaryModel = "gemini-3.1-flash-lite", 
+    fallbackModels = ["gemini-3.8-flash"] 
   } = params;
   
   // Deduplicate and ensure priority order
@@ -402,36 +402,20 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nenhuma imagem fornecida para análise.' });
     }
 
-    const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para leitura e extração de dados de bilhetes, apostas e comprovantes das Loterias Caixa (Lotofácil e Mega-Sena), com especialização na tela do Aplicativo Loterias Caixa ("Apostas da Compra" ou "Meus Jogos" com círculos roxos/brancos).
+    const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para extração de dados de bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
+DIRETRIZES:
+1. Extraia todas as dezenas jogadas nos círculos coloridos roxos, verdes ou cinzas.
+2. Identifique o concurso (ex: Conc. 3756 -> retornar "3756" como contest) e data (ex: 07/08/2026 -> retornar "2026-08-07" como date).
+3. Identifique Teimosinhas se houver (ex: "6 Teimosinhas" -> isTeimosinha: true, teimosinhaCount: 6).
 
-DIRETRIZES IMPORTANTES DE ANÁLISE DE IMAGEM:
-
-1. RECONHECIMENTO DE CÍRCULOS NUMÉRICOS (Loterias Caixa App):
-   - Os números das dezenas jogadas estão contidos dentro de CÍRCULOS COLORIDOS (roxo com texto branco, ou cinza, ou verde).
-   - Você deve varrer cada círculo horizontalmente da esquerda para a direita, linha por linha.
-   - Cada jogo é um conjunto compacto de círculos (geralmente de 15 a 20 círculos para Lotofácil, e 6 a 15 círculos para Mega-Sena).
-   - IMPORTANTE: Não ignore nenhum círculo! Números como "1", "2", "9" ou dezenas no fim como "25" são vitais e devem ser lidos perfeitamente.
-   - Os jogos são separados verticalmente por textos como "Efetivada", "Prêmio Pago", "Lotofácil", ou uma linha divisória. Se houver mais de um bloco de círculos empilhados verticalmente, você DEVE extrair todos eles como jogos separados dentro do array "games".
-
-2. IDENTIFICAÇÃO DO CONCURSO E DATA (Rótulos do App):
-   - Procure pelo número do concurso que aparece logo abaixo ou acima do título da loteria, normalmente próximo à data (exemplo: "15/09/2026 Conc. 3780" ou "Concurso 3780" -> retornar "3780" como contest).
-   - Se a data do concurso estiver descrita (ex: "15/09/2026"), converta para o formato ISO "YYYY-MM-DD" (ex: "2026-09-15" como date).
-
-3. REGRA DE SEGURANÇA E HIGIENIZAÇÃO:
-   - Certifique-se de que cada jogo da Lotofácil possui exatamente entre 15 e 20 dezenas válidas (números entre 01 e 25).
-   - Ordene as dezenas de cada jogo individual em ordem crescente.
-
-Formato de retorno estrito em formato JSON (sem bloco markdown, sem comentários, sem textos extras):
+Retorne APENAS o JSON puro (sem markdown):
 {
   "success": true,
-  "date": "2026-09-15",
-  "contest": "3780",
+  "date": "YYYY-MM-DD",
+  "contest": "Número",
   "isTeimosinha": false,
   "teimosinhaCount": 1,
-  "games": [
-    [2, 3, 4, 6, 9, 11, 13, 14, 15, 16, 17, 19, 21, 22, 23, 25]
-  ],
-  "message": ""
+  "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
 }`;
 
     const response = await generateWithFallback({

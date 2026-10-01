@@ -95,6 +95,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /system_config/{configId} {
+      allow read: if isApprovedUser();
+      allow write: if isAdmin();
+    }
+
     match /bet_releases/{releaseId} {
       allow read: if isApprovedUser();
       allow write: if isAdmin();
