@@ -7,6 +7,21 @@ import cron from 'node-cron';
 import { db } from './src/lib/firebase';
 import { collection, addDoc, setDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 
+// Helper robusto para converter datas da Caixa para YYYY-MM-DD
+function parseCaixaDate(rawDate: any): string {
+  if (!rawDate) return new Date().toISOString().split('T')[0];
+  const dateStr = String(rawDate);
+  
+  // Se for DD/MM/YYYY
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
+    if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  
+  // Se já for YYYY-MM-DD ou contiver T (timestamp)
+  return dateStr.split('T')[0];
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -181,7 +196,7 @@ async function fetchLotofacilFromCaixaApi(contestNumber?: number | string): Prom
 
       const numbers = rawDezenas.map((n: any) => Number(n)).sort((a: number, b: number) => a - b);
       const contestNum = Number(data.numero || data.concurso || contestNumber);
-      const drawDate = data.dataApuracao || data.data || data.data_concurso || data.date || new Date().toLocaleDateString('pt-BR');
+      const drawDate = parseCaixaDate(data.dataApuracao || data.data || data.data_concurso || data.date);
 
       let prize15Winners = 0, prize15Amount = 0;
       let prize14Winners = 0, prize14Amount = 0;
@@ -252,7 +267,7 @@ async function fetchMegaSenaFromCaixaApi(contestNumber?: number | string): Promi
 
       const numbers = rawDezenas.map((n: any) => Number(n)).sort((a: number, b: number) => a - b);
       const contestNum = Number(data.numero || data.concurso || contestNumber);
-      const drawDate = data.dataApuracao || data.data || data.data_concurso || data.date || new Date().toLocaleDateString('pt-BR');
+      const drawDate = parseCaixaDate(data.dataApuracao || data.data || data.data_concurso || data.date);
 
       let prize6Winners = 0, prize6Amount = 0;
       let prize5Winners = 0, prize5Amount = 0;
@@ -403,27 +418,31 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nenhuma imagem fornecida para análise.' });
     }
 
-    const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para extração de dados de bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
-DIRETRIZES CRÍTICAS:
-1. DEZENAS: Extraia todas as dezenas jogadas nos círculos coloridos roxos, verdes ou cinzas.
-2. NÚMERO DO CONCURSO (MUITO CRÍTICO):
-   - Procure EXCLUSIVAMENTE a palavra "CONCURSO", "CONC." ou "CONCURSO Nº" associada ao cabeçalho da modalidade (ex: "LOTOFÁCIL CONCURSO 3696" -> retornar "3696" como contest).
-   - NUNCA CONFUNDA COM:
-     * Número de Terminal (ex: "TERM 03012" ou "TERM 3012" -> ISSO É O TERMINAL DA MÁQUINA, NUNCA O CONCURSO!).
-     * Código da Lotérica (ex: "LOT 3012" ou "AG 3012").
-     * Número de Pedido, Compra, Transação, NSU ou Código de Segurança.
-   - Em bilhetes de 2026, os concursos da Lotofácil estão na faixa entre 3600 e 3900.
-3. DATA DO SORTEIO: Identifique a data do sorteio (ex: 28/05/2026 -> retornar "2026-05-28" como date).
-4. TEIMOSINHA: Identifique Teimosinhas se houver (ex: "2 Teimosinhas" -> isTeimosinha: true, teimosinhaCount: 2). Se for aposta simples sem teimosinha, retorne isTeimosinha: false, teimosinhaCount: 1.
+    const prompt = `Você é um leitor e analista inteligente de altíssima precisão especialista em bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
+
+DIRETRIZES DE EXTRAÇÃO COM PRECISÃO OFICIAL (CALENDÁRIO CAIXA):
+1. NÚMERO DO CONCURSO (MUITO CRÍTICO):
+   - Extraia EXATAMENTE o número do concurso que está impresso no bilhete (geralmente acompanhado de "CONCURSO", "CONC." ou "CONCURSO Nº").
+   - NUNCA force ou invente o número do concurso com base em datas fixas, pois a Caixa pode alterar dias de sorteios em virtude de feriados, datas comemorativas ou sorteios especiais.
+   - NUNCA confunda com número de Terminal ("TERM"), código da Lotérica ("LOT"), NSU, código de barras ou horário da aposta.
+2. DATA DO SORTEIO:
+   - Extraia a data exata do sorteio impressa no bilhete (formato YYYY-MM-DD).
+   - Lembre-se que sorteios da Caixa não ocorrem aos domingos nem em feriados nacionais.
+3. TEIMOSINHA:
+   - Se o bilhete indicar "Teimosinha" (ex: 2, 4, 8, 12 teimosinhas), capture "isTeimosinha: true" e "teimosinhaCount: <número>".
+   - Se for aposta simples para apenas um concurso, "isTeimosinha: false" e "teimosinhaCount: 1".
+4. DEZENAS ESCOLHIDAS:
+   - Extraia todas as dezenas jogadas nos círculos ou campos de jogo do bilhete.
+   - Se houver mais de um jogo no mesmo bilhete, retorne cada jogo como um array separado de números inteiros em ordem crescente no campo "games".
 
 Retorne APENAS o JSON puro (sem markdown):
 {
   "success": true,
   "date": "YYYY-MM-DD",
   "contest": "Número",
-  "isTeimosinha": false,
-  "teimosinhaCount": 1,
-  "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
+  "isTeimosinha": boolean,
+  "teimosinhaCount": number,
+  "games": [[1, 2, 3...], [10, 11, 12...]]
 }`;
 
     const response = await generateWithFallback({

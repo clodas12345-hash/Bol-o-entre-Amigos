@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import BetReleaseManager from './BetReleaseManager';
+import TeimosinhaManager from './TeimosinhaManager';
 import BackupManager from './BackupManager';
 import HowToUseModal from './HowToUseModal';
 import PoolSelector from './PoolSelector';
@@ -45,6 +46,10 @@ export default function Settings() {
       
       {can('system_backup_restore') && (
         <BackupManager />
+      )}
+
+      {can('games_create') && (
+        <TeimosinhaManager />
       )}
     </div>
   );

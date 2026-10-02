@@ -597,12 +597,12 @@ export default function MembersList() {
 
       addToast(`Participante cadastrado como ${newRole === 'counselor' ? 'Conselheiro' : 'Membro'} com ${quotasVal} cota(s)!`, 'success');
     } catch (error) {
-      console.warn('Error adding member to Firebase, fallback to local storage:', error);
+      console.error('CRITICAL: Failed to add member to Firebase:', error);
       if (isQuotaError(error)) {
         setIsQuotaExceeded(true);
       }
       saveLocalMember(localMemberData);
-      addToast(`Salvo localmente no dispositivo (Modo Offline ativo devido ao limite de cota do servidor)!`, 'success');
+      addToast(`Erro ao salvar no banco, mas salvo localmente: ${error}`, 'error');
     } finally {
       setNewDisplayName('');
       setNewPhone('');

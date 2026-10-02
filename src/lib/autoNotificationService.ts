@@ -1,5 +1,6 @@
 import { collection, addDoc, getDoc, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { sendAppNotification, notifyWinningPrize } from './notifications';
 
 /**
  * Handles automatic notifications for a newly initiated contest.
@@ -45,6 +46,12 @@ export async function triggerNewContestNotification(contestNum: number) {
       createdAt: serverTimestamp()
     });
 
+    // Also trigger native app / web push notification
+    await sendAppNotification('🍀 Novo Concurso', {
+      body: formattedMsg,
+      id: contestNum
+    });
+
     // 4. Update the notified contests list
     notifiedList.push(contestNum);
     await setDoc(notifiedRef, { list: notifiedList }, { merge: true });
@@ -58,7 +65,7 @@ export async function triggerNewContestNotification(contestNum: number) {
 /**
  * Handles automatic notifications for a published contest result.
  */
-export async function triggerResultNotification(contestNum: number) {
+export async function triggerResultNotification(contestNum: number, winningCount: number = 0, totalPrize: number = 0, highestHits: number = 0) {
   if (!contestNum || contestNum <= 0) return;
 
   try {
@@ -89,10 +96,25 @@ export async function triggerResultNotification(contestNum: number) {
     }
 
     // 3. Dispatch the auto notification to 'all' members
-    const formattedMsg = resultPublishedTemplate.replace('{contest}', String(contestNum));
+    let title = '🎉 Resultado Oficial';
+    let formattedMsg = resultPublishedTemplate.replace('{contest}', String(contestNum));
+
+    if (winningCount > 0 && totalPrize > 0) {
+      title = `🏆 Bolão Premiado (#${contestNum})!`;
+      formattedMsg = `🎉 Tivemos ${winningCount} aposta(s) premiada(s) no Concurso #${contestNum}! Prêmio total: R$ ${totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
+      
+      // Native / Local Notification specifically for winning bets with prize details
+      await notifyWinningPrize(contestNum, winningCount, totalPrize, highestHits);
+    } else {
+      await sendAppNotification(title, {
+        body: formattedMsg,
+        id: contestNum + 500000
+      });
+    }
+
     await addDoc(collection(db, 'notifications'), {
       userId: 'all',
-      title: '🎉 Resultado Oficial',
+      title,
       message: formattedMsg,
       type: 'prize',
       read: false,

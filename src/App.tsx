@@ -309,6 +309,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
   const [currentContest, setCurrentContest] = useState<number | null>(null);
+  const [currentPrize, setCurrentPrize] = useState<number | null>(null);
   
   const [isEditingContest, setIsEditingContest] = useState(false);
   const [customContestInput, setCustomContestInput] = useState('');
@@ -357,6 +358,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         const cNum = Number(data.contest);
         if (cNum > 0) {
           setCurrentContest(cNum + 1);
+          setCurrentPrize(data.nextEstimatedPrize || null);
         }
       }
     }, err => {
@@ -636,6 +638,15 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                     <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
                   )}
                   
+                  {currentPrize && (
+                    <div className="flex items-center gap-1.5 ml-1 animate-in fade-in slide-in-from-left-2 duration-500">
+                      <span className="text-gray-400 font-medium">Prêmio:</span>
+                      <span className="bg-amber-100 text-amber-700 font-black px-2.5 py-0.5 rounded-full text-[11px] border border-amber-200 shadow-3xs flex items-center gap-1">
+                        <span className="text-[10px] opacity-70 font-bold">R$</span>
+                        {currentPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
 
                 </div>
               )}

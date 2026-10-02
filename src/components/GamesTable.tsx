@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, getDocs, addDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, getDocs, addDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
@@ -12,6 +12,7 @@ import LottoFlyerGenerator from './LottoFlyerGenerator';
 import VolantesHistoryComparator from './VolantesHistoryComparator';
 import GameHistory, { parseDateSafely } from './GameHistory';
 import { triggerResultNotification } from '../lib/autoNotificationService';
+import { notifyWinningPrize, sendAppNotification } from '../lib/notifications';
 import { usePermissions } from '../lib/PermissionsContext';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
 
@@ -994,6 +995,50 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     .reduce((sum, m) => sum + (Number(m.quotas) > 0 ? Number(m.quotas) : 1), 0);
   const prizePerCota = totalPaidQuotasCount > 0 ? totalBolaoPrize / totalPaidQuotasCount : 0;
 
+  // Disparo automático de notificação nativa/web sempre que houver aposta premiada
+  useEffect(() => {
+    if (!latestResult?.contest || winningGamesCount === 0 || totalBolaoPrize <= 0) return;
+    
+    const contestNum = Number(latestResult.contest);
+    if (!contestNum) return;
+
+    const storageKey = `bolao_prize_notified_${activePool?.id || 'main'}_${contestNum}_${Math.round(totalBolaoPrize)}`;
+    if (localStorage.getItem(storageKey)) return;
+
+    // Identifica o maior número de acertos entre as apostas premiadas
+    let highestHits = 0;
+    filteredGames.forEach(g => {
+      if (g.prizeInfo?.isWinner && (g.prizeInfo.hits || 0) > highestHits) {
+        highestHits = g.prizeInfo.hits;
+      }
+    });
+
+    const formattedPrize = `R$ ${totalBolaoPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const hitsText = highestHits > 0 ? ` (Maior acerto: ${highestHits} pontos)` : '';
+
+    // 1. Notificação Nativa (Capacitor APK) e Web Push
+    notifyWinningPrize(contestNum, winningGamesCount, totalBolaoPrize, highestHits);
+
+    // 2. Notificação Visual na Tela (Toast)
+    addToast(`🏆 PARABÉNS! ${winningGamesCount} aposta(s) premiada(s) no Concurso #${contestNum}! Prêmio Total: ${formattedPrize}!`, 'success');
+
+    // 3. Gravação no Sininho de Notificações para todos os participantes
+    try {
+      addDoc(collection(db, 'notifications'), {
+        userId: 'all',
+        title: `🏆 Bolão Premiado no Concurso #${contestNum}!`,
+        message: `🎉 Tivemos ${winningGamesCount} aposta(s) premiada(s) somando ${formattedPrize}${hitsText}. Abra o aplicativo para conferir a premiação e o rateio!`,
+        type: 'prize',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    } catch (notifErr) {
+      console.warn('Erro ao gravar notificação de prêmio no Firestore:', notifErr);
+    }
+
+    localStorage.setItem(storageKey, new Date().toISOString());
+  }, [latestResult?.contest, winningGamesCount, totalBolaoPrize, filteredGames, activePool?.id]);
+
   return (
     <div className="space-y-4">
       {/* Modal de Auditoria e Comparação Automática com Histórico */}
@@ -1141,11 +1186,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 </span>
               )}
             </div>
-            <h3 className="font-black text-base sm:text-xl mt-1.5 flex items-center gap-1.5 text-white">
+            <h3 className="font-black text-base sm:text-xl mt-1.5 flex flex-wrap items-center gap-1.5 text-white">
               <span>🎰</span> {isMegaSena ? 'Mega-Sena' : 'Lotofácil'} Concurso #{latestResult?.contest || '---'}
               {latestResult?.date && (
-                <span className="text-xs font-normal text-purple-200 ml-1 font-sans">
+                <span className="text-xs font-normal text-purple-200 font-sans">
                   ({latestResult.date})
+                </span>
+              )}
+              {((isMegaSena && latestResult?.prize6Amount) || (!isMegaSena && latestResult?.prize15Amount)) && (
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] sm:text-xs px-2 py-0.5 rounded-lg border border-emerald-500/30 flex items-center gap-1 font-bold">
+                  💰 R$ {Number(isMegaSena ? latestResult.prize6Amount : latestResult.prize15Amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </span>
               )}
             </h3>
@@ -1155,9 +1205,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
           <div className="bg-black/35 backdrop-blur-xs border border-white/15 px-3.5 py-2 rounded-xl flex items-center gap-2.5 shadow-inner">
             <span className="text-xl animate-pulse">🗓️</span>
             <div>
-              <span className="text-[10px] font-black text-amber-300 block uppercase tracking-wider">
-                Próximo Concurso #{latestResult?.contest ? Number(latestResult.contest) + 1 : '---'}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-amber-300 block uppercase tracking-wider">
+                  Próximo Concurso #{latestResult?.contest ? Number(latestResult.contest) + 1 : '---'}
+                </span>
+                {latestResult?.nextEstimatedPrize && (
+                  <span className="bg-amber-400 text-gray-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm">
+                    R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR')}
+                  </span>
+                )}
+              </div>
               <span className="text-xs text-purple-100 font-bold block">
                 {nextDrawInfo.isToday ? `Hoje às 20h00 • ${nextDrawInfo.timeLeft}` : `${nextDrawInfo.statusBadge} às 20h00`}
               </span>

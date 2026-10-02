@@ -4,6 +4,7 @@ import { db, auth, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { downloadOrShareFile } from '../lib/fileDownloadHelper';
+import { requestNotificationPermission, sendAppNotification } from '../lib/notifications';
 
 interface AlertPreferences {
   pushEnabled: boolean;
@@ -191,32 +192,21 @@ export default function DrawAlertsConfig() {
   };
 
   const handleRequestPushPermission = async () => {
-    if (!('Notification' in window)) {
-      addToast('Este navegador não suporta notificações push do sistema.', 'error');
-      return;
-    }
-
     try {
-      const permission = await Notification.requestPermission();
-      setPermissionStatus(permission);
-
-      if (permission === 'granted') {
+      const granted = await requestNotificationPermission();
+      if (granted) {
+        setPermissionStatus('granted');
         const updated = { ...preferences, pushEnabled: true };
         savePreferences(updated);
 
-        // Dispara uma notificação de boas-vindas para confirmação imediata
-        try {
-          new Notification('🍀 Bolão Lotofácil: Notificações Ativadas!', {
-            body: 'Tudo pronto! Você receberá alertas nos dias de sorteio para conferir os resultados.',
-            icon: '/favicon.ico'
-          });
-        } catch {
-          // Ignora se restrito por ambiente
-        }
+        await sendAppNotification('🍀 Bolão Lotofácil: Notificações Ativadas!', {
+          body: 'Tudo pronto! Você receberá alertas dos sorteios e de apostas premiadas.',
+          id: 999
+        });
 
         addToast('🎉 Notificações push ativadas com sucesso no seu dispositivo!', 'success');
-      } else if (permission === 'denied') {
-        addToast('Permissão de notificações bloqueada pelo navegador. Ative nas configurações do site.', 'error');
+      } else {
+        addToast('Permissão de notificações não concedida. Ative nas configurações do dispositivo/navegador.', 'error');
       }
     } catch (err) {
       console.error(err);
@@ -224,26 +214,12 @@ export default function DrawAlertsConfig() {
     }
   };
 
-  const handleTestNotification = () => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        const notif = new Notification('🍀 Lotofácil: Sorteio das 20h00!', {
-          body: 'O sorteio oficial de hoje está começando. Abra o aplicativo para conferir as dezenas premiadas!',
-          icon: '/favicon.ico',
-          tag: 'lotofacil_test_alert'
-        });
-
-        notif.onclick = () => {
-          window.focus();
-        };
-
-        addToast('🔔 Notificação de teste enviada para sua tela!', 'success');
-      } catch {
-        addToast('🔔 [Simulação] Sorteio Lotofácil 20h00: Hora de conferir os resultados no app!', 'info');
-      }
-    } else {
-      addToast('🔔 [Demonstração] Sorteio Lotofácil 20h00: Hora de conferir os resultados!', 'info');
-    }
+  const handleTestNotification = async () => {
+    await sendAppNotification('🍀 Lotofácil: Sorteio das 20h00!', {
+      body: 'O sorteio oficial está começando. Abra o aplicativo para conferir as dezenas premiadas!',
+      id: Math.floor(Math.random() * 100000) + 1
+    });
+    addToast('🔔 Notificação de teste enviada!', 'success');
   };
 
   // 1-Clique: Adicionar ao Google Agenda com recorrência de Segunda a Sábado às 20h00
