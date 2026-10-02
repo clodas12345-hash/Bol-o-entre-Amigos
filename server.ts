@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import { GoogleGenAI } from "@google/genai";
 
 import nodemailer from 'nodemailer';
@@ -698,6 +699,31 @@ Retorne estritamente um objeto JSON com esta estrutura:
   }
 });
 
+
+// Rota pública para upload de comprovantes sem necessidade de login
+app.post('/api/public/upload-receipt', async (req, res) => {
+  try {
+    const { phone, name, imageBase64, mimeType } = req.body;
+    if (!phone || !name || !imageBase64) {
+      return res.status(400).json({ success: false, message: 'Dados incompletos.' });
+    }
+
+    await addDoc(collection(db, 'pending_receipts'), {
+      phone,
+      name,
+      imageBase64, // Nota: idealmente salvar em Storage, mas para MVP salvaremos em base64 se não for gigante
+      mimeType: mimeType || 'image/jpeg',
+      createdAt: serverTimestamp(),
+      status: 'pending'
+    });
+
+    res.json({ success: true, message: 'Comprovante enviado com sucesso!' });
+  } catch (error) {
+    console.error('Error public upload:', error);
+    res.status(500).json({ success: false, message: 'Erro ao processar envio.' });
+  }
+});
+
 // Error handling middleware to prevent server process crashes on unhandled express/body-parser errors
 app.use((err: any, req: any, res: any, next: any) => {
   console.error('Unhandled Server Error:', err);
@@ -718,6 +744,9 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static('dist'));
+    app.get('*', (req, res) => {
+      res.sendFile(path.resolve('dist', 'index.html'));
+    });
   }
   
   app.listen(PORT, () => {

@@ -9,6 +9,7 @@ import { useResponsiveLayout } from '../lib/formatters';
 import { usePermissions } from '../lib/PermissionsContext';
 import { Contacts } from '@capacitor-community/contacts';
 import { UserSearch } from 'lucide-react';
+import ReceiptsList from './ReceiptsList';
 
 // Helpers de persistência local para contornar problemas de limite de cota do Firestore
 const getLocalMembers = (): any[] => {
@@ -49,7 +50,7 @@ export default function MembersList() {
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid'>('all');
+  const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts'>('all');
 
   // Campos do formulário de novo membro
   const [newDisplayName, setNewDisplayName] = useState('');
@@ -743,6 +744,20 @@ export default function MembersList() {
             <span>Pagamento Pendente ({approvedMembers.filter(m => m.paymentStatus === 'Pendente').length})</span>
           </button>
         )}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setMemberFilterTab('receipts')}
+            className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+              memberFilterTab === 'receipts'
+                ? 'bg-purple-700 text-white shadow-xs font-black'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+            }`}
+          >
+            <span>📄</span>
+            <span>Comprovantes</span>
+          </button>
+        )}
       </div>
 
       {/* Estado Vazio quando na Aba de Pedidos Pendentes e tudo estiver aprovado */}
@@ -1034,13 +1049,22 @@ export default function MembersList() {
                 <td colSpan={isAdmin ? 7 : 3} className="p-8 text-center text-gray-400 italic font-medium">
                   {memberFilterTab === 'pending'
                     ? 'Nenhum participante na listagem regular (veja os quadros de pedidos pendentes acima).'
-                    : memberFilterTab === 'unpaid'
-                      ? 'Nenhum participante com pagamento pendente.'
-                      : 'Nenhum contato encontrado nesta categoria.'}
+                    : memberFilterTab === 'receipts'
+                      ? 'Nenhum comprovante pendente.'
+                      : memberFilterTab === 'unpaid'
+                        ? 'Nenhum participante com pagamento pendente.'
+                        : 'Nenhum contato encontrado nesta categoria.'}
                 </td>
               </tr>
             ) : (
-              displayedMembers.map((member) => {
+              memberFilterTab === 'receipts' ? (
+                <tr>
+                  <td colSpan={isAdmin ? 7 : 3}>
+                    <ReceiptsList />
+                  </td>
+                </tr>
+              ) : (
+                displayedMembers.map((member) => {
                 const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
                 const isPaid = member.paymentStatus === 'Pago';
                 const monthlyValue = quotas * 20.00;
@@ -1188,7 +1212,8 @@ export default function MembersList() {
                   </tr>
                 );
               })
-            )}
+            )
+          )}
           </tbody>
         </table>
       </div>

@@ -17,6 +17,8 @@ import VisualChartsDashboard from './components/VisualChartsDashboard';
 import StatsThermometer from './components/StatsThermometer';
 import Chat from './components/Chat';
 import WhatsAppHub from './components/WhatsAppHub';
+import PublicReceiptUpload from './components/PublicReceiptUpload';
+import MonthlySnapshotManager from './components/MonthlySnapshotManager';
 import LotofacilDesdobramento from './components/LotofacilDesdobramento';
 import BackupManager from './components/BackupManager';
 import CalendarAgenda from './components/CalendarAgenda';
@@ -390,6 +392,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       { to: '/calendar', label: 'Calendário', icon: '📅' },
       { to: '/desdobramentos', label: 'Desdobramentos', icon: '🎯' },
       { to: '/chat', label: 'Chat', icon: '💬' },
+      { to: '/historico-boloes', label: 'Histórico', icon: '📜' },
     ];
 
     if (can('members_view')) {
@@ -1061,6 +1064,8 @@ export default function App() {
             <BrowserRouter>
             <Layout user={activeUser} userData={activeUserData} isAdmin={isUserAdmin} onSignOut={handleSignOut} onUpdateUserData={setUserData}>
             <Routes>
+              <Route path="/upload-receipt" element={<PublicReceiptUpload />} />
+              <Route path="/historico-boloes" element={<ProtectedRoute permission="members_edit"><MonthlySnapshotManager /></ProtectedRoute>} />
           <Route path="/" element={
             activeUser ? (
                 <div className="max-w-4xl mx-auto space-y-6">

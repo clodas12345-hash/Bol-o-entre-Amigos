@@ -114,7 +114,7 @@ Você possui *${quotasText}* em aberto.
 📱 *Chave PIX (Celular):* ${pixKey}
 💰 *Valor Total:* R$ ${totalAmount}
 
-Após realizar o PIX, favor enviar o comprovante no app: ${getAppPublicUrl()}`;
+Após realizar o PIX, favor enviar o comprovante no app: ${getAppPublicUrl()}/upload-receipt`;
   
   const fullNumber = normalizeBrazilianPhoneDigits(phone);
   if (!fullNumber) {
