@@ -34,6 +34,9 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync
 
+      - name: Apply Android Icons
+        run: npm run apply-android-icons
+
       - name: Decodificar Keystore Fixa a partir do Segredo
         run: |
           echo "Tamanho do segredo (deve ser próximo de 3664):"

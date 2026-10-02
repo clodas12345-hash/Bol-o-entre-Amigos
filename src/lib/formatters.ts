@@ -84,6 +84,16 @@ export function formatCPF(cpf?: string | null): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
+export function getAppPublicUrl(): string {
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('capacitor') && !origin.includes('ionic') && !origin.includes('file')) {
+      return origin;
+    }
+  }
+  return 'https://ais-pre-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+}
+
 /**
  * Gera o link wa.me com valor exato das cotas e chave PIX cadastrada.
  */
@@ -104,7 +114,7 @@ Você possui *${quotasText}* em aberto.
 📱 *Chave PIX (Celular):* ${pixKey}
 💰 *Valor Total:* R$ ${totalAmount}
 
-Após realizar o PIX, favor enviar o comprovante no app: ${window.location.origin}`;
+Após realizar o PIX, favor enviar o comprovante no app: ${getAppPublicUrl()}`;
   
   const fullNumber = normalizeBrazilianPhoneDigits(phone);
   if (!fullNumber) {

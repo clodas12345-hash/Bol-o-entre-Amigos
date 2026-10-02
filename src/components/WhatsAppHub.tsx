@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
-import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from '../lib/formatters';
+import { formatFirstAndLastName, normalizeBrazilianPhoneDigits, getAppPublicUrl } from '../lib/formatters';
 import { calculateGamePrize } from '../lib/prizes';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { useToast } from './NotificationManager';
@@ -91,7 +91,7 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
   const prizePerQuota = totalPaidQuotas > 0 ? totalPrize / totalPaidQuotas : 0;
 
   const currentMonth = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  const appUrl = window.location.origin;
+  const appUrl = getAppPublicUrl();
   const pixKey = DEFAULT_PIX_CONFIG.pixKey; // 11953292570
 
   // Gerador dinâmico de texto por template

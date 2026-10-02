@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "apply-android-icons": "node scripts/apply-android-icons.mjs"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^8.0.0",
@@ -17,6 +18,7 @@
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/share": "^8.0.2",
     "@google/genai": "^2.4.0",
     "@types/node-cron": "^3.0.11",
@@ -50,6 +52,7 @@
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "jimp": "^1.6.1",
+    "sharp": "^0.35.5",
     "tailwindcss": "4.0.7",
     "tsx": "^4.21.0",
     "typescript": "^5.7.3",
