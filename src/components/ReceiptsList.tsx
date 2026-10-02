@@ -25,7 +25,13 @@ export default function ReceiptsList() {
   const handleApprove = async (receipt: any) => {
     try {
       const normalizedReceiptPhone = normalizeBrazilianPhoneDigits(receipt.phone);
-      const member = members.find(m => normalizeBrazilianPhoneDigits(m.phone || '') === normalizedReceiptPhone);
+      console.log('Receipt Phone:', receipt.phone, 'Normalized Receipt:', normalizedReceiptPhone);
+      
+      const member = members.find(m => {
+        const normalizedMemberPhone = normalizeBrazilianPhoneDigits(m.phone || '');
+        console.log('Checking Member:', m.displayName, 'Phone:', m.phone, 'Normalized:', normalizedMemberPhone);
+        return normalizedMemberPhone === normalizedReceiptPhone;
+      });
 
       if (member) {
         // Salva comprovante no membro e marca como pago

@@ -85,13 +85,7 @@ export function formatCPF(cpf?: string | null): string {
 }
 
 export function getAppPublicUrl(): string {
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin;
-    if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('capacitor') && !origin.includes('ionic') && !origin.includes('file')) {
-      return origin;
-    }
-  }
-  return 'https://ais-pre-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+  return 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
 }
 
 /**
