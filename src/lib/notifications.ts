@@ -60,7 +60,6 @@ export async function sendAppNotification(title: string, options?: { body?: stri
             body: options?.body || '',
             id: options?.id || Math.floor(Math.random() * 1000000) + 1,
             smallIcon: 'ic_stat_icon',
-            largeIcon: 'ic_stat_icon',
             sound: 'default',
             extra: { autoCheckPrize: true }
           }
@@ -116,7 +115,6 @@ export async function scheduleNativeNotificationAt(
               allowWhileIdle: true // Essencial para Android disparar em standby com app fechado
             },
             smallIcon: 'ic_stat_icon',
-            largeIcon: 'ic_stat_icon',
             sound: 'default',
             extra: extraData || { autoCheckPrize: true }
           }
