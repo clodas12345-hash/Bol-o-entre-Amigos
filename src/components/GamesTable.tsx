@@ -15,6 +15,8 @@ import { triggerResultNotification } from '../lib/autoNotificationService';
 import { notifyWinningPrize, sendAppNotification } from '../lib/notifications';
 import { usePermissions } from '../lib/PermissionsContext';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
+import { isDrawDay, getNextDrawDate, isNationalHoliday, formatDateBR } from '../lib/drawCalendar';
+import SystemErrorsPanel from './SystemErrorsPanel';
 
 interface GamesTableProps {
   onOpenNewGame?: () => void;
@@ -110,21 +112,19 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     statusBadge: 'Hoje'
   });
 
-  // Calcula o próximo sorteio e tempo restante
+  // Calcula o próximo sorteio e tempo restante (pulando domingos e feriados nacionais)
   useEffect(() => {
     const calculateNextDraw = () => {
       const now = new Date();
-      const currentDay = now.getDay(); // 0 = Dom, 6 = Sáb
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
-      const isMegaSena = activePool?.lotteryType === 'megasena';
-      const validDrawDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6];
+      const lotteryType = (activePool?.lotteryType === 'megasena' ? 'megasena' : 'lotofacil') as 'lotofacil' | 'megasena';
 
       let targetDate = new Date(now);
       targetDate.setHours(20, 0, 0, 0);
 
-      const isTodayDrawDay = validDrawDays.includes(currentDay);
+      const todayDrawCheck = isDrawDay(now, lotteryType);
       const isBeforeDrawTime = currentHour < 20;
       const isDuringDraw = currentHour === 20 && currentMinute <= 45;
 
@@ -133,10 +133,10 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
       const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-      if (isTodayDrawDay && isBeforeDrawTime) {
+      if (todayDrawCheck.isDraw && isBeforeDrawTime) {
         isToday = true;
         statusBadge = 'Hoje às 20h00';
-      } else if (isTodayDrawDay && isDuringDraw) {
+      } else if (todayDrawCheck.isDraw && isDuringDraw) {
         isToday = true;
         statusBadge = 'Sorteio em Apuração!';
         setNextDrawInfo({
@@ -147,14 +147,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         });
         return;
       } else {
-        const candidate = new Date(now);
-        candidate.setDate(candidate.getDate() + 1);
-        candidate.setHours(20, 0, 0, 0);
-        while (!validDrawDays.includes(candidate.getDay())) {
-          candidate.setDate(candidate.getDate() + 1);
-        }
-        targetDate = candidate;
-        statusBadge = dayNames[targetDate.getDay()];
+        const nextDraw = getNextDrawDate(
+          todayDrawCheck.isDraw && !isBeforeDrawTime 
+            ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+            : now, 
+          lotteryType
+        );
+        targetDate = new Date(nextDraw.date);
+        targetDate.setHours(20, 0, 0, 0);
+        statusBadge = `${dayNames[targetDate.getDay()]} (${formatDateBR(targetDate)})`;
       }
 
       const diffMs = targetDate.getTime() - now.getTime();
@@ -2210,6 +2211,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
           </div>
         </div>
       )}
+
+      {/* Central de Ocorrências & Erros do Sistema (Lista Persistente em Português) */}
+      <SystemErrorsPanel />
     </div>
   );
 }

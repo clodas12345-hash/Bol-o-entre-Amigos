@@ -33,6 +33,9 @@ import Settings from './components/Settings';
 import MemberBetSubmission from './components/MemberBetSubmission';
 import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
+import DrawCalendarModal from './components/DrawCalendarModal';
+import { getAdjustedActiveContestInfo } from './lib/drawCalendar';
+import { scheduleUpcomingDrawAlerts } from './lib/notifications';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
@@ -43,6 +46,9 @@ import { PendingRequestsProvider, usePendingRequests } from './lib/PendingReques
 import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from './lib/formatters';
 import { PermissionKey } from './lib/permissions';
 import { fetchLotteryResultDirectly } from './lib/apiHelper';
+import { checkAndNotifyWinningGamesForResult } from './lib/autoNotificationService';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 import logoImg from './assets/images/bolao_logo_app.png';
 
@@ -313,7 +319,16 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   
   const [isEditingContest, setIsEditingContest] = useState(false);
   const [customContestInput, setCustomContestInput] = useState('');
+  const [showDrawCalendarModal, setShowDrawCalendarModal] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  const contestCalendarInfo = useMemo(() => {
+    return getAdjustedActiveContestInfo(
+      currentContest,
+      activePool?.currentContest,
+      isMegaSena ? 'megasena' : 'lotofacil'
+    );
+  }, [currentContest, activePool?.currentContest, isMegaSena]);
 
   useEffect(() => {
     if (!user) return;
@@ -366,6 +381,10 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
     });
     return unsub;
   }, [resultsCollection]);
+
+  useEffect(() => {
+    scheduleUpcomingDrawAlerts(isMegaSena ? 'megasena' : 'lotofacil');
+  }, [isMegaSena]);
 
   const { addToast } = useToast();
   const isHome = location.pathname === '/';
@@ -651,11 +670,31 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                 </div>
               )}
             </div>
-            <div className="text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider flex items-center gap-1.5 bg-emerald-100/50 px-2 py-0.5 rounded-md">
-              <span>{activePool?.currentContest > (currentContest || 0) ? '📌 Forçado por Admin' : '🟢 Sincronizado'}</span>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowDrawCalendarModal(true)}
+                className="bg-white hover:bg-emerald-100/60 text-emerald-800 font-extrabold px-2.5 py-1 rounded-lg text-[11px] border border-emerald-200 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                title="Ver Calendário Oficial de Sorteios e Feriados Nacionais"
+              >
+                <span>📅 Calendário Caixa</span>
+              </button>
+
+              <div className="hidden sm:flex text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider items-center gap-1.5 bg-emerald-100/50 px-2 py-1 rounded-md">
+                <span>
+                  {!contestCalendarInfo.isTodayDrawDay 
+                    ? `⚠️ ${contestCalendarInfo.nextDrawDayName} (${contestCalendarInfo.nextDrawFormatted})` 
+                    : (activePool?.currentContest > (currentContest || 0) ? '📌 Forçado por Admin' : '🟢 Sincronizado')}
+                </span>
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal do Calendário de Sorteios & Feriados Caixa */}
+      {showDrawCalendarModal && (
+        <DrawCalendarModal onClose={() => setShowDrawCalendarModal(false)} />
       )}
 
       {/* Conteúdo Principal */}
@@ -906,7 +945,7 @@ export default function App() {
   }, [phoneUser?.sessionUser?.uid]);
 
   useEffect(() => {
-    // Inicialização e sincronização automática dos sorteios oficiais
+    // Inicialização e sincronização automática dos sorteios oficiais + conferência automática do jogo do dia
     const syncLatestLotteryResults = async () => {
       try {
         // 1. Limpeza apenas de dados explicitamente marcados como simulados/inválidos no cache
@@ -923,15 +962,17 @@ export default function App() {
           }
         }
 
-        // 2. Busca o resultado oficial mais recente da Lotofácil e Mega-Sena de forma resiliente
+        // 2. Busca o resultado oficial mais recente da Lotofácil e Mega-Sena e confere automaticamente se o jogo do dia foi premiado
         const lotoResult = await fetchLotteryResultDirectly('lotofacil', 'latest');
         if (lotoResult && lotoResult.contest > 0) {
           console.log(`[Auto-Sync] Sorteio oficial Lotofácil #${lotoResult.contest} sincronizado`);
+          await checkAndNotifyWinningGamesForResult('lotofacil', lotoResult);
         }
 
         const megaResult = await fetchLotteryResultDirectly('megasena', 'latest');
         if (megaResult && megaResult.contest > 0) {
           console.log(`[Auto-Sync] Sorteio oficial Mega-Sena #${megaResult.contest} sincronizado`);
+          await checkAndNotifyWinningGamesForResult('megasena', megaResult);
         }
       } catch (err) {
         console.warn('[Auto-Sync] Erro na sincronização inicial de resultados:', err);
@@ -945,7 +986,33 @@ export default function App() {
       syncLatestLotteryResults();
     }, 120000);
 
-    return () => clearInterval(interval);
+    // Quando o app volta do segundo plano ou a tela é desbloqueada, confere imediatamente
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncLatestLotteryResults();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Quando uma notificação agendada no Android (ex: 20h35) dispara ou é tocada, faz a conferência automática na hora
+    let notifReceivedListener: any = null;
+    let notifActionListener: any = null;
+    if (Capacitor.isNativePlatform()) {
+      LocalNotifications.addListener('localNotificationReceived', () => {
+        syncLatestLotteryResults();
+      }).then(h => { notifReceivedListener = h; }).catch(() => {});
+
+      LocalNotifications.addListener('localNotificationActionPerformed', () => {
+        syncLatestLotteryResults();
+      }).then(h => { notifActionListener = h; }).catch(() => {});
+    }
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (notifReceivedListener?.remove) notifReceivedListener.remove();
+      if (notifActionListener?.remove) notifActionListener.remove();
+    };
   }, []);
 
   useEffect(() => {

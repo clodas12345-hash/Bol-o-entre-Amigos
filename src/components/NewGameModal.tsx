@@ -14,6 +14,7 @@ interface NewGameModalProps {
 
 import { useUpload, checkGameDuplicateInFirestore, getExistingSignatures } from '../lib/UploadContext';
 import { triggerNewContestNotification } from '../lib/autoNotificationService';
+import { getValidDrawSequence, getNextDrawDate, formatDateToYYYYMMDD } from '../lib/drawCalendar';
 
 const parseDateSafely = (dateStr: string): Date => {
   if (!dateStr) return new Date();
@@ -202,17 +203,15 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
       let duplicateCount = 0;
 
       if (isTeimosinha && startContestNum > 0) {
-        let currDate = new Date(parsedDate);
-        if (isNaN(currDate.getTime())) currDate = new Date();
+        let startDate = new Date(parsedDate);
+        if (isNaN(startDate.getTime())) startDate = new Date();
 
-        const validDrawDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6];
+        const sequence = getValidDrawSequence(startDate, teimosinhaCount, isMegaSena ? 'megasena' : 'lotofacil');
 
-        for (let i = 0; i < teimosinhaCount; i++) {
-          while (!validDrawDays.includes(currDate.getDay())) {
-            currDate.setDate(currDate.getDate() + 1);
-          }
+        for (let i = 0; i < sequence.length; i++) {
+          const seqItem = sequence[i];
           const currentContestNum = startContestNum + i;
-          const dateStr = currDate.toISOString().split('T')[0];
+          const dateStr = formatDateToYYYYMMDD(seqItem.date);
 
           // Consulta de duplicidade no Firestore
           const dupCheck = await checkGameDuplicateInFirestore(
@@ -237,17 +236,19 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
               contestNumber: currentContestNum,
               month: monthRef.trim(),
               cost: unitTotal,
-              date: Timestamp.fromDate(new Date(currDate)),
+              date: Timestamp.fromDate(seqItem.date),
               receiptURL,
               createdAt: serverTimestamp(),
             });
           }
-          currDate.setDate(currDate.getDate() + 1);
         }
       } else {
         const contestTrimmed = contest.trim();
         const contestLabel = contestTrimmed ? `Concurso #${contestTrimmed}` : `Concurso Futuro`;
-        const dateIso = parsedDate.toISOString().split('T')[0];
+        
+        // Ajusta a data do jogo individual para o próximo dia útil de sorteio caso caia em domingo ou feriado
+        const nextDraw = getNextDrawDate(parsedDate, isMegaSena ? 'megasena' : 'lotofacil');
+        const dateIso = formatDateToYYYYMMDD(nextDraw.date);
 
         // Consulta de duplicidade no Firestore
         const dupCheck = await checkGameDuplicateInFirestore(

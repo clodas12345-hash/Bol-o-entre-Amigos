@@ -44,11 +44,13 @@ if (isWebPreview && dbInstance) {
   });
 }
 
+import { logSystemError } from './systemErrorLogger';
+
 export const isQuotaError = (err: any): boolean => {
   if (!err) return false;
   const msg = (err.message || '').toLowerCase();
   const code = (err.code || '').toLowerCase();
-  return (
+  const isQuota = (
     msg.includes('quota') || 
     msg.includes('limit exceeded') || 
     msg.includes('resource-exhausted') ||
@@ -58,6 +60,12 @@ export const isQuotaError = (err: any): boolean => {
     (code === 'permission-denied' && msg.includes('quota')) ||
     msg.includes('write stream exhausted')
   );
+
+  if (isQuota) {
+    logSystemError('Database', err, 'Banco de Dados Firestore');
+  }
+
+  return isQuota;
 };
 
 export const db = dbInstance;

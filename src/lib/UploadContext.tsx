@@ -5,6 +5,8 @@ import { useToast } from '../components/NotificationManager';
 import { usePool } from './PoolContext';
 import { LOTOFACIL_PRICES, MEGASENA_PRICES } from './prizes';
 import { getApiUrl, safeFetchJson } from './apiHelper';
+import { getValidDrawSequence, getNextDrawDate, formatDateToYYYYMMDD } from './drawCalendar';
+import { logSystemError } from './systemErrorLogger';
 
 export interface QueueItem {
   id: string;
@@ -446,16 +448,15 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         const gameLabel = validGames.length > 1 ? ` (Jogo ${i + 1})` : '';
 
         if (isTeim && startContestNum > 0) {
-          let currDate = new Date(parsedDate);
-          if (isNaN(currDate.getTime())) currDate = new Date();
-          const validDrawDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6];
+          let startDate = new Date(parsedDate);
+          if (isNaN(startDate.getTime())) startDate = new Date();
 
-          for (let k = 0; k < teimCount; k++) {
-            while (!validDrawDays.includes(currDate.getDay())) {
-              currDate.setDate(currDate.getDate() + 1);
-            }
+          const sequence = getValidDrawSequence(startDate, teimCount, isMegaSena ? 'megasena' : 'lotofacil');
+
+          for (let k = 0; k < sequence.length; k++) {
+            const seqItem = sequence[k];
             const currentContestNum = startContestNum + k;
-            const dateStr = currDate.toISOString().split('T')[0];
+            const dateStr = formatDateToYYYYMMDD(seqItem.date);
 
             // Verificação de duplicidade no Firestore (dezenas + número do concurso)
             const dupCheck = await checkGameDuplicateInFirestore(
@@ -478,18 +479,20 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 contestNumber: currentContestNum,
                 month: currentMonth,
                 cost: unitTotal,
-                date: Timestamp.fromDate(new Date(currDate)),
+                date: Timestamp.fromDate(seqItem.date),
                 receiptURL,
                 createdAt: serverTimestamp(),
               });
               savedCount++;
               existingSigs.add(sig);
             }
-            currDate.setDate(currDate.getDate() + 1);
           }
         } else {
           const contestLabel = startContestNum > 0 ? `Concurso #${startContestNum}${gameLabel}` : `Concurso Futuro${gameLabel}`;
-          const dateStr = parsedDate.toISOString().split('T')[0];
+          
+          // Ajusta a data para o próximo dia válido de sorteio (sem domingos ou feriados)
+          const nextDraw = getNextDrawDate(parsedDate, isMegaSena ? 'megasena' : 'lotofacil');
+          const dateStr = formatDateToYYYYMMDD(nextDraw.date);
 
           // Verificação de duplicidade no Firestore (dezenas + número do concurso)
           const dupCheck = await checkGameDuplicateInFirestore(
@@ -571,6 +574,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     } catch (err: any) {
       console.warn('Aviso no envio em segundo plano:', err.message || err);
+      logSystemError('Camera', err, `Upload/OCR do Bilhete (${item.name})`);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
       const friendlyError = formatErrorMessage(err?.message || 'Falha de processamento');
       updateItem(item.id, { status: 'error', progress: 100, message: friendlyError });

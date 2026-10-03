@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { db } from './firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
+import { logSystemError } from './systemErrorLogger';
 
 // URL base do backend no Cloud Run para quando o app roda nativamente no APK
 export const BACKEND_BASE_URL = 
@@ -96,6 +97,7 @@ export async function safeFetchJson<T = any>(
     }
   } catch (err: any) {
     clearTimeout(timeoutId);
+    logSystemError('API', err, `Requisição HTTP (${url.substring(0, 50)})`);
     if (err.name === 'AbortError') {
       return { success: false, message: 'Tempo limite de conexão esgotado (timeout).' };
     }

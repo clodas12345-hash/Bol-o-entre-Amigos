@@ -4,7 +4,16 @@ import { db, auth, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { downloadOrShareFile } from '../lib/fileDownloadHelper';
-import { requestNotificationPermission, sendAppNotification } from '../lib/notifications';
+import { 
+  requestNotificationPermission, 
+  sendAppNotification, 
+  scheduleUpcomingDrawAlerts, 
+  requestIgnoreBatteryOptimization,
+  scheduleTestClosedAppAlarm,
+  getPendingNativeAlarms
+} from '../lib/notifications';
+import { runAutoPrizeCheck } from '../lib/autoNotificationService';
+import { isDrawDay, getNextDrawDate, formatDateBR, getDayNameBR } from '../lib/drawCalendar';
 
 interface AlertPreferences {
   pushEnabled: boolean;
@@ -49,6 +58,8 @@ export default function DrawAlertsConfig() {
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
   const [isExpanded, setIsExpanded] = useState(false);
   const [nextContestNum, setNextContestNum] = useState<number | null>(null);
+  const [pendingAlarmsCount, setPendingAlarmsCount] = useState<number>(0);
+  const [isCheckingNow, setIsCheckingNow] = useState<boolean>(false);
   const [nextDrawInfo, setNextDrawInfo] = useState<{
     text: string;
     isToday: boolean;
@@ -63,6 +74,15 @@ export default function DrawAlertsConfig() {
 
   const { addToast } = useToast();
   const currentUser = auth.currentUser;
+
+  const refreshPendingAlarms = async () => {
+    const list = await getPendingNativeAlarms();
+    setPendingAlarmsCount(list.length);
+  };
+
+  useEffect(() => {
+    refreshPendingAlarms();
+  }, []);
 
   // Escuta o último resultado registrado para calcular o número exato do próximo concurso
   useEffect(() => {
@@ -110,29 +130,28 @@ export default function DrawAlertsConfig() {
     loadUserPreferences();
   }, [currentUser]);
 
-  // Calcula tempo para o próximo sorteio da Lotofácil (Segunda a Sábado às 20h00)
+  // Calcula tempo para o próximo sorteio da Lotofácil/Mega-Sena (pulando domingos e feriados nacionais)
   useEffect(() => {
     const calculateNextDraw = () => {
       const now = new Date();
-      const currentDay = now.getDay(); // 0 = Dom, 6 = Sáb
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
       let targetDate = new Date(now);
       targetDate.setHours(20, 0, 0, 0);
 
-      const isTodayDrawDay = currentDay >= 1 && currentDay <= 6;
+      const todayDrawCheck = isDrawDay(now, isMegaSena ? 'megasena' : 'lotofacil');
       const isBeforeDrawTime = currentHour < 20;
       const isDuringDraw = currentHour === 20 && currentMinute <= 45;
 
       let isToday = false;
       let statusBadge = 'Próximo';
 
-      if (isTodayDrawDay && isBeforeDrawTime) {
+      if (todayDrawCheck.isDraw && isBeforeDrawTime) {
         // Sorteio acontece hoje às 20h
         isToday = true;
         statusBadge = 'Hoje às 20h00';
-      } else if (isTodayDrawDay && isDuringDraw) {
+      } else if (todayDrawCheck.isDraw && isDuringDraw) {
         isToday = true;
         statusBadge = 'Sorteio em Andamento!';
         setNextDrawInfo({
@@ -143,18 +162,15 @@ export default function DrawAlertsConfig() {
         });
         return;
       } else {
-        // Próximo sorteio será amanhã ou na segunda-feira
-        let daysToAdd = 1;
-        if (currentDay === 6) {
-          // Hoje é sábado pós-sorteio -> próximo é segunda (+2 dias)
-          daysToAdd = 2;
-        } else if (currentDay === 0) {
-          // Hoje é domingo -> próximo é segunda (+1 dia)
-          daysToAdd = 1;
-        }
-        targetDate.setDate(targetDate.getDate() + daysToAdd);
+        const nextDraw = getNextDrawDate(
+          todayDrawCheck.isDraw && !isBeforeDrawTime 
+            ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+            : now, 
+          isMegaSena ? 'megasena' : 'lotofacil'
+        );
+        targetDate = new Date(nextDraw.date);
         targetDate.setHours(20, 0, 0, 0);
-        statusBadge = DAYS_MAP[targetDate.getDay()].full;
+        statusBadge = `${getDayNameBR(targetDate)}, ${formatDateBR(targetDate)}`;
       }
 
       const diffMs = targetDate.getTime() - now.getTime();
@@ -164,7 +180,7 @@ export default function DrawAlertsConfig() {
       setNextDrawInfo({
         text: isToday
           ? 'Hoje às 20h00 (Sorteio Oficial Caixa)'
-          : `${DAYS_MAP[targetDate.getDay()].full}, ${targetDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às 20h00`,
+          : `${getDayNameBR(targetDate)}, ${formatDateBR(targetDate)} às 20h00`,
         isToday,
         timeLeft: totalHours > 0 ? `Faltam ${totalHours}h ${totalMinutes}m` : `Faltam ${totalMinutes}m`,
         statusBadge
@@ -174,11 +190,15 @@ export default function DrawAlertsConfig() {
     calculateNextDraw();
     const interval = setInterval(calculateNextDraw, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isMegaSena]);
 
   const savePreferences = async (updated: AlertPreferences) => {
     setPreferences(updated);
     localStorage.setItem('bolao_draw_alerts_config', JSON.stringify(updated));
+
+    if (updated.pushEnabled) {
+      await scheduleUpcomingDrawAlerts(isMegaSena ? 'megasena' : 'lotofacil');
+    }
 
     if (currentUser) {
       try {
@@ -197,14 +217,16 @@ export default function DrawAlertsConfig() {
       if (granted) {
         setPermissionStatus('granted');
         const updated = { ...preferences, pushEnabled: true };
-        savePreferences(updated);
+        await savePreferences(updated);
+        await requestIgnoreBatteryOptimization();
 
         await sendAppNotification('🍀 Bolão Lotofácil: Notificações Ativadas!', {
-          body: 'Tudo pronto! Você receberá alertas dos sorteios e de apostas premiadas.',
+          body: 'Tudo pronto! Seus alertas nativos de sorteio e prêmios funcionarão com o app fechado.',
           id: 999
         });
 
-        addToast('🎉 Notificações push ativadas com sucesso no seu dispositivo!', 'success');
+        await refreshPendingAlarms();
+        addToast('🎉 Notificações ativadas no SO do Android com disparo exato mesmo com o app fechado!', 'success');
       } else {
         addToast('Permissão de notificações não concedida. Ative nas configurações do dispositivo/navegador.', 'error');
       }
@@ -220,6 +242,27 @@ export default function DrawAlertsConfig() {
       id: Math.floor(Math.random() * 100000) + 1
     });
     addToast('🔔 Notificação de teste enviada!', 'success');
+  };
+
+  const handleTestClosedAppAlarm = async () => {
+    await requestNotificationPermission();
+    await scheduleTestClosedAppAlarm(10);
+    await refreshPendingAlarms();
+    addToast('⏱️ Alarme nativo agendado para daqui a 10 segundos! Feche ou minimize o app AGORA para testar!', 'success');
+  };
+
+  const handleManualAutoCheck = async () => {
+    setIsCheckingNow(true);
+    try {
+      await runAutoPrizeCheck();
+      await scheduleUpcomingDrawAlerts(isMegaSena ? 'megasena' : 'lotofacil');
+      await refreshPendingAlarms();
+      addToast('✅ Conferência automática executada e alarmes nativos (20h35/21h05) sincronizados!', 'success');
+    } catch {
+      addToast('Erro ao executar conferência automática.', 'error');
+    } finally {
+      setIsCheckingNow(false);
+    }
   };
 
   // 1-Clique: Adicionar ao Google Agenda com recorrência de Segunda a Sábado às 20h00
@@ -335,17 +378,28 @@ export default function DrawAlertsConfig() {
               onClick={handleRequestPushPermission}
               className="flex-1 sm:flex-initial bg-amber-400 hover:bg-amber-300 text-gray-950 font-black text-xs px-3.5 py-2 rounded-xl transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <span>🔔</span> Ativar Notificações Push
+              <span>🔔</span> Ativar Alarme Nativo & Push
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={handleTestNotification}
-              className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl transition border border-white/20 flex items-center gap-1.5 cursor-pointer"
-              title="Disparar notificação demonstrativa"
-            >
-              <span>✨</span> Testar Alerta
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleTestClosedAppAlarm}
+                className="bg-amber-400 hover:bg-amber-300 text-gray-950 font-black text-xs px-3 py-2 rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                title="Agenda um alarme nativo para daqui a 10 segundos para você fechar o app e testar"
+              >
+                <span>⏱️</span> Testar c/ App Fechado (10s)
+              </button>
+              <button
+                type="button"
+                onClick={handleManualAutoCheck}
+                disabled={isCheckingNow}
+                className="bg-emerald-500/80 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-2 rounded-xl transition border border-emerald-400/40 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Sincroniza os alarmes nativos (20h35/21h05) e confere o jogo do dia agora"
+              >
+                <span>⚡</span> {isCheckingNow ? 'Conferindo...' : 'Conferir Jogo do Dia'}
+              </button>
+            </>
           )}
 
           <button
@@ -362,6 +416,41 @@ export default function DrawAlertsConfig() {
       {/* Painel Expandido com Detalhes, Preferências e Integrações (Oculto por Padrão) */}
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-white/15 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 relative z-10">
+          {/* Card do Gatilho Automático & Alarme Nativo Android */}
+          <div className="bg-emerald-950/60 border border-emerald-400/30 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                  <span>⚡</span> Gatilho Automático & Alarme Nativo (Android)
+                </span>
+                {pendingAlarmsCount > 0 && (
+                  <span className="bg-emerald-500 text-emerald-950 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    ✓ {pendingAlarmsCount} alarmes agendados no sistema
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-blue-100/90 leading-relaxed">
+                Os alarmes das <strong>19h30, 20h00, 20h35 e 21h05</strong> ficam gravados no sistema Android (<code className="text-amber-300">allowWhileIdle</code>) e tocam mesmo com o app fechado, acionando a conferência automática do jogo do dia!
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handleTestClosedAppAlarm}
+                className="flex-1 sm:flex-initial bg-amber-400 hover:bg-amber-300 text-gray-950 font-black text-xs px-3 py-2 rounded-xl transition cursor-pointer shadow-xs"
+              >
+                ⏱️ Testar em 10s (Feche o App)
+              </button>
+              <button
+                type="button"
+                onClick={handleTestNotification}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl transition border border-white/20 cursor-pointer"
+              >
+                ✨ Teste Imediato
+              </button>
+            </div>
+          </div>
+
           {/* Botões de 1-Clique para Calendário e Lembretes */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <button
