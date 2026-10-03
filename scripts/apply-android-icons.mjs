@@ -2,13 +2,22 @@ import fs from 'fs';
 import path from 'path';
 
 async function generateIcons() {
-  const iconSrc = path.resolve('public', 'icon2.png');
+  const candidates = [
+    path.resolve('public', 'bolao_logo_app.png'),
+    path.resolve('src', 'assets', 'images', 'bolao_logo_app.png'),
+    path.resolve('public', 'bolao_logo.png'),
+    path.resolve('public', 'icon2.png')
+  ];
+
+  const iconSrc = candidates.find(p => fs.existsSync(p));
   const resDir = path.resolve('android', 'app', 'src', 'main', 'res');
 
-  if (!fs.existsSync(iconSrc)) {
-    console.error('Source icon not found:', iconSrc);
+  if (!iconSrc) {
+    console.error('Source icon not found in any candidate path.');
     return;
   }
+
+  console.log('Using source icon:', iconSrc);
 
   if (!fs.existsSync(resDir)) {
     console.log('Android res directory not found yet, skipping icon generation until android platform is added.');
@@ -59,9 +68,10 @@ async function generateIcons() {
     }
   }
 
-  // Generate notification small icon (ic_stat_icon.png) for status bar / notifications
+  // Generate notification small icon (ic_stat_icon.png) with transparent cutout for Android status bar
+  // and full-color notification icon (ic_launcher.png in drawable)
   const statIconSizes = [
-    { dir: 'drawable', size: 24 },
+    { dir: 'drawable', size: 48 },
     { dir: 'drawable-mdpi', size: 24 },
     { dir: 'drawable-hdpi', size: 36 },
     { dir: 'drawable-xhdpi', size: 48 },
@@ -74,9 +84,53 @@ async function generateIcons() {
     if (!fs.existsSync(targetFolder)) {
       fs.mkdirSync(targetFolder, { recursive: true });
     }
+
     if (sharp) {
-      await sharp(iconSrc)
-        .resize(item.size, item.size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      // Create silhouette with transparent background so Android status bar shows the actual logo details
+      const { data, info } = await sharp(iconSrc)
+        .resize(item.size, item.size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      const out = Buffer.alloc(data.length);
+      const center = item.size / 2;
+      const maxRadius = center * 0.94;
+
+      for (let y = 0; y < info.height; y++) {
+        for (let x = 0; x < info.width; x++) {
+          const idx = (y * info.width + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const a = data[idx + 3];
+
+          const dx = x - center + 0.5;
+          const dy = y - center + 0.5;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          // Luminance of pixel
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+          // Keep colored/dark elements of the logo (clover, BOLÃO text, outer ring) opaque white,
+          // and make white background & outside circle transparent so Android status bar renders the logo clearly
+          if (a > 50 && dist <= maxRadius && lum < 218) {
+            out[idx] = 255;
+            out[idx + 1] = 255;
+            out[idx + 2] = 255;
+            out[idx + 3] = 255;
+          } else {
+            out[idx] = 0;
+            out[idx + 1] = 0;
+            out[idx + 2] = 0;
+            out[idx + 3] = 0;
+          }
+        }
+      }
+
+      await sharp(out, {
+        raw: { width: info.width, height: info.height, channels: 4 }
+      })
         .png()
         .toFile(path.join(targetFolder, 'ic_stat_icon.png'));
     } else {

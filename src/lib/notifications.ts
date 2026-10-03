@@ -60,6 +60,8 @@ export async function sendAppNotification(title: string, options?: { body?: stri
             body: options?.body || '',
             id: options?.id || Math.floor(Math.random() * 1000000) + 1,
             smallIcon: 'ic_stat_icon',
+            largeIcon: 'ic_launcher',
+            iconColor: '#10b981',
             sound: 'default',
             extra: { autoCheckPrize: true }
           }
@@ -76,7 +78,7 @@ export async function sendAppNotification(title: string, options?: { body?: stri
     try {
       new Notification(title, {
         body: options?.body || '',
-        icon: '/pwa-192x192.png'
+        icon: '/bolao_logo_app.png'
       });
     } catch (webErr) {
       console.warn('Web notification falhou:', webErr);
@@ -115,6 +117,8 @@ export async function scheduleNativeNotificationAt(
               allowWhileIdle: true // Essencial para Android disparar em standby com app fechado
             },
             smallIcon: 'ic_stat_icon',
+            largeIcon: 'ic_launcher',
+            iconColor: '#10b981',
             sound: 'default',
             extra: extraData || { autoCheckPrize: true }
           }
