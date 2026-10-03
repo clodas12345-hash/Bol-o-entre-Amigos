@@ -19,11 +19,6 @@ async function generateIcons() {
 
   console.log('Using source icon:', iconSrc);
 
-  if (!fs.existsSync(resDir)) {
-    console.log('Android res directory not found yet, skipping icon generation until android platform is added.');
-    return;
-  }
-
   let sharp;
   try {
     const sharpModule = await import('sharp');
@@ -32,7 +27,7 @@ async function generateIcons() {
     console.log('Sharp not installed, will use fallback copying.');
   }
 
-  // Pre-trim the excess white margin around bolao_logo_app.png so the circular logo fills the icon
+  // Pre-trim the excess white margin around bolao_logo_app.png so the logo fills the icon area
   let trimmedBuffer = null;
   if (sharp) {
     try {
@@ -41,146 +36,141 @@ async function generateIcons() {
         .png()
         .toBuffer();
     } catch (trimErr) {
-      console.warn('Could not trim icon, using original:', trimErr);
       trimmedBuffer = await sharp(iconSrc).png().toBuffer();
     }
   }
 
-  // Helper to create a circular full-color PNG buffer of a given size
-  async function createCircularColorIcon(size) {
-    const circleSvg = Buffer.from(
-      `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#ffffff"/>
-      </svg>`
-    );
-
-    const resized = await sharp(trimmedBuffer || iconSrc)
+  /**
+   * Generates a monochrome white silhouette (#FFFFFF) with transparent background
+   * from the current app logo, as required by Android for status bar smallIcon (ic_stat_icon.png).
+   */
+  async function createMonochromeSilhouetteBuffer(size) {
+    const { data, info } = await sharp(trimmedBuffer || iconSrc)
       .resize(size, size, { fit: 'cover' })
       .ensureAlpha()
-      .png()
-      .toBuffer();
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
-    return sharp(resized)
-      .composite([{ input: circleSvg, blend: 'dest-in' }])
+    const out = Buffer.alloc(data.length);
+    const center = size / 2;
+    const outerRadius = center * 0.96;
+    const ringInnerRadius = center * 0.83;
+
+    for (let y = 0; y < info.height; y++) {
+      for (let x = 0; x < info.width; x++) {
+        const idx = (y * info.width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        const dx = x - center + 0.5;
+        const dy = y - center + 0.5;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        let alpha = 0;
+        if (dist <= outerRadius && dist >= ringInnerRadius) {
+          // Outer emblem ring in white
+          alpha = 255;
+        } else if (dist < ringInnerRadius * 0.92 && lum < 222) {
+          // Interior logo silhouette (clover/cards + BOLÃO + GKD) in white with smooth edges
+          alpha = Math.min(255, Math.max(90, Math.round((225 - lum) * 2.5)));
+        }
+
+        if (alpha > 0) {
+          out[idx] = 255;     // R = White
+          out[idx + 1] = 255; // G = White
+          out[idx + 2] = 255; // B = White
+          out[idx + 3] = alpha;
+        } else {
+          out[idx] = 0;
+          out[idx + 1] = 0;
+          out[idx + 2] = 0;
+          out[idx + 3] = 0;
+        }
+      }
+    }
+
+    return sharp(out, {
+      raw: { width: info.width, height: info.height, channels: 4 }
+    })
       .png()
       .toBuffer();
   }
 
-  const sizes = [
-    { dir: 'mipmap-mdpi', size: 48, fgSize: 108 },
-    { dir: 'mipmap-hdpi', size: 72, fgSize: 162 },
-    { dir: 'mipmap-xhdpi', size: 96, fgSize: 216 },
-    { dir: 'mipmap-xxhdpi', size: 144, fgSize: 324 },
-    { dir: 'mipmap-xxxhdpi', size: 192, fgSize: 432 }
+  // Also save a master public/ic_stat_icon.png (96x96)
+  if (sharp) {
+    const publicStatBuf = await createMonochromeSilhouetteBuffer(96);
+    await fs.promises.writeFile(path.resolve('public', 'ic_stat_icon.png'), publicStatBuf);
+  }
+
+  if (!fs.existsSync(resDir)) {
+    console.log('Android res directory not found yet, skipping res/ icon generation.');
+    return;
+  }
+
+  const mipmapSizes = [
+    { dir: 'mipmap-mdpi', size: 48, fgSize: 108, statSize: 24 },
+    { dir: 'mipmap-hdpi', size: 72, fgSize: 162, statSize: 36 },
+    { dir: 'mipmap-xhdpi', size: 96, fgSize: 216, statSize: 48 },
+    { dir: 'mipmap-xxhdpi', size: 144, fgSize: 324, statSize: 72 },
+    { dir: 'mipmap-xxxhdpi', size: 192, fgSize: 432, statSize: 96 }
   ];
 
-  for (const item of sizes) {
+  for (const item of mipmapSizes) {
     const targetFolder = path.join(resDir, item.dir);
     if (!fs.existsSync(targetFolder)) {
       fs.mkdirSync(targetFolder, { recursive: true });
     }
 
     if (sharp) {
-      const circularBuf = await createCircularColorIcon(item.size);
-
       await sharp(trimmedBuffer || iconSrc)
         .resize(item.size, item.size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
         .png()
         .toFile(path.join(targetFolder, 'ic_launcher.png'));
 
-      await fs.promises.writeFile(path.join(targetFolder, 'ic_launcher_round.png'), circularBuf);
+      await sharp(trimmedBuffer || iconSrc)
+        .resize(item.size, item.size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+        .png()
+        .toFile(path.join(targetFolder, 'ic_launcher_round.png'));
 
-      const fgLogoSize = Math.round(item.fgSize * 0.68);
-      const fgPad = Math.floor((item.fgSize - fgLogoSize) / 2);
-      const circularFg = await createCircularColorIcon(fgLogoSize);
-
-      await sharp(circularFg)
-        .extend({
-          top: fgPad,
-          bottom: item.fgSize - fgLogoSize - fgPad,
-          left: fgPad,
-          right: item.fgSize - fgLogoSize - fgPad,
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
+      await sharp(trimmedBuffer || iconSrc)
+        .resize(item.fgSize, item.fgSize, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
         .png()
         .toFile(path.join(targetFolder, 'ic_launcher_foreground.png'));
+
+      // Also save ic_stat_icon.png in mipmap-* densities
+      const statBuf = await createMonochromeSilhouetteBuffer(item.statSize);
+      await fs.promises.writeFile(path.join(targetFolder, 'ic_stat_icon.png'), statBuf);
     } else {
       fs.copyFileSync(iconSrc, path.join(targetFolder, 'ic_launcher.png'));
       fs.copyFileSync(iconSrc, path.join(targetFolder, 'ic_launcher_round.png'));
       fs.copyFileSync(iconSrc, path.join(targetFolder, 'ic_launcher_foreground.png'));
+      fs.copyFileSync(iconSrc, path.join(targetFolder, 'ic_stat_icon.png'));
     }
   }
 
-  // Generate notification icons in drawable* folders!
-  // IMPORTANT: Capacitor's LocalNotification.kt looks in "drawable" for BOTH smallIcon AND largeIcon!
-  const statIconSizes = [
-    { dir: 'drawable', size: 96, largeSize: 192 },
-    { dir: 'drawable-mdpi', size: 24, largeSize: 64 },
-    { dir: 'drawable-hdpi', size: 36, largeSize: 96 },
-    { dir: 'drawable-xhdpi', size: 48, largeSize: 128 },
-    { dir: 'drawable-xxhdpi', size: 72, largeSize: 192 },
-    { dir: 'drawable-xxxhdpi', size: 96, largeSize: 256 }
+  // Generate monochrome notification small icon (ic_stat_icon.png) across all drawable densities
+  const drawableStatSizes = [
+    { dir: 'drawable', size: 48 },
+    { dir: 'drawable-mdpi', size: 24 },
+    { dir: 'drawable-hdpi', size: 36 },
+    { dir: 'drawable-xhdpi', size: 48 },
+    { dir: 'drawable-xxhdpi', size: 72 },
+    { dir: 'drawable-xxxhdpi', size: 96 }
   ];
 
-  for (const item of statIconSizes) {
+  for (const item of drawableStatSizes) {
     const targetFolder = path.join(resDir, item.dir);
     if (!fs.existsSync(targetFolder)) {
       fs.mkdirSync(targetFolder, { recursive: true });
     }
 
     if (sharp) {
-      // 1. Save full-color circular logo as ic_launcher.png inside drawable* so largeIcon: 'ic_launcher' works!
-      const largeColorBuf = await createCircularColorIcon(item.largeSize);
-      await fs.promises.writeFile(path.join(targetFolder, 'ic_launcher.png'), largeColorBuf);
-
-      // 2. Create crisp silhouette with transparent background for smallIcon: 'ic_stat_icon'
-      const { data, info } = await sharp(trimmedBuffer || iconSrc)
-        .resize(item.size, item.size, { fit: 'cover' })
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-
-      const out = Buffer.alloc(data.length);
-      const center = item.size / 2;
-      const outerRadius = center * 0.96;
-      const ringInnerRadius = center * 0.82;
-
-      for (let y = 0; y < info.height; y++) {
-        for (let x = 0; x < info.width; x++) {
-          const idx = (y * info.width + x) * 4;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-
-          const dx = x - center + 0.5;
-          const dy = y - center + 0.5;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          const isOuterRing = dist <= outerRadius && dist >= ringInnerRadius;
-          const isInteriorGraphic = dist < ringInnerRadius * 0.92 && lum < 225;
-
-          if (isOuterRing || isInteriorGraphic) {
-            out[idx] = 255;
-            out[idx + 1] = 255;
-            out[idx + 2] = 255;
-            out[idx + 3] = 255;
-          } else {
-            out[idx] = 0;
-            out[idx + 1] = 0;
-            out[idx + 2] = 0;
-            out[idx + 3] = 0;
-          }
-        }
-      }
-
-      await sharp(out, {
-        raw: { width: info.width, height: info.height, channels: 4 }
-      })
-        .png()
-        .toFile(path.join(targetFolder, 'ic_stat_icon.png'));
+      const statBuf = await createMonochromeSilhouetteBuffer(item.size);
+      await fs.promises.writeFile(path.join(targetFolder, 'ic_stat_icon.png'), statBuf);
     } else {
-      fs.copyFileSync(iconSrc, path.join(targetFolder, 'ic_launcher.png'));
       fs.copyFileSync(iconSrc, path.join(targetFolder, 'ic_stat_icon.png'));
     }
   }
@@ -193,7 +183,7 @@ async function generateIcons() {
     }
   }
 
-  console.log('✅ Android icons, drawable/ic_launcher.png (largeIcon) & drawable/ic_stat_icon.png (smallIcon) successfully injected!');
+  console.log('✅ Monochrome silhouette ic_stat_icon.png generated across all drawable and mipmap densities!');
 }
 
 generateIcons().catch(console.error);
