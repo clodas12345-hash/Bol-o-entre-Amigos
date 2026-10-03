@@ -12,7 +12,7 @@ import LottoFlyerGenerator from './LottoFlyerGenerator';
 import VolantesHistoryComparator from './VolantesHistoryComparator';
 import GameHistory, { parseDateSafely } from './GameHistory';
 import { triggerResultNotification } from '../lib/autoNotificationService';
-import { notifyWinningPrize, sendAppNotification } from '../lib/notifications';
+import { notifyWinningPrize, sendAppNotification, requestNotificationPermission } from '../lib/notifications';
 import { usePermissions } from '../lib/PermissionsContext';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
 import { isDrawDay, getNextDrawDate, isNationalHoliday, formatDateBR } from '../lib/drawCalendar';
@@ -176,23 +176,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   }, [activePool?.lotteryType]);
 
   const handleRequestPushPermission = async () => {
-    if (!('Notification' in window)) {
-      addToast('Este navegador não suporta notificações push do sistema.', 'error');
-      return;
-    }
     try {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
+      const granted = await requestNotificationPermission();
+      if (granted) {
         setPushEnabled(true);
         addToast('🔔 Notificações push ativadas com sucesso!', 'success');
-        try {
-          new Notification('🍀 Bolão Lotofácil: Notificações Ativadas!', {
-            body: 'Você receberá avisos automáticos nos dias de sorteio.',
-            icon: '/favicon.ico'
-          });
-        } catch {}
+        await sendAppNotification('🍀 Bolão Lotofácil: Notificações Ativadas!', {
+          body: 'Você receberá avisos automáticos nos dias de sorteio.'
+        });
       } else {
-        addToast('Permissão de notificações não concedida pelo navegador.', 'info');
+        addToast('Permissão de notificações não concedida pelo dispositivo.', 'info');
       }
     } catch {
       addToast('Não foi possível solicitar permissão de notificações.', 'error');
