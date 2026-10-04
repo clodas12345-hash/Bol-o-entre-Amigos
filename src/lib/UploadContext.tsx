@@ -263,62 +263,59 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const prices = isMegaSena ? MEGASENA_PRICES : LOTOFACIL_PRICES;
 
     try {
-      updateItem(item.id, { status: 'compressing', progress: 20, message: 'Compactando...' });
+      updateItem(item.id, { status: 'compressing', progress: 20, message: 'Otimizando imagem (1280px + P&B +20% contraste)...' });
 
-      // Compression logic
-      const compressed = await new Promise<{ base64: string; mimeType: string }>((resolve) => {
+      // 1. Pré-processamento inicial para 1280px + escala de cinza + 20% de contraste
+      const clientProcessed = await new Promise<{ base64: string; mimeType: string }>((resolve) => {
         if (!item.file) return resolve({ base64: '', mimeType: '' });
         const reader = new FileReader();
         reader.onload = (e) => {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX = 1280; // Reduzido para resolução máxima recomendada de 1280px
+            const MAX = 1280; // Resolução máxima de 1280px
             let w = img.width, h = img.height;
             if (w > h ? w > MAX : h > MAX) {
-              if (w > h) { h *= MAX / w; w = MAX; }
-              else { w *= MAX / h; h = MAX; }
+              if (w > h) { h = Math.round(h * (MAX / w)); w = MAX; }
+              else { w = Math.round(w * (MAX / h)); h = MAX; }
             }
             canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'medium';
+              ctx.imageSmoothingQuality = 'high';
               ctx.drawImage(img, 0, 0, w, h);
               
-              // Pré-processamento profissional de imagem para OCR (Escala de cinza + Contraste)
+              // Conversão de escala de cinza + 20% de contraste (multiplicador linear 1.2)
               try {
                 const imageData = ctx.getImageData(0, 0, w, h);
                 const data = imageData.data;
-                
-                // Aumento de contraste em exatamente 20% (+51 na escala de -255 a 255)
-                const contrast = 51;
-                const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+                const contrastFactor = 1.2; // +20% de contraste
+                const contrastOffset = -(128 * contrastFactor) + 128;
                 
                 for (let i = 0; i < data.length; i += 4) {
                   const r = data[i];
                   const g = data[i + 1];
                   const b = data[i + 2];
                   
-                  // 1. Conversão para Tons de Cinza usando fórmula de luminância perceptiva (ITU-R BT.709)
+                  // Escala de cinza (ITU-R BT.709)
                   const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
                   
-                  // 2. Aumento de Contraste para destacar números impressos e remover sombras/ruídos de fundo
-                  let val = factor * (gray - 128) + 128;
+                  // +20% de contraste
+                  let val = contrastFactor * gray + contrastOffset;
                   if (val < 0) val = 0;
                   if (val > 255) val = 255;
                   
-                  data[i] = val;     // Vermelho
-                  data[i + 1] = val; // Verde
-                  data[i + 2] = val; // Azul
-                  // data[i + 3] (Alpha) permanece inalterado
+                  data[i] = val;
+                  data[i + 1] = val;
+                  data[i + 2] = val;
                 }
                 ctx.putImageData(imageData, 0, 0);
               } catch (preprocessErr) {
-                console.warn('[OCR Preprocessing] Erro ao pré-processar imagem, prosseguindo com a original:', preprocessErr);
+                console.warn('[OCR Preprocessing] Aviso no filtro local:', preprocessErr);
               }
 
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.60), mimeType: 'image/jpeg' });
+              resolve({ base64: canvas.toDataURL('image/jpeg', 0.75), mimeType: 'image/jpeg' });
             } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
           };
           img.src = e.target?.result as string;
@@ -326,7 +323,29 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         reader.readAsDataURL(item.file);
       });
 
-      if (!compressed.base64) throw new Error('Falha ao processar arquivo');
+      if (!clientProcessed.base64) throw new Error('Falha ao processar arquivo');
+
+      // 2. Processamento nativo com biblioteca 'sharp' (1280px, grayscale e +20% de contraste via MozJPEG) antes do envio à IA
+      let compressed = clientProcessed;
+      try {
+        const sharpRes = await safeFetchJson<any>(
+          getApiUrl('/api/lotofacil/preprocess-image'),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: clientProcessed.base64 })
+          },
+          12000
+        );
+        if (sharpRes.success && sharpRes.data?.success && sharpRes.data?.base64) {
+          compressed = {
+            base64: sharpRes.data.base64,
+            mimeType: sharpRes.data.mimeType || 'image/jpeg'
+          };
+        }
+      } catch (sharpErr) {
+        console.warn('[UploadQueue] Fallback para imagem otimizada localmente:', sharpErr);
+      }
 
       updateItem(item.id, { status: 'ocr', progress: 40, message: 'Analisando bilhete...' });
 

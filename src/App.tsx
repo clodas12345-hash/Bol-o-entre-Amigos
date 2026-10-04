@@ -606,9 +606,16 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white">
+    <div
+      className={`${
+        isChatPage ? 'h-dvh overflow-hidden' : 'min-h-dvh pb-[var(--safe-bottom,0px)]'
+      } flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white`}
+    >
       {!hideHeader && (
-        <header className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white py-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95 w-full">
+        <header
+          style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.625rem)' }}
+          className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95 w-full"
+        >
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}
               <div className="flex items-center gap-2 min-w-0">
@@ -848,7 +855,13 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       )}
 
       {/* Conteúdo Principal */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-2.5 py-3 sm:p-5 overflow-x-hidden">
+      <main
+        className={`flex-1 max-w-4xl w-full mx-auto overflow-x-hidden ${
+          isChatPage
+            ? 'flex flex-col min-h-0 p-0 sm:px-4 sm:py-2 pb-[var(--safe-bottom,0px)] overflow-hidden'
+            : 'px-2.5 py-3 sm:p-5'
+        }`}
+      >
         {/* Banner de Pedidos Pendentes (Entradas e Cotas) */}
         {totalPendingCount > 0 && canManageMembers && (
           <div className="mb-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
@@ -999,9 +1012,11 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         </div>
       )}
 
-      <footer className="text-center py-4 text-[11px] text-gray-500 border-t bg-white mt-auto">
-        Bolão Amigos &copy; {new Date().getFullYear()} — Todos os direitos reservados.
-      </footer>
+      {!isChatPage && (
+        <footer className="text-center py-4 text-[11px] text-gray-500 border-t bg-white mt-auto">
+          Bolão Amigos &copy; {new Date().getFullYear()} — Todos os direitos reservados.
+        </footer>
+      )}
     </div>
   );
 }

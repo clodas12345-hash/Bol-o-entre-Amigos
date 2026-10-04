@@ -1,11 +1,46 @@
 import express from 'express';
 import path from 'path';
+import sharp from 'sharp';
 import { GoogleGenAI } from "@google/genai";
 
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
 import { db } from './src/lib/firebase';
 import { collection, addDoc, setDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+
+/**
+ * Processa foto de aposta com 'sharp':
+ * - Redimensiona para no máximo 1280px (mantendo proporção e sem ampliar imagens menores)
+ * - Converte para escala de cinza (grayscale)
+ * - Aplica +20% de contraste (linear(1.2, -(128 * 1.2) + 128))
+ * - Comprime em JPEG otimizado para envio rápido à IA
+ */
+async function processBetImageWithSharp(rawBase64: string): Promise<{ base64: string; mimeType: string }> {
+  const cleanBase64 = String(rawBase64 || '').replace(/^data:[^;]+;base64,/, '').trim();
+  if (!cleanBase64) {
+    throw new Error('Imagem vazia para processamento.');
+  }
+
+  const inputBuffer = Buffer.from(cleanBase64, 'base64');
+  const contrastMultiplier = 1.2; // +20% de contraste
+  const contrastOffset = -(128 * contrastMultiplier) + 128; // -25.6 para manter o ponto médio em 128
+
+  const processedBuffer = await sharp(inputBuffer)
+    .rotate() // Respeita orientação EXIF da câmera do celular
+    .resize(1280, 1280, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    .grayscale()
+    .linear(contrastMultiplier, contrastOffset)
+    .jpeg({ quality: 75, mozjpeg: true })
+    .toBuffer();
+
+  return {
+    base64: processedBuffer.toString('base64'),
+    mimeType: 'image/jpeg'
+  };
+}
 
 // Helper robusto para converter datas da Caixa para DD/MM/AAAA
 function parseCaixaDate(rawDate: any): string {
@@ -399,35 +434,75 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '10mb' }));
 
-// API route to use Gemini 3.5-flash for Lotofácil ticket OCR (supports single or multiple images)
+// Rota dedicada para pré-processamento de imagem com 'sharp' (1280px + grayscale + 20% contraste)
+app.post('/api/lotofacil/preprocess-image', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body || {};
+    if (!imageBase64) {
+      return res.status(400).json({ success: false, message: 'Nenhuma imagem fornecida.' });
+    }
+    const processed = await processBetImageWithSharp(imageBase64);
+    res.json({
+      success: true,
+      base64: `data:${processed.mimeType};base64,${processed.base64}`,
+      rawBase64: processed.base64,
+      mimeType: processed.mimeType
+    });
+  } catch (err: any) {
+    console.error('[Sharp Preprocess] Erro ao processar imagem:', err);
+    res.status(500).json({ success: false, message: err.message || 'Falha ao processar imagem com sharp.' });
+  }
+});
+
+// API route to use Gemini for Lotofácil ticket OCR (supports single or multiple images, pre-processed with sharp)
 app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
   try {
     const { images, imageBase64, mimeType } = req.body || {};
     const imageParts: any[] = [];
 
     if (Array.isArray(images) && images.length > 0) {
-      images.forEach(img => {
+      for (const img of images) {
         if (img && img.base64) {
-          const cleanBase64 = String(img.base64).replace(/^data:[^;]+;base64,/, '').trim();
-          if (cleanBase64) {
+          try {
+            const sharpResult = await processBetImageWithSharp(img.base64);
             imageParts.push({
               inlineData: {
-                mimeType: img.mimeType || 'image/jpeg',
-                data: cleanBase64
+                mimeType: sharpResult.mimeType,
+                data: sharpResult.base64
               }
             });
+          } catch (sharpErr) {
+            const cleanBase64 = String(img.base64).replace(/^data:[^;]+;base64,/, '').trim();
+            if (cleanBase64) {
+              imageParts.push({
+                inlineData: {
+                  mimeType: img.mimeType || 'image/jpeg',
+                  data: cleanBase64
+                }
+              });
+            }
           }
         }
-      });
+      }
     } else if (imageBase64) {
-      const cleanBase64 = String(imageBase64).replace(/^data:[^;]+;base64,/, '').trim();
-      if (cleanBase64) {
+      try {
+        const sharpResult = await processBetImageWithSharp(imageBase64);
         imageParts.push({
           inlineData: {
-            mimeType: mimeType || 'image/jpeg',
-            data: cleanBase64
+            mimeType: sharpResult.mimeType,
+            data: sharpResult.base64
           }
         });
+      } catch (sharpErr) {
+        const cleanBase64 = String(imageBase64).replace(/^data:[^;]+;base64,/, '').trim();
+        if (cleanBase64) {
+          imageParts.push({
+            inlineData: {
+              mimeType: mimeType || 'image/jpeg',
+              data: cleanBase64
+            }
+          });
+        }
       }
     }
 
