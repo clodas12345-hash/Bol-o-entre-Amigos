@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, limit, writeBatch } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { collection, query, where, onSnapshot, orderBy, doc, limit, writeBatch, updateDoc } from 'firebase/firestore';
 import { db, auth, isQuotaError } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
-import { getUserNotificationPreferences, UserNotificationPreferences } from '../lib/notifications';
+import { getUserNotificationPreferences, UserNotificationPreferences, resolveNotificationTargetPath } from '../lib/notifications';
 import { formatAnyDateBR } from '../lib/formatters';
 
 export default function NotificationBell() {
   const { setIsQuotaExceeded } = usePool();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<any[]>(() => {
     try {
       const cached = localStorage.getItem('bolao_cache_notifications');
@@ -115,6 +117,20 @@ export default function NotificationBell() {
     }
   };
 
+  const handleNotificationClick = (notif: any) => {
+    if (!notif.read && notif.id && !String(notif.id).startsWith('local_')) {
+      updateDoc(doc(db, 'notifications', notif.id), { read: true }).catch(() => {});
+    }
+    const targetPath = resolveNotificationTargetPath({
+      targetPath: notif.targetPath,
+      type: notif.type,
+      title: notif.title,
+      body: notif.message
+    });
+    setIsOpen(false);
+    navigate(targetPath);
+  };
+
   return (
     <div className="relative">
       <button
@@ -149,21 +165,31 @@ export default function NotificationBell() {
                 </div>
               ) : (
                 visibleNotifications.map(notif => (
-                  <div key={notif.id} className={`p-4 flex gap-3 hover:bg-gray-50 transition ${!notif.read ? 'bg-indigo-50/30' : ''}`}>
+                  <div
+                    key={notif.id}
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`p-4 flex gap-3 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition cursor-pointer ${!notif.read ? 'bg-indigo-50/30' : ''}`}
+                    title="Toque para abrir"
+                  >
                     <div className="text-2xl mt-0.5">
                       {notif.type === 'prize' ? '💰' : notif.type === 'chat' ? '💬' : notif.type === 'alert' ? '🚨' : notif.type === 'payment' ? '💳' : 'ℹ️'}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <h5 className={`text-sm font-bold ${!notif.read ? 'text-indigo-900' : 'text-gray-700'}`}>
                         {notif.title}
                       </h5>
                       <p className="text-xs text-gray-500 mt-1 leading-relaxed">{notif.message}</p>
-                      <span className="text-[9px] text-gray-400 font-bold uppercase mt-2 block">
-                        {notif.createdAt?.toDate ? `${formatAnyDateBR(notif.createdAt)} • ${notif.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agora'}
-                      </span>
+                      <div className="flex items-center justify-between gap-2 mt-2">
+                        <span className="text-[9px] text-gray-400 font-bold uppercase">
+                          {notif.createdAt?.toDate ? `${formatAnyDateBR(notif.createdAt)} • ${notif.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agora'}
+                        </span>
+                        <span className="text-[10px] font-black text-indigo-600">
+                          Abrir →
+                        </span>
+                      </div>
                     </div>
                     {!notif.read && (
-                      <div className="w-2 h-2 bg-indigo-600 rounded-full mt-2"></div>
+                      <div className="w-2 h-2 bg-indigo-600 rounded-full mt-2 shrink-0"></div>
                     )}
                   </div>
                 ))

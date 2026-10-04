@@ -114,6 +114,7 @@ export function saveUserNotificationPreferencesLocal(prefs: Partial<UserNotifica
 
 export type NotificationCategory =
   | 'chat_daily'
+  | 'chat_mention'
   | 'new_contest'
   | 'draw_time'
   | 'official_result'
@@ -125,9 +126,11 @@ export type NotificationCategory =
 export function isNotificationCategoryAllowed(category?: NotificationCategory, uid?: string | null): boolean {
   if (!category || category === 'test') return true;
   const prefs = getUserNotificationPreferences(uid);
-  if (!prefs.pushEnabled) return false;
+  if (prefs.pushEnabled === false) return false;
 
   switch (category) {
+    case 'chat_mention':
+      return true;
     case 'chat_daily':
       return prefs.chatDailyNotification !== false;
     case 'new_contest':
@@ -147,28 +150,123 @@ export function isNotificationCategoryAllowed(category?: NotificationCategory, u
   }
 }
 
+let channelCreated = false;
+async function ensureAndroidHighImportanceChannel() {
+  if (!Capacitor.isNativePlatform() || channelCreated) return;
+  try {
+    await LocalNotifications.createChannel({
+      id: 'bolao_high_priority',
+      name: 'Alertas e Menções do Bolão',
+      description: 'Notificações urgentes de marcações (@) no chat, sorteios e prêmios',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      sound: 'default'
+    });
+    channelCreated = true;
+  } catch {
+    // Ignora caso não suportado na versão
+  }
+}
+
+export function resolveNotificationTargetPath(input?: {
+  targetPath?: string;
+  category?: NotificationCategory | string;
+  type?: string;
+  title?: string;
+  body?: string;
+}): string {
+  if (input?.targetPath) return input.targetPath;
+
+  const cat = String(input?.category || '').toLowerCase();
+  const type = String(input?.type || '').toLowerCase();
+  const titleLower = String(input?.title || '').toLowerCase();
+  const bodyLower = String(input?.body || '').toLowerCase();
+
+  if (
+    cat === 'chat_mention' ||
+    cat === 'chat_daily' ||
+    type === 'chat' ||
+    titleLower.includes('chat') ||
+    titleLower.includes('marcou você') ||
+    titleLower.includes('marcou @todos') ||
+    bodyLower.includes('mensagens no chat')
+  ) {
+    return '/chat';
+  }
+
+  if (
+    type === 'payment' ||
+    titleLower.includes('cota') ||
+    titleLower.includes('pagamento') ||
+    titleLower.includes('participante') ||
+    titleLower.includes('aprovação')
+  ) {
+    return '/contatos';
+  }
+
+  if (titleLower.includes('regra') || titleLower.includes('norma')) {
+    return '/rules';
+  }
+
+  if (titleLower.includes('calendário') || titleLower.includes('agenda')) {
+    return '/calendar';
+  }
+
+  // Sorteios, prêmios, resultados, novos concursos e jogos pendentes levam para a página principal de Apostas
+  return '/';
+}
+
 /**
  * Envia notificação imediata (respeitando as escolhas do participante caso a categoria seja informada)
  */
 export async function sendAppNotification(
   title: string,
-  options?: { body?: string; id?: number; category?: NotificationCategory; uid?: string | null }
+  options?: {
+    body?: string;
+    id?: number;
+    category?: NotificationCategory;
+    uid?: string | null;
+    targetPath?: string;
+  }
 ) {
   if (options?.category && !isNotificationCategoryAllowed(options.category, options.uid)) {
     return;
   }
 
+  const targetPath = resolveNotificationTargetPath({
+    targetPath: options?.targetPath,
+    category: options?.category,
+    title,
+    body: options?.body
+  });
+
   if (Capacitor.isNativePlatform()) {
     try {
+      const perm = await LocalNotifications.checkPermissions();
+      if (perm.display !== 'granted') {
+        await LocalNotifications.requestPermissions();
+      }
+      await ensureAndroidHighImportanceChannel();
+
       await LocalNotifications.schedule({
         notifications: [
           {
             title,
             body: options?.body || '',
             id: options?.id || Math.floor(Math.random() * 1000000) + 1,
+            channelId: 'bolao_high_priority',
             smallIcon: 'ic_stat_icon',
             sound: 'default',
-            extra: { autoCheckPrize: true, category: options?.category }
+            schedule: {
+              at: new Date(Date.now() + 300),
+              allowWhileIdle: true
+            },
+            extra: {
+              autoCheckPrize: true,
+              category: options?.category,
+              targetPath
+            }
           }
         ]
       });
@@ -179,12 +277,26 @@ export async function sendAppNotification(
   }
 
   // Fallback para notificações Web no navegador / PWA
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+  if (typeof window !== 'undefined' && 'Notification' in window) {
     try {
-      new Notification(title, {
-        body: options?.body || '',
-        icon: '/bolao_logo_app.png'
-      });
+      if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+      if (Notification.permission === 'granted') {
+        const webNotif = new Notification(title, {
+          body: options?.body || '',
+          icon: '/bolao_logo_app.png'
+        });
+        webNotif.onclick = () => {
+          try {
+            window.focus();
+            window.dispatchEvent(
+              new CustomEvent('bolao_navigate_to', { detail: { path: targetPath } })
+            );
+          } catch {}
+          webNotif.close();
+        };
+      }
     } catch (webErr) {
       console.warn('Web notification falhou:', webErr);
     }

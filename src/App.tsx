@@ -35,7 +35,7 @@ import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import DrawCalendarModal from './components/DrawCalendarModal';
 import { getAdjustedActiveContestInfo, formatDateBR } from './lib/drawCalendar';
-import { scheduleUpcomingDrawAlerts, sendAppNotification, canTriggerDailyChatNotification, markDailyChatNotificationSent } from './lib/notifications';
+import { scheduleUpcomingDrawAlerts, sendAppNotification, canTriggerDailyChatNotification, markDailyChatNotificationSent, resolveNotificationTargetPath } from './lib/notifications';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
@@ -343,42 +343,80 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
     const unsub = onSnapshot(q, (snapshot) => {
       let count = 0;
-      let latestOtherMessageToday: { text: string; displayName: string; isDirectMentionToMe?: boolean; isMentionEveryone?: boolean } | null = null;
+      let latestOtherMessageToday: { text: string; displayName: string } | null = null;
       const todayBR = formatDateBR(new Date());
       const myNameLower = String(userData?.displayName || user?.displayName || '').trim().toLowerCase();
       const myFirstNameLower = myNameLower.split(/\s+/)[0] || '';
       const isModUser = isAdmin || userData?.role === 'admin' || userData?.role === 'counselor';
 
+      // Lista de IDs de menções já notificadas por push nativo neste aparelho
+      let notifiedMentionIds: string[] = [];
+      try {
+        const savedMentions = localStorage.getItem(`bolao_notified_mentions_${user.uid}`);
+        if (savedMentions) {
+          notifiedMentionIds = JSON.parse(savedMentions);
+        }
+      } catch {}
+
+      let updatedMentionIds = [...notifiedMentionIds];
+
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
-        if (data.uid !== user.uid && data.createdAt && data.status !== 'pending_approval' && !data.deleted) {
+        if (data.createdAt && data.status !== 'pending_approval' && !data.deleted) {
           const msgDate = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-          if (msgDate > lastReadDate) {
-            const msgText = String(data.text || '');
-            const hasMentions = data.hasMentions === true || /@[\wÁ-ÿ]+/.test(msgText);
-            const mentionEveryone = data.mentionEveryone === true || /@(todos|todo\s*mundo|grupo)\b/i.test(msgText);
-            const mentionAdmins = data.mentionAdmins === true || /@(administradores|admins|admin|moderadores)\b/i.test(msgText);
-            const mentionedIds: string[] = Array.isArray(data.mentionedUserIds) ? data.mentionedUserIds : [];
-            const mentionedNames: string[] = Array.isArray(data.mentionedNames) ? data.mentionedNames : [];
+          const msgText = String(data.text || '');
+          const hasMentions = data.hasMentions === true || /@[\wÁ-ÿ]+/.test(msgText);
+          const mentionEveryone = data.mentionEveryone === true || /@(todos|todo\s*mundo|grupo)\b/i.test(msgText);
+          const mentionAdmins = data.mentionAdmins === true || /@(administradores|admins|admin|moderadores)\b/i.test(msgText);
+          const mentionedIds: string[] = Array.isArray(data.mentionedUserIds) ? data.mentionedUserIds : [];
+          const mentionedNames: string[] = Array.isArray(data.mentionedNames) ? data.mentionedNames : [];
 
-            const isCurrentUserMentioned =
-              mentionedIds.includes(user.uid) ||
-              (userData?.id && mentionedIds.includes(userData.id)) ||
-              (myNameLower.length >= 2 && (mentionedNames.includes(myNameLower) || msgText.toLowerCase().includes(`@${myNameLower}`))) ||
-              (myFirstNameLower.length >= 2 && new RegExp(`@${myFirstNameLower}\\b`, 'i').test(msgText)) ||
-              (mentionAdmins && isModUser);
+          const isCurrentUserMentioned =
+            mentionedIds.includes(user.uid) ||
+            (userData?.id && mentionedIds.includes(userData.id)) ||
+            (myNameLower.length >= 2 && (mentionedNames.includes(myNameLower) || msgText.toLowerCase().includes(`@${myNameLower}`))) ||
+            (myFirstNameLower.length >= 2 && new RegExp(`@${myFirstNameLower}\\b`, 'i').test(msgText)) ||
+            (mentionAdmins && isModUser);
 
-            // Se a mensagem marcou alguém específico (e NÃO é @Todos), APENAS a pessoa marcada recebe notificação
+          // 1. Se houve marcação (@Nome ou @Todos) direcionada a este usuário hoje, dispara PUSH NATIVO IMEDIATO!
+          // (Não fica bloqueado pelo limite de 1 por dia das mensagens comuns e dispara mesmo na tela atual se foi recém-enviado)
+          const isRecentMention = Date.now() - msgDate.getTime() < 5 * 60 * 1000;
+          if (
+            hasMentions &&
+            (mentionEveryone || isCurrentUserMentioned) &&
+            isRecentMention &&
+            !updatedMentionIds.includes(docSnap.id)
+          ) {
+            // Se não fui eu mesmo que mandei (ou se eu mesmo me marquei para testar o @)
+            const isSelfMentionTest = data.uid === user.uid && (isCurrentUserMentioned || mentionEveryone);
+            if (data.uid !== user.uid || isSelfMentionTest) {
+              updatedMentionIds.push(docSnap.id);
+              const senderName = data.displayName || 'Participante';
+              const mentionTitle = mentionEveryone
+                ? `📢 ${senderName} marcou @Todos no Chat`
+                : `💬 ${senderName} marcou você (@) no Chat!`;
+              const mentionBody = `${senderName}: "${msgText.slice(0, 100)}"`;
+
+              sendAppNotification(mentionTitle, {
+                body: mentionBody,
+                id: Math.floor(Math.random() * 800000) + 100000,
+                category: 'chat_mention',
+                uid: user.uid
+              });
+            }
+          }
+
+          // 2. Contagem de não lidas e notificação diária (1x por dia) para mensagens normais de outros participantes
+          if (data.uid !== user.uid && msgDate > lastReadDate) {
+            // Se a mensagem marcou alguém específico (e NÃO é @Todos), APENAS a pessoa marcada recebe
             const shouldNotifyThisUser = !hasMentions || mentionEveryone || isCurrentUserMentioned;
 
             if (shouldNotifyThisUser) {
               count++;
-              if (!latestOtherMessageToday && formatDateBR(msgDate) === todayBR) {
+              if (!latestOtherMessageToday && !hasMentions && formatDateBR(msgDate) === todayBR) {
                 latestOtherMessageToday = {
                   text: data.text || (data.imageUrl ? '📷 Enviou uma foto no chat' : 'Nova mensagem no chat'),
-                  displayName: data.displayName || 'Participante',
-                  isDirectMentionToMe: hasMentions && !mentionEveryone && isCurrentUserMentioned,
-                  isMentionEveryone: mentionEveryone
+                  displayName: data.displayName || 'Participante'
                 };
               }
             }
@@ -386,9 +424,18 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         }
       });
 
+      if (updatedMentionIds.length !== notifiedMentionIds.length) {
+        try {
+          localStorage.setItem(
+            `bolao_notified_mentions_${user.uid}`,
+            JSON.stringify(updatedMentionIds.slice(-50))
+          );
+        } catch {}
+      }
+
       setUnreadChatCount(count);
 
-      // Subir notificação caso tenha mensagem direcionada ao usuário (ou @Todos / geral sem marcação de terceiros)
+      // Subir 1 notificação por dia caso tenha mensagem normal (sem @) no chat hoje
       if (
         count > 0 &&
         latestOtherMessageToday &&
@@ -397,12 +444,8 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       ) {
         markDailyChatNotificationSent(user.uid);
         const targetInfo = latestOtherMessageToday as any;
-        const notifTitle = targetInfo.isDirectMentionToMe
-          ? `💬 ${targetInfo.displayName} marcou você no Chat`
-          : targetInfo.isMentionEveryone
-          ? `📢 ${targetInfo.displayName} marcou @Todos no Chat`
-          : '💬 Novas mensagens hoje no Chat do Bolão';
-        const notifBody = count === 1 || targetInfo.isDirectMentionToMe || targetInfo.isMentionEveryone
+        const notifTitle = '💬 Novas mensagens hoje no Chat do Bolão';
+        const notifBody = count === 1
           ? `${targetInfo.displayName}: "${String(targetInfo.text).slice(0, 80)}"`
           : `Há ${count} novas mensagens no chat hoje (${todayBR}). Toque no ícone de chat para conversar!`;
 
@@ -413,17 +456,14 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
           uid: user.uid
         });
 
-        // Se não foi gravada notificação direta pelo remetente, registra para o usuário atual
-        if (!targetInfo.isDirectMentionToMe && !targetInfo.isMentionEveryone) {
-          addDoc(collection(db, 'notifications'), {
-            userId: user.uid,
-            title: notifTitle,
-            message: notifBody,
-            type: 'chat',
-            read: false,
-            createdAt: serverTimestamp()
-          }).catch(() => {});
-        }
+        addDoc(collection(db, 'notifications'), {
+          userId: user.uid,
+          title: notifTitle,
+          message: notifBody,
+          type: 'chat',
+          read: false,
+          createdAt: serverTimestamp()
+        }).catch(() => {});
       }
     }, err => console.warn('Unread chat count error:', err));
 
@@ -436,6 +476,30 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       setUnreadChatCount(0);
     }
   }, [location.pathname, user?.uid]);
+
+  // Redireciona quando o usuário toca em uma notificação nativa (Android/iOS) ou Web
+  useEffect(() => {
+    const handleNavigateEvent = (e: any) => {
+      const targetPath = e?.detail?.path;
+      if (targetPath) {
+        if (targetPath === '/chat' && user?.uid) {
+          localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
+          setUnreadChatCount(0);
+        }
+        navigate(targetPath);
+      }
+    };
+    window.addEventListener('bolao_navigate_to', handleNavigateEvent);
+
+    // Se havia uma rota pendente salva ao abrir o app pelo clique na notificação nativa
+    const pendingPath = sessionStorage.getItem('bolao_pending_notif_path');
+    if (pendingPath) {
+      sessionStorage.removeItem('bolao_pending_notif_path');
+      navigate(pendingPath);
+    }
+
+    return () => window.removeEventListener('bolao_navigate_to', handleNavigateEvent);
+  }, [navigate, user?.uid]);
 
   useEffect(() => {
     const q = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(1));
@@ -1074,7 +1138,7 @@ export default function App() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Quando uma notificação agendada no Android (ex: 20h35) dispara ou é tocada, faz a conferência automática na hora
+    // Quando uma notificação agendada ou push nativo no Android é tocada, leva até o local da notificação (ex: /chat)
     let notifReceivedListener: any = null;
     let notifActionListener: any = null;
     if (Capacitor.isNativePlatform()) {
@@ -1082,7 +1146,23 @@ export default function App() {
         syncLatestLotteryResults();
       }).then(h => { notifReceivedListener = h; }).catch(() => {});
 
-      LocalNotifications.addListener('localNotificationActionPerformed', () => {
+      LocalNotifications.addListener('localNotificationActionPerformed', (notificationAction: any) => {
+        const notif = notificationAction?.notification || {};
+        const extra = notif.extra || {};
+        const targetPath = resolveNotificationTargetPath({
+          targetPath: extra.targetPath,
+          category: extra.category,
+          title: notif.title,
+          body: notif.body
+        });
+
+        try {
+          sessionStorage.setItem('bolao_pending_notif_path', targetPath);
+          window.dispatchEvent(
+            new CustomEvent('bolao_navigate_to', { detail: { path: targetPath } })
+          );
+        } catch {}
+
         syncLatestLotteryResults();
       }).then(h => { notifActionListener = h; }).catch(() => {});
     }

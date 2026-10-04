@@ -816,7 +816,7 @@ export default function Chat() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="flex flex-col h-[calc(100vh-88px)] min-h-[460px] border border-slate-200/90 rounded-2xl bg-[#efeae2] shadow-lg overflow-hidden relative">
+      <div className="flex flex-col h-[calc(100dvh-var(--safe-top,0px)-var(--safe-bottom,0px)-92px)] min-h-[380px] border border-slate-200/90 rounded-2xl bg-[#efeae2] shadow-lg overflow-hidden relative">
         {/* Header Único do Chat com Botão Voltar Integrado */}
         <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-emerald-950 text-white px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-sm z-20 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
