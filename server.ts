@@ -7,19 +7,36 @@ import cron from 'node-cron';
 import { db } from './src/lib/firebase';
 import { collection, addDoc, setDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 
-// Helper robusto para converter datas da Caixa para YYYY-MM-DD
+// Helper robusto para converter datas da Caixa para DD/MM/AAAA
 function parseCaixaDate(rawDate: any): string {
-  if (!rawDate) return new Date().toISOString().split('T')[0];
-  const dateStr = String(rawDate);
-  
-  // Se for DD/MM/YYYY
+  const now = new Date();
+  const fallback = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  if (!rawDate) return fallback;
+  const dateStr = String(rawDate).trim().split('T')[0];
+
+  // Se já for DD/MM/YYYY
   if (dateStr.includes('/')) {
     const parts = dateStr.split('/');
-    if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+      }
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`;
+    }
   }
-  
-  // Se já for YYYY-MM-DD ou contiver T (timestamp)
-  return dateStr.split('T')[0];
+
+  // Se for YYYY-MM-DD
+  if (dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+      }
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`;
+    }
+  }
+
+  return dateStr;
 }
 
 const app = express();

@@ -597,13 +597,14 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Data Inicial do Sorteio
+                  Data do Sorteio ({gameDate ? gameDate.split('-').reverse().join('/') : 'DD/MM/AAAA'})
                 </label>
                 <input
                   type="date"
+                  lang="pt-BR"
                   value={gameDate}
                   onChange={(e) => setGameDate(e.target.value)}
-                  className="w-full border border-gray-300 bg-white rounded-lg p-2 text-xs focus:outline-purple-600"
+                  className="w-full border border-gray-300 bg-white rounded-lg p-2 text-xs font-bold text-gray-800 focus:outline-purple-600"
                   required
                 />
               </div>

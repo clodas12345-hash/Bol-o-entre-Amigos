@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { calculateGamePrize } from '../lib/prizes';
 import { useToast } from './NotificationManager';
+import { formatAnyDateBR } from '../lib/formatters';
 
 interface ContestHistoryCheckerProps {
   games: any[];
@@ -176,7 +177,7 @@ export default function ContestHistoryChecker({
                     </h3>
                     {contestData.date && (
                       <p className="text-xs text-purple-700 font-medium">
-                        Data da Apuração: <strong>{contestData.date}</strong>
+                        Data da Apuração: <strong>{formatAnyDateBR(contestData.date)}</strong>
                       </p>
                     )}
                   </div>

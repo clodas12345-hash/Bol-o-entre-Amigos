@@ -36,7 +36,8 @@ const saveLocalMember = (newMember: any) => {
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
   const { isMobile, compactTableClass } = useResponsiveLayout();
-  const { can, isAdmin } = usePermissions();
+  const { can, isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
   if (!can('members_view')) {
     return <Navigate to="/" replace />;
   }
@@ -44,6 +45,7 @@ export default function MembersList() {
   const canEditMember = can('members_edit');
   const canDeleteMember = can('members_delete');
   const canTogglePayment = can('members_toggle_payment');
+  const canSendReminder = isAdminOrCounselor && can('members_send_reminder');
 
   const navigate = useNavigate();
   const [members, setMembers] = useState<any[]>([]);
@@ -657,7 +659,7 @@ export default function MembersList() {
   const paidQuotas = paidMembers.reduce((sum, m) => sum + (Number(m.quotas) || 1), 0);
 
   return (
-    <div className="bg-white p-4 space-y-6 rounded-2xl border border-gray-150 shadow-xs">
+    <div className="bg-white p-3 sm:p-4 space-y-4 sm:space-y-6 rounded-2xl border border-gray-150 shadow-xs overflow-hidden">
 
       {confirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -686,11 +688,11 @@ export default function MembersList() {
       )}
 
       {/* Abas Rápidas de Filtragem */}
-      <div className="flex border-b border-gray-200 bg-gray-100/90 p-1 gap-1 text-xs rounded-xl overflow-x-auto">
+      <div className="flex border-b border-gray-200 bg-gray-100/90 p-1 gap-1 text-xs rounded-xl overflow-x-auto scrollbar-none">
         <button
           type="button"
           onClick={() => setMemberFilterTab('all')}
-          className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+          className={`flex-1 py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
             memberFilterTab === 'all'
               ? 'bg-blue-700 text-white shadow-xs font-black'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -704,7 +706,7 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setMemberFilterTab('pending')}
-            className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative ${
+            className={`flex-1 py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative whitespace-nowrap ${
               memberFilterTab === 'pending'
                 ? 'bg-red-600 text-white shadow-xs font-black'
                 : (pendingJoinRequests.length + pendingQuotaRequests.length > 0)
@@ -720,7 +722,7 @@ export default function MembersList() {
         <button
           type="button"
           onClick={() => setMemberFilterTab('approved')}
-          className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+          className={`flex-1 py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
             memberFilterTab === 'approved'
               ? 'bg-emerald-700 text-white shadow-xs font-black'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -1026,19 +1028,19 @@ export default function MembersList() {
       )}
 
       {/* Tabela de Membros com Cotas */}
-      <div className="overflow-x-auto rounded-xl border border-gray-150">
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
         <table className="w-full border-collapse text-xs sm:text-sm">
           <thead>
-            <tr className="bg-gray-50 text-gray-700 text-[11px] uppercase tracking-wider border-b">
-              <th className="p-3 text-left">Participante</th>
-              <th className="p-3 text-center">Função</th>
-              <th className="p-3 text-center">Cotas</th>
+            <tr className="bg-gray-50 text-gray-700 text-[10px] sm:text-[11px] uppercase tracking-wider border-b">
+              <th className="py-2.5 px-2.5 sm:p-3 text-left">Participante</th>
+              <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Função</th>
+              <th className="py-2.5 px-2.5 sm:p-3 text-center whitespace-nowrap">Cotas</th>
               {isAdmin && (
                 <>
-                  <th className="p-3 text-center">Valor Mensal</th>
-                  <th className="p-3 text-center">Pagamento</th>
-                  <th className="p-3 text-center font-bold">Status</th>
-                  <th className="p-3 text-center">Ações</th>
+                  <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Valor Mensal</th>
+                  <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Pagamento</th>
+                  <th className="py-2.5 px-2 sm:p-3 text-center font-bold whitespace-nowrap">Status</th>
+                  <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Ações</th>
                 </>
               )}
             </tr>
@@ -1079,45 +1081,46 @@ export default function MembersList() {
 
                 return (
                   <tr key={member.id} className="hover:bg-gray-50/50 transition">
-                    <td className="p-3">
-                      <div className="font-bold text-gray-900">
+                    <td className="py-2.5 px-2.5 sm:p-3 min-w-[130px]">
+                      <div className="font-bold text-gray-900 text-xs sm:text-sm leading-tight">
                         {member.displayName || 'Sem Nome'}
                         {member.isLocalOnly && (
-                          <span className="ml-1.5 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full uppercase">
+                          <span className="ml-1.5 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full uppercase whitespace-nowrap">
                             Dispositivo
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-gray-500 font-medium">
+                      <div className="text-[10px] sm:text-[11px] text-gray-500 font-medium mt-0.5 whitespace-nowrap tabular-nums">
                         {formatPhoneDisplay(member.phone || '')}
                       </div>
                       {member.notes && (
-                        <div className="text-[9px] text-gray-400 italic mt-0.5 max-w-xs truncate">
+                        <div className="text-[9px] text-gray-400 italic mt-0.5 max-w-[160px] sm:max-w-xs truncate">
                           💡 {member.notes}
                         </div>
                       )}
                     </td>
                     
-                    <td className="p-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    <td className="py-2.5 px-1.5 sm:p-3 text-center whitespace-nowrap">
+                      <span className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${
                         member.role === 'counselor' 
                           ? 'bg-purple-100 text-purple-800 border border-purple-200' 
                           : 'bg-blue-100 text-blue-800 border border-blue-200'
                       }`}>
-                        {member.role === 'counselor' ? '🛡️ Conselheiro' : '👥 Membro'}
+                        <span>{member.role === 'counselor' ? '🛡️' : '👥'}</span>
+                        <span>{member.role === 'counselor' ? 'Conselheiro' : 'Membro'}</span>
                       </span>
                     </td>
 
-                    <td className="p-3 text-center">
+                    <td className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">
                       {canTogglePayment ? (
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="inline-flex items-center justify-center gap-1">
                           <button
                             onClick={() => handleQuickChangeQuotas(member, -1)}
                             className="w-5 h-5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded flex items-center justify-center text-xs font-bold border cursor-pointer"
                           >
                             -
                           </button>
-                          <span className="font-black text-gray-800 min-w-4 text-center">
+                          <span className="font-black text-gray-800 min-w-4 text-center tabular-nums">
                             {quotas}
                           </span>
                           <button
@@ -1128,7 +1131,9 @@ export default function MembersList() {
                           </button>
                         </div>
                       ) : (
-                        <span className="font-bold text-gray-800">{quotas} cota(s)</span>
+                        <span className="font-bold text-gray-800 whitespace-nowrap tabular-nums">
+                          {quotas} {quotas === 1 ? 'cota' : 'cotas'}
+                        </span>
                       )}
                     </td>
 
@@ -1180,7 +1185,7 @@ export default function MembersList() {
                                 ✏️
                               </button>
                             )}
-                            {canTogglePayment && (
+                            {canSendReminder && (
                               <button
                                 type="button"
                                 onClick={() => sendWhatsApp(member)}

@@ -188,6 +188,9 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       }
 
       if (effectiveRole === 'participant') {
+        if (key === 'whatsapp_view' || key === 'whatsapp_broadcast' || key === 'members_send_reminder') {
+          return false;
+        }
         return matrix.participant[key] ?? DEFAULT_PERMISSIONS_MATRIX.participant[key] ?? false;
       }
 

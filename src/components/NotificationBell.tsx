@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit, writeBatch } from 'firebase/firestore';
+import { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, onSnapshot, orderBy, doc, limit, writeBatch } from 'firebase/firestore';
 import { db, auth, isQuotaError } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
+import { getUserNotificationPreferences, UserNotificationPreferences } from '../lib/notifications';
+import { formatAnyDateBR } from '../lib/formatters';
 
 export default function NotificationBell() {
   const { setIsQuotaExceeded } = usePool();
@@ -15,14 +17,36 @@ export default function NotificationBell() {
   });
   const [isOpen, setIsOpen] = useState(false);
   const currentUser = auth.currentUser;
+  const activeUid = useMemo(() => {
+    if (currentUser?.uid) return currentUser.uid;
+    try {
+      const phoneSaved = localStorage.getItem('bolao_phone_user');
+      if (phoneSaved) {
+        const parsed = JSON.parse(phoneSaved);
+        return parsed?.sessionUser?.uid || null;
+      }
+    } catch {}
+    return null;
+  }, [currentUser]);
+
+  const [prefs, setPrefs] = useState<UserNotificationPreferences>(() => getUserNotificationPreferences(activeUid));
 
   useEffect(() => {
-    if (!currentUser) return;
+    setPrefs(getUserNotificationPreferences(activeUid));
+    const handlePrefsUpdate = () => {
+      setPrefs(getUserNotificationPreferences(activeUid));
+    };
+    window.addEventListener('bolao_notif_prefs_updated', handlePrefsUpdate);
+    return () => window.removeEventListener('bolao_notif_prefs_updated', handlePrefsUpdate);
+  }, [activeUid]);
+
+  useEffect(() => {
+    if (!activeUid) return;
 
     // Listen for notifications for this user OR broadcast to 'all'
     const q = query(
       collection(db, 'notifications'),
-      where('userId', 'in', [currentUser.uid, 'all']),
+      where('userId', 'in', [activeUid, 'all']),
       orderBy('createdAt', 'desc'),
       limit(20)
     );
@@ -46,18 +70,43 @@ export default function NotificationBell() {
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [activeUid]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const visibleNotifications = useMemo(() => {
+    if (!prefs.pushEnabled) return [];
+    return notifications.filter(notif => {
+      const titleLower = String(notif.title || '').toLowerCase();
+      if (notif.type === 'chat' || titleLower.includes('chat')) {
+        return prefs.chatDailyNotification !== false;
+      }
+      if (titleLower.includes('novo concurso') || titleLower.includes('novas apostas')) {
+        return prefs.newContestNotification !== false;
+      }
+      if (notif.type === 'prize' || titleLower.includes('premiad') || titleLower.includes('rateio')) {
+        return prefs.winningPrizeAlerts !== false;
+      }
+      if (titleLower.includes('resultado')) {
+        return prefs.officialResultsAlerts !== false;
+      }
+      if (notif.type === 'payment' || notif.type === 'alert' || notif.type === 'info') {
+        return prefs.paymentAndSystemAlerts !== false;
+      }
+      return true;
+    });
+  }, [notifications, prefs]);
+
+  const unreadCount = visibleNotifications.filter(n => !n.read).length;
 
   const markAllAsRead = async () => {
-    const unread = notifications.filter(n => !n.read);
+    const unread = visibleNotifications.filter(n => !n.read);
     if (unread.length === 0) return;
 
     try {
       const batch = writeBatch(db);
       unread.forEach(n => {
-        batch.update(doc(db, 'notifications', n.id), { read: true });
+        if (!String(n.id).startsWith('local_')) {
+          batch.update(doc(db, 'notifications', n.id), { read: true });
+        }
       });
       await batch.commit();
     } catch (err) {
@@ -93,16 +142,16 @@ export default function NotificationBell() {
             </div>
             
             <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
-              {notifications.length === 0 ? (
+              {visibleNotifications.length === 0 ? (
                 <div className="p-8 text-center text-gray-400">
                   <span className="text-3xl block mb-2">🎈</span>
                   <p className="text-xs font-bold uppercase">Sem notificações no momento</p>
                 </div>
               ) : (
-                notifications.map(notif => (
+                visibleNotifications.map(notif => (
                   <div key={notif.id} className={`p-4 flex gap-3 hover:bg-gray-50 transition ${!notif.read ? 'bg-indigo-50/30' : ''}`}>
                     <div className="text-2xl mt-0.5">
-                      {notif.type === 'prize' ? '💰' : notif.type === 'alert' ? '🚨' : notif.type === 'payment' ? '💳' : 'ℹ️'}
+                      {notif.type === 'prize' ? '💰' : notif.type === 'chat' ? '💬' : notif.type === 'alert' ? '🚨' : notif.type === 'payment' ? '💳' : 'ℹ️'}
                     </div>
                     <div className="flex-1">
                       <h5 className={`text-sm font-bold ${!notif.read ? 'text-indigo-900' : 'text-gray-700'}`}>
@@ -110,7 +159,7 @@ export default function NotificationBell() {
                       </h5>
                       <p className="text-xs text-gray-500 mt-1 leading-relaxed">{notif.message}</p>
                       <span className="text-[9px] text-gray-400 font-bold uppercase mt-2 block">
-                        {notif.createdAt?.toDate ? notif.createdAt.toDate().toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Agora'}
+                        {notif.createdAt?.toDate ? `${formatAnyDateBR(notif.createdAt)} • ${notif.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agora'}
                       </span>
                     </div>
                     {!notif.read && (

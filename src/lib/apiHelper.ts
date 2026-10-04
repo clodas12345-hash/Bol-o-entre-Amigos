@@ -201,7 +201,23 @@ export async function fetchLotteryResultDirectly(
       if (Array.isArray(rawNumbers) && rawNumbers.length === expectedNumbersCount) {
         const numbers = rawNumbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b);
         const contestNum = Number(data.concurso || data.numero || data.contest || contestNumber);
-        const drawDate = data.data || data.dataApuracao || data.data_concurso || data.date || new Date().toLocaleDateString('pt-BR');
+        const rawDate = data.data || data.dataApuracao || data.data_concurso || data.date;
+        const now = new Date();
+        let drawDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+        if (rawDate) {
+          const clean = String(rawDate).trim().split('T')[0];
+          if (clean.includes('-')) {
+            const p = clean.split('-');
+            if (p.length === 3) {
+              drawDate = p[0].length === 4 ? `${p[2].padStart(2, '0')}/${p[1].padStart(2, '0')}/${p[0]}` : `${p[0].padStart(2, '0')}/${p[1].padStart(2, '0')}/${p[2]}`;
+            }
+          } else if (clean.includes('/')) {
+            const p = clean.split('/');
+            if (p.length === 3) {
+              drawDate = p[0].length === 4 ? `${p[2].padStart(2, '0')}/${p[1].padStart(2, '0')}/${p[0]}` : `${p[0].padStart(2, '0')}/${p[1].padStart(2, '0')}/${p[2]}`;
+            }
+          }
+        }
 
         if (contestNum > 0) {
           const formatted: LotteryResultData = {

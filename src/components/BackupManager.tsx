@@ -14,6 +14,7 @@ import {
   getBackupsHistory
 } from '../lib/backupService';
 import { downloadOrShareFile } from '../lib/fileDownloadHelper';
+import { formatAnyDateBR } from '../lib/formatters';
 
 interface CollectionStat {
   name: string;
@@ -445,8 +446,8 @@ export default function BackupManager() {
               <tbody>
                 ${filteredPayments.map((p: any) => {
                   const pDateStr = p.createdAt?.seconds 
-                    ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('pt-BR') 
-                    : (p.date || 'N/A');
+                    ? formatAnyDateBR(new Date(p.createdAt.seconds * 1000)) 
+                    : (p.date ? formatAnyDateBR(p.date) : 'N/A');
                   const isApproved = p.status === 'approved' || p.status === 'Pago' || !p.status;
                   return `
                     <tr>
@@ -822,7 +823,7 @@ export default function BackupManager() {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <p className="text-[11px] font-bold text-gray-800">
-                        {item.type === 'daily_cloud' ? `Backup Diário (${item.dateRef || item.monthRef})` : `Backup Mensal (${item.monthRef})`}
+                        {item.type === 'daily_cloud' ? `Backup Diário (${formatAnyDateBR(item.dateRef || item.monthRef)})` : `Backup Mensal (${item.monthRef})`}
                       </p>
                       <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md uppercase ${
                         item.type === 'daily_cloud' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
@@ -831,7 +832,7 @@ export default function BackupManager() {
                       </span>
                     </div>
                     <p className="text-[10px] text-gray-400">
-                      Gerado em {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'} • {item.totalRecords} registros
+                      Gerado em {item.createdAt?.toDate ? `${formatAnyDateBR(item.createdAt.toDate())} às ${item.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '-'} • {item.totalRecords} registros
                     </p>
                   </div>
                 </div>

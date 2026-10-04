@@ -5,6 +5,7 @@ import { calculateGamePrize, getCorrectGameCost } from '../lib/prizes';
 import { useToast } from './NotificationManager';
 import PrizeSplitModal from './PrizeSplitModal';
 import { usePermissions } from '../lib/PermissionsContext';
+import { formatAnyDateBR } from '../lib/formatters';
 
 interface GameHistoryProps {
   games: any[];
@@ -69,7 +70,8 @@ export default function GameHistory({
   onDeleteGame,
   onDeleteAllArchived
 }: GameHistoryProps) {
-  const { can } = usePermissions();
+  const { can, isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
   const { addToast } = useToast();
 
   const [searchContestQuery, setSearchContestQuery] = useState('');
@@ -154,7 +156,7 @@ export default function GameHistory({
         : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
 
       const monthStr = game.month || `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`;
-      const dateStr = gDate.toLocaleDateString('pt-BR');
+      const dateStr = formatAnyDateBR(gDate);
 
       return {
         ...game,
@@ -684,82 +686,91 @@ export default function GameHistory({
                           {/* Header do Concurso Arquivado */}
                           <div
                             onClick={() => toggleContestExpand(group.key)}
-                            className="p-3.5 sm:px-4 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5 bg-gray-100/90 hover:bg-gray-200/80 cursor-pointer select-none transition border-b border-gray-200"
+                            className="p-3.5 sm:px-4 sm:py-3.5 flex flex-col gap-2.5 bg-slate-100/90 hover:bg-slate-200/70 cursor-pointer select-none transition border-b border-gray-200"
                           >
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                              <span className="bg-gray-300 text-gray-800 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                                <span>📁</span> Arquivado
-                              </span>
-
-                              <span className="font-black text-sm sm:text-base text-purple-950">
-                                {group.contestTitle}
-                              </span>
-
-                              <span className="text-xs text-gray-600">
-                                • Data: <strong>{group.dateStr}</strong>
-                              </span>
-
-                              <span className="text-xs bg-white text-gray-700 border border-gray-200 px-2 py-0.5 rounded-md font-semibold">
-                                {group.games.length} {group.games.length === 1 ? 'aposta' : 'apostas'}
-                              </span>
-
-                              {group.totalCost > 0 && (
-                                <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-semibold">
-                                  Custo: R$ {group.totalCost.toFixed(2)}
+                            <div className="flex items-start sm:items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="bg-gray-300 text-gray-800 text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1 whitespace-nowrap">
+                                  <span>📁</span> Arquivado
                                 </span>
-                              )}
+
+                                <span className="font-black text-sm sm:text-base text-purple-950 whitespace-nowrap">
+                                  {group.contestTitle}
+                                </span>
+                              </div>
+
+                              <span className="text-xs font-bold bg-white text-gray-700 border border-gray-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 whitespace-nowrap tabular-nums">
+                                <span>📅</span>
+                                <span>{formatAnyDateBR(group.dateStr)}</span>
+                              </span>
                             </div>
 
-                            <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                              {group.totalPrize > 0 && (
-                                <span className="bg-amber-400 text-gray-950 font-black text-xs px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1">
-                                  <span>🎉</span> R$ {group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200/80">
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                <span className="text-xs bg-white text-gray-700 border border-gray-200 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
+                                  🎟️ {group.games.length} {group.games.length === 1 ? 'aposta' : 'apostas'}
                                 </span>
-                              )}
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const text = encodeURIComponent(
-                                    `🍀 *HISTÓRICO DO BOLÃO - ${group.contestTitle}* 🍀\n\n` +
-                                    `📅 Data do Sorteio: ${group.dateStr}\n` +
-                                    `🎟️ Total de Apostas Arquivadas: ${group.games.length}\n` +
-                                    `💰 Custo Total: R$ ${group.totalCost.toFixed(2)}\n` +
-                                    `🏆 Prêmios Conquistados: R$ ${group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
-                                    `⭐ Apostas Premiadas: ${group.winningGamesCount}\n\n` +
-                                    `📊 Veja o arquivo completo no app do Bolão!`
-                                  );
-                                  window.open(`https://wa.me/?text=${text}`, '_blank');
-                                }}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer"
-                                title="Enviar balanço deste concurso arquivado no WhatsApp"
-                              >
-                                <span>📲</span> WhatsApp
-                              </button>
+                                {group.totalCost > 0 && (
+                                  <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap tabular-nums">
+                                    💰 R$ {group.totalCost.toFixed(2).replace('.', ',')}
+                                  </span>
+                                )}
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setGroupToDelete(group);
-                                }}
-                                className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
-                                title="Excluir todas as apostas deste concurso do histórico"
-                              >
-                                <span>🗑️</span> Excluir
-                              </button>
+                                {group.totalPrize > 0 && (
+                                  <span className="bg-amber-400 text-gray-950 font-black text-xs px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1 whitespace-nowrap tabular-nums">
+                                    <span>🎉</span> R$ {group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                )}
+                              </div>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleContestExpand(group.key);
-                                }}
-                                className="text-xs font-bold px-2.5 py-1 rounded-lg transition cursor-pointer shadow-xs bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-200"
-                              >
-                                <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
-                              </button>
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap ml-auto" onClick={e => e.stopPropagation()}>
+                                {isAdminOrCounselor && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const text = encodeURIComponent(
+                                        `🍀 *HISTÓRICO DO BOLÃO - ${group.contestTitle}* 🍀\n\n` +
+                                        `📅 Data do Sorteio: ${formatAnyDateBR(group.dateStr)}\n` +
+                                        `🎟️ Total de Apostas Arquivadas: ${group.games.length}\n` +
+                                        `💰 Custo Total: R$ ${group.totalCost.toFixed(2)}\n` +
+                                        `🏆 Prêmios Conquistados: R$ ${group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
+                                        `⭐ Apostas Premiadas: ${group.winningGamesCount}\n\n` +
+                                        `📊 Veja o arquivo completo no app do Bolão!`
+                                      );
+                                      window.open(`https://wa.me/?text=${text}`, '_blank');
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                    title="Enviar balanço deste concurso arquivado no WhatsApp"
+                                  >
+                                    <span>📲</span> WhatsApp
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setGroupToDelete(group);
+                                  }}
+                                  className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                  title="Excluir todas as apostas deste concurso do histórico"
+                                >
+                                  <span>🗑️</span> Excluir
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleContestExpand(group.key);
+                                  }}
+                                  className="text-xs font-black px-3 py-1.5 rounded-lg transition cursor-pointer shadow-xs bg-purple-900 hover:bg-purple-800 text-white whitespace-nowrap"
+                                >
+                                  <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
 

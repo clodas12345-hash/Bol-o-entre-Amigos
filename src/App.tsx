@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
-import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, deleteDoc, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, deleteDoc, onSnapshot, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
 import NewGameModal from './components/NewGameModal';
@@ -34,8 +34,8 @@ import MemberBetSubmission from './components/MemberBetSubmission';
 import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import DrawCalendarModal from './components/DrawCalendarModal';
-import { getAdjustedActiveContestInfo } from './lib/drawCalendar';
-import { scheduleUpcomingDrawAlerts } from './lib/notifications';
+import { getAdjustedActiveContestInfo, formatDateBR } from './lib/drawCalendar';
+import { scheduleUpcomingDrawAlerts, sendAppNotification, canTriggerDailyChatNotification, markDailyChatNotificationSent } from './lib/notifications';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
@@ -343,20 +343,92 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
     const unsub = onSnapshot(q, (snapshot) => {
       let count = 0;
+      let latestOtherMessageToday: { text: string; displayName: string; isDirectMentionToMe?: boolean; isMentionEveryone?: boolean } | null = null;
+      const todayBR = formatDateBR(new Date());
+      const myNameLower = String(userData?.displayName || user?.displayName || '').trim().toLowerCase();
+      const myFirstNameLower = myNameLower.split(/\s+/)[0] || '';
+      const isModUser = isAdmin || userData?.role === 'admin' || userData?.role === 'counselor';
+
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
-        if (data.uid !== user.uid && data.createdAt) {
+        if (data.uid !== user.uid && data.createdAt && data.status !== 'pending_approval' && !data.deleted) {
           const msgDate = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
           if (msgDate > lastReadDate) {
-            count++;
+            const msgText = String(data.text || '');
+            const hasMentions = data.hasMentions === true || /@[\wÁ-ÿ]+/.test(msgText);
+            const mentionEveryone = data.mentionEveryone === true || /@(todos|todo\s*mundo|grupo)\b/i.test(msgText);
+            const mentionAdmins = data.mentionAdmins === true || /@(administradores|admins|admin|moderadores)\b/i.test(msgText);
+            const mentionedIds: string[] = Array.isArray(data.mentionedUserIds) ? data.mentionedUserIds : [];
+            const mentionedNames: string[] = Array.isArray(data.mentionedNames) ? data.mentionedNames : [];
+
+            const isCurrentUserMentioned =
+              mentionedIds.includes(user.uid) ||
+              (userData?.id && mentionedIds.includes(userData.id)) ||
+              (myNameLower.length >= 2 && (mentionedNames.includes(myNameLower) || msgText.toLowerCase().includes(`@${myNameLower}`))) ||
+              (myFirstNameLower.length >= 2 && new RegExp(`@${myFirstNameLower}\\b`, 'i').test(msgText)) ||
+              (mentionAdmins && isModUser);
+
+            // Se a mensagem marcou alguém específico (e NÃO é @Todos), APENAS a pessoa marcada recebe notificação
+            const shouldNotifyThisUser = !hasMentions || mentionEveryone || isCurrentUserMentioned;
+
+            if (shouldNotifyThisUser) {
+              count++;
+              if (!latestOtherMessageToday && formatDateBR(msgDate) === todayBR) {
+                latestOtherMessageToday = {
+                  text: data.text || (data.imageUrl ? '📷 Enviou uma foto no chat' : 'Nova mensagem no chat'),
+                  displayName: data.displayName || 'Participante',
+                  isDirectMentionToMe: hasMentions && !mentionEveryone && isCurrentUserMentioned,
+                  isMentionEveryone: mentionEveryone
+                };
+              }
+            }
           }
         }
       });
+
       setUnreadChatCount(count);
+
+      // Subir notificação caso tenha mensagem direcionada ao usuário (ou @Todos / geral sem marcação de terceiros)
+      if (
+        count > 0 &&
+        latestOtherMessageToday &&
+        location.pathname !== '/chat' &&
+        canTriggerDailyChatNotification(user.uid)
+      ) {
+        markDailyChatNotificationSent(user.uid);
+        const targetInfo = latestOtherMessageToday as any;
+        const notifTitle = targetInfo.isDirectMentionToMe
+          ? `💬 ${targetInfo.displayName} marcou você no Chat`
+          : targetInfo.isMentionEveryone
+          ? `📢 ${targetInfo.displayName} marcou @Todos no Chat`
+          : '💬 Novas mensagens hoje no Chat do Bolão';
+        const notifBody = count === 1 || targetInfo.isDirectMentionToMe || targetInfo.isMentionEveryone
+          ? `${targetInfo.displayName}: "${String(targetInfo.text).slice(0, 80)}"`
+          : `Há ${count} novas mensagens no chat hoje (${todayBR}). Toque no ícone de chat para conversar!`;
+
+        sendAppNotification(notifTitle, {
+          body: notifBody,
+          id: 777001,
+          category: 'chat_daily',
+          uid: user.uid
+        });
+
+        // Se não foi gravada notificação direta pelo remetente, registra para o usuário atual
+        if (!targetInfo.isDirectMentionToMe && !targetInfo.isMentionEveryone) {
+          addDoc(collection(db, 'notifications'), {
+            userId: user.uid,
+            title: notifTitle,
+            message: notifBody,
+            type: 'chat',
+            read: false,
+            createdAt: serverTimestamp()
+          }).catch(() => {});
+        }
+      }
     }, err => console.warn('Unread chat count error:', err));
 
     return unsub;
-  }, [user, location.pathname]);
+  }, [user, userData, isAdmin, location.pathname]);
 
   useEffect(() => {
     if (location.pathname === '/chat' && user?.uid) {
@@ -388,6 +460,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
   const { addToast } = useToast();
   const isHome = location.pathname === '/';
+  const isChatPage = location.pathname === '/chat';
   const displayContestNum = Math.max(currentContest || 0, activePool?.currentContest || 0);
   const canManageMembers = can('members_edit');
 
@@ -465,37 +538,41 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white">
       {!hideHeader && (
-        <header className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white py-3 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+        <header className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white py-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95 w-full">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                   <div 
                     onClick={() => navigate('/')}
-                    className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-1.5 sm:gap-2.5 hover:opacity-95 transition cursor-pointer py-0.5 shrink-0"
+                    className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-2 hover:opacity-95 transition cursor-pointer py-0.5 shrink-0"
                     title="Página Inicial do Bolão"
                   >
-                    <img src={logoImg} alt="Logotipo" className="w-10 h-10 xs:w-12 xs:h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-white/60 shadow-lg ring-2 ring-white/30 hover:scale-105 transition-transform shrink-0" />
-                    <span className="hidden md:inline font-black text-white drop-shadow-md">Bolão Amigos</span>
+                    <img src={logoImg} alt="Logotipo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover border-2 border-white/60 shadow-md shrink-0" />
+                    <span className="font-black text-white text-sm sm:text-lg truncate drop-shadow-xs">Bolão Amigos</span>
                   </div>
                 </div>
 
               {/* Chat & Notificações */}
               <div className="flex items-center gap-1 sm:gap-2">
-                {/* Ícone do Chat ao lado da Notificação */}
+                {/* Ícone do Chat ao lado da Notificação (abre ou fecha ao clicar novamente) */}
                 <button
                   onClick={() => {
                     if (user?.uid) {
                       localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
                       setUnreadChatCount(0);
                     }
-                    navigate('/chat');
+                    if (location.pathname === '/chat') {
+                      navigate('/');
+                    } else {
+                      navigate('/chat');
+                    }
                   }}
                   className={`relative p-2 rounded-xl transition cursor-pointer flex items-center justify-center border ${
                     location.pathname === '/chat'
                       ? 'bg-white/30 text-white border-white/40 shadow-inner'
                       : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
                   }`}
-                  title="Abrir Chat do Bolão"
+                  title={location.pathname === '/chat' ? 'Fechar Chat' : 'Abrir Chat do Bolão'}
                 >
                   <span className="text-base sm:text-lg">💬</span>
                   {unreadChatCount > 0 && location.pathname !== '/chat' && (
@@ -612,19 +689,21 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         </div>
       )}
 
-      {/* Sub-header com Concurso Vigente Sincronizado */}
-      {!hideHeader && (
-        <div className="bg-emerald-50 border-b border-emerald-100 py-2 px-3 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-2.5 relative">
+      {/* Sub-header com Concurso Vigente Sincronizado (oculto no Chat) */}
+      {!hideHeader && !isChatPage && (
+        <div className="bg-emerald-50 border-b border-emerald-100 py-1.5 px-2.5 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs w-full">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
+              <span className="flex h-2 w-2 relative shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="text-gray-700 font-medium">Concurso Vigente:</span>
+              <span className="text-gray-700 font-semibold text-[11px] sm:text-xs whitespace-nowrap">
+                <span className="hidden xs:inline">Concurso </span>Vigente:
+              </span>
               
               {isEditingContest ? (
-                <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95">
+                <div className="flex items-center gap-1 animate-in fade-in zoom-in-95">
                   <input
                     type="number"
                     placeholder="Ex: 3251"
@@ -648,21 +727,21 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
                   {displayContestNum ? (
-                    <span className="bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
+                    <span className="bg-emerald-600 text-white font-extrabold px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] shadow-2xs whitespace-nowrap tabular-nums">
                       #{displayContestNum}
                     </span>
                   ) : (
-                    <span className="text-emerald-600/70 animate-pulse">Sincronizando...</span>
+                    <span className="text-emerald-600/70 text-[11px] animate-pulse whitespace-nowrap">Sincronizando...</span>
                   )}
                   
                   {currentPrize && (
-                    <div className="flex items-center gap-1.5 ml-1 animate-in fade-in slide-in-from-left-2 duration-500">
-                      <span className="text-gray-400 font-medium">Prêmio:</span>
-                      <span className="bg-amber-100 text-amber-700 font-black px-2.5 py-0.5 rounded-full text-[11px] border border-amber-200 shadow-3xs flex items-center gap-1">
-                        <span className="text-[10px] opacity-70 font-bold">R$</span>
-                        {currentPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <div className="flex items-center gap-1 animate-in fade-in duration-300">
+                      <span className="hidden sm:inline text-gray-400 font-medium text-[11px]">Prêmio:</span>
+                      <span className="bg-amber-100 text-amber-800 font-black px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] border border-amber-200/80 flex items-center gap-0.5 whitespace-nowrap tabular-nums">
+                        <span className="text-[9px] opacity-75 font-bold">R$</span>
+                        <span>{currentPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </span>
                     </div>
                   )}
@@ -671,16 +750,17 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
               )}
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 onClick={() => setShowDrawCalendarModal(true)}
-                className="bg-white hover:bg-emerald-100/60 text-emerald-800 font-extrabold px-2.5 py-1 rounded-lg text-[11px] border border-emerald-200 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                className="bg-white hover:bg-emerald-100/60 text-emerald-800 font-extrabold px-2 py-1 rounded-lg text-[10px] sm:text-[11px] border border-emerald-200 transition flex items-center gap-1 shadow-2xs cursor-pointer whitespace-nowrap"
                 title="Ver Calendário Oficial de Sorteios e Feriados Nacionais"
               >
-                <span>📅 Calendário Caixa</span>
+                <span>📅</span>
+                <span>Calendário<span className="hidden sm:inline"> Caixa</span></span>
               </button>
 
-              <div className="hidden sm:flex text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider items-center gap-1.5 bg-emerald-100/50 px-2 py-1 rounded-md">
+              <div className="hidden md:flex text-[10px] text-emerald-700/80 uppercase font-bold tracking-wider items-center gap-1.5 bg-emerald-100/50 px-2 py-1 rounded-md whitespace-nowrap">
                 <span>
                   {!contestCalendarInfo.isTodayDrawDay 
                     ? `⚠️ ${contestCalendarInfo.nextDrawDayName} (${contestCalendarInfo.nextDrawFormatted})` 
@@ -698,7 +778,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       )}
 
       {/* Conteúdo Principal */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-2.5 py-3 sm:p-5 overflow-x-hidden">
         {/* Banner de Pedidos Pendentes (Entradas e Cotas) */}
         {totalPendingCount > 0 && canManageMembers && (
           <div className="mb-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
@@ -773,7 +853,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         )}
         {children}
 
-        {!isHome && (
+        {!isHome && !isChatPage && (
           <div className="mt-8 mb-4 flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-300">
             <button
               onClick={() => {
@@ -1279,7 +1359,7 @@ export default function App() {
           <Route path="/profile" element={activeUser ? <UserProfile /> : <Navigate to="/" />} />
           <Route path="/rules" element={activeUser ? <RulesAndNorms /> : <Navigate to="/" />} />
           <Route path="/permissoes" element={activeUser ? <RolesGuide /> : <Navigate to="/" />} />
-          <Route path="/configuracoes" element={activeUser ? <ProtectedRoute permission="games_create"><Settings /></ProtectedRoute> : <Navigate to="/" />} />
+          <Route path="/configuracoes" element={activeUser ? <Settings /> : <Navigate to="/" />} />
         </Routes>
           </Layout>
         </BrowserRouter>

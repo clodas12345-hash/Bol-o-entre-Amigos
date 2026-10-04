@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
+import { usePermissions } from '../lib/PermissionsContext';
 
 export default function VictoryCardGenerator() {
   const [concurso, setConcurso] = useState('3340');
@@ -10,6 +11,8 @@ export default function VictoryCardGenerator() {
   const [copied, setCopied] = useState(false);
 
   const { addToast } = useToast();
+  const { isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
 
   const cardText = `🏆 *COMUNICADO OFICIAL DE PREMIAÇÃO!* 🏆
 🍀 *BOLÃO DA LOTOFÁCIL*
@@ -124,14 +127,16 @@ export default function VictoryCardGenerator() {
               <span>{copied ? 'Copiado!' : 'Copiar Texto'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleShareWhatsApp}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-black transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>📲</span>
-              <span>Enviar no WhatsApp</span>
-            </button>
+            {isAdminOrCounselor && (
+              <button
+                type="button"
+                onClick={handleShareWhatsApp}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-black transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>📲</span>
+                <span>Enviar no WhatsApp</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

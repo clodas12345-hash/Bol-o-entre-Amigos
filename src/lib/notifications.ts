@@ -47,10 +47,117 @@ export async function requestIgnoreBatteryOptimization(): Promise<string> {
   }
 }
 
+export interface UserNotificationPreferences {
+  pushEnabled: boolean;
+  chatDailyNotification: boolean;      // 1 notificação por dia caso tenha msg no chat
+  newContestNotification: boolean;     // Novos concursos / novas apostas cadastradas
+  drawTimeAlerts: boolean;             // Alertas de horário do sorteio (19h30 e 20h00)
+  officialResultsAlerts: boolean;      // Resultados publicados e conferência (20h35 / 21h05)
+  winningPrizeAlerts: boolean;         // Apostas premiadas e rateio
+  paymentAndSystemAlerts: boolean;     // Avisos de pagamento, cotas e comunicados da administração
+  missingGamesReminder: boolean;       // Lembrete a cada 2h de jogos pendentes (Admin/Conselheiro)
+  notifyAt1930: boolean;
+  notifyAt2000: boolean;
+  notifyAt2035: boolean;
+  daysOfWeek: number[];
+}
+
+export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
+  pushEnabled: true,
+  chatDailyNotification: true,
+  newContestNotification: true,
+  drawTimeAlerts: true,
+  officialResultsAlerts: true,
+  winningPrizeAlerts: true,
+  paymentAndSystemAlerts: true,
+  missingGamesReminder: true,
+  notifyAt1930: true,
+  notifyAt2000: true,
+  notifyAt2035: true,
+  daysOfWeek: [1, 2, 3, 4, 5, 6]
+};
+
+export function getUserNotificationPreferences(uid?: string | null): UserNotificationPreferences {
+  try {
+    const key = uid ? `bolao_notif_prefs_${uid}` : 'bolao_notif_prefs_default';
+    const savedSpecific = localStorage.getItem(key);
+    const savedLegacy = localStorage.getItem('bolao_draw_alerts_config');
+    const parsedSpecific = savedSpecific ? JSON.parse(savedSpecific) : {};
+    const parsedLegacy = savedLegacy ? JSON.parse(savedLegacy) : {};
+    return {
+      ...DEFAULT_USER_NOTIFICATION_PREFERENCES,
+      ...parsedLegacy,
+      ...parsedSpecific
+    };
+  } catch {
+    return DEFAULT_USER_NOTIFICATION_PREFERENCES;
+  }
+}
+
+export function saveUserNotificationPreferencesLocal(prefs: Partial<UserNotificationPreferences>, uid?: string | null): UserNotificationPreferences {
+  const current = getUserNotificationPreferences(uid);
+  const merged: UserNotificationPreferences = { ...current, ...prefs };
+  try {
+    if (uid) {
+      localStorage.setItem(`bolao_notif_prefs_${uid}`, JSON.stringify(merged));
+    }
+    localStorage.setItem('bolao_notif_prefs_default', JSON.stringify(merged));
+    localStorage.setItem('bolao_draw_alerts_config', JSON.stringify(merged));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bolao_notif_prefs_updated', { detail: merged }));
+    }
+  } catch (err) {
+    console.warn('Erro ao salvar preferências de notificação localmente:', err);
+  }
+  return merged;
+}
+
+export type NotificationCategory =
+  | 'chat_daily'
+  | 'new_contest'
+  | 'draw_time'
+  | 'official_result'
+  | 'winning_prize'
+  | 'payment_system'
+  | 'missing_games'
+  | 'test';
+
+export function isNotificationCategoryAllowed(category?: NotificationCategory, uid?: string | null): boolean {
+  if (!category || category === 'test') return true;
+  const prefs = getUserNotificationPreferences(uid);
+  if (!prefs.pushEnabled) return false;
+
+  switch (category) {
+    case 'chat_daily':
+      return prefs.chatDailyNotification !== false;
+    case 'new_contest':
+      return prefs.newContestNotification !== false;
+    case 'draw_time':
+      return prefs.drawTimeAlerts !== false;
+    case 'official_result':
+      return prefs.officialResultsAlerts !== false;
+    case 'winning_prize':
+      return prefs.winningPrizeAlerts !== false;
+    case 'payment_system':
+      return prefs.paymentAndSystemAlerts !== false;
+    case 'missing_games':
+      return prefs.missingGamesReminder !== false;
+    default:
+      return true;
+  }
+}
+
 /**
- * Envia notificação imediata
+ * Envia notificação imediata (respeitando as escolhas do participante caso a categoria seja informada)
  */
-export async function sendAppNotification(title: string, options?: { body?: string; id?: number }) {
+export async function sendAppNotification(
+  title: string,
+  options?: { body?: string; id?: number; category?: NotificationCategory; uid?: string | null }
+) {
+  if (options?.category && !isNotificationCategoryAllowed(options.category, options.uid)) {
+    return;
+  }
+
   if (Capacitor.isNativePlatform()) {
     try {
       await LocalNotifications.schedule({
@@ -61,7 +168,7 @@ export async function sendAppNotification(title: string, options?: { body?: stri
             id: options?.id || Math.floor(Math.random() * 1000000) + 1,
             smallIcon: 'ic_stat_icon',
             sound: 'default',
-            extra: { autoCheckPrize: true }
+            extra: { autoCheckPrize: true, category: options?.category }
           }
         ]
       });
@@ -82,6 +189,31 @@ export async function sendAppNotification(title: string, options?: { body?: stri
       console.warn('Web notification falhou:', webErr);
     }
   }
+}
+
+/**
+ * Verifica se já foi disparada a notificação diária de novas mensagens no chat hoje (DD/MM/AAAA).
+ * Retorna true e marca como enviada se ainda não tiver subido hoje e a preferência estiver ativa.
+ */
+export function canTriggerDailyChatNotification(uid: string): boolean {
+  if (!uid) return false;
+  if (!isNotificationCategoryAllowed('chat_daily', uid)) return false;
+
+  const todayBR = formatDateBR(new Date()); // DD/MM/AAAA
+  const storageKey = `bolao_daily_chat_notif_${uid}`;
+  const lastNotifiedDay = localStorage.getItem(storageKey);
+
+  if (lastNotifiedDay === todayBR) {
+    return false; // Já subiu 1 notificação hoje
+  }
+
+  return true;
+}
+
+export function markDailyChatNotificationSent(uid: string): void {
+  if (!uid) return;
+  const todayBR = formatDateBR(new Date());
+  localStorage.setItem(`bolao_daily_chat_notif_${uid}`, todayBR);
 }
 
 /**
@@ -180,7 +312,8 @@ export async function getPendingNativeAlarms(): Promise<Array<{ id: number; titl
  * Não depende de temporizadores JS (setInterval/setTimeout) e funciona com o app fechado.
  */
 export async function scheduleUpcomingDrawAlerts(
-  lotteryType: 'lotofacil' | 'megasena' = 'lotofacil'
+  lotteryType: 'lotofacil' | 'megasena' = 'lotofacil',
+  uid?: string | null
 ): Promise<number> {
   if (!Capacitor.isNativePlatform()) return 0;
 
@@ -202,6 +335,11 @@ export async function scheduleUpcomingDrawAlerts(
       console.warn('Não foi possível cancelar agendamentos anteriores:', cancelErr);
     }
 
+    const prefs = getUserNotificationPreferences(uid);
+    if (!prefs.pushEnabled) {
+      return 0;
+    }
+
     // 2. Calcula as datas dos próximos 7 dias de sorteio válidos (pulando domingos e feriados da Caixa)
     const now = new Date();
     let currentCheckDate = new Date(now);
@@ -209,6 +347,13 @@ export async function scheduleUpcomingDrawAlerts(
     for (let i = 0; i < 7; i++) {
       const nextDraw = getNextDrawDate(currentCheckDate, lotteryType);
       const drawDate = new Date(nextDraw.date);
+
+      // Respeita os dias da semana escolhidos pelo participante
+      if (Array.isArray(prefs.daysOfWeek) && !prefs.daysOfWeek.includes(drawDate.getDay())) {
+        currentCheckDate = new Date(drawDate);
+        currentCheckDate.setDate(currentCheckDate.getDate() + 1);
+        continue;
+      }
 
       // Alerta 1: 19h30 (30 minutos antes do sorteio)
       const date1930 = new Date(drawDate);
@@ -229,7 +374,7 @@ export async function scheduleUpcomingDrawAlerts(
       const baseId = (i + 1) * 10000;
       const lotName = lotteryType === 'megasena' ? 'Mega-Sena' : 'Lotofácil';
 
-      if (date1930.getTime() > now.getTime()) {
+      if (prefs.drawTimeAlerts !== false && prefs.notifyAt1930 !== false && date1930.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `⏰ Faltam 30 minutos! (${lotName})`,
           `O sorteio oficial da ${lotName} começa às 20h00. Verifique suas apostas no app!`,
@@ -240,7 +385,7 @@ export async function scheduleUpcomingDrawAlerts(
         if (res) scheduledCount++;
       }
 
-      if (date2000.getTime() > now.getTime()) {
+      if (prefs.drawTimeAlerts !== false && prefs.notifyAt2000 !== false && date2000.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `🍀 Sorteio Oficial da ${lotName}!`,
           `O sorteio das 20h00 está começando agora!`,
@@ -251,7 +396,7 @@ export async function scheduleUpcomingDrawAlerts(
         if (res) scheduledCount++;
       }
 
-      if (date2035.getTime() > now.getTime()) {
+      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2035 !== false && date2035.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `🎉 Conferência do Jogo do Dia (${lotName})`,
           `Resultado das 20h35 liberado! Toque para conferir automaticamente se o jogo de hoje foi premiado!`,
@@ -262,7 +407,7 @@ export async function scheduleUpcomingDrawAlerts(
         if (res) scheduledCount++;
       }
 
-      if (date2105.getTime() > now.getTime()) {
+      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2035 !== false && date2105.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `🏆 Rateio Oficial Caixa (${lotName})`,
           `Verificando premiação oficial do concurso de hoje! Toque para ver o resultado das apostas.`,
@@ -305,7 +450,8 @@ export async function notifyWinningPrize(
 
   await sendAppNotification(title, {
     body,
-    id: Number(contestNum) || Math.floor(Math.random() * 1000000) + 1
+    id: Number(contestNum) || Math.floor(Math.random() * 1000000) + 1,
+    category: 'winning_prize'
   });
 }
 
@@ -316,7 +462,8 @@ export async function notifyWinningPrize(
 export async function syncMissingGamesTwoHourReminders(
   coveredDateStrings: string[],
   isAdminOrCounselor: boolean,
-  lotteryType: 'lotofacil' | 'megasena' = 'lotofacil'
+  lotteryType: 'lotofacil' | 'megasena' = 'lotofacil',
+  uid?: string | null
 ): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
@@ -336,8 +483,9 @@ export async function syncMissingGamesTwoHourReminders(
       console.warn('Erro ao limpar lembretes de 2h anteriores:', cancelErr);
     }
 
-    // Apenas Admin e Conselheiros recebem alertas de realizar os jogos
+    // Apenas Admin e Conselheiros recebem alertas de realizar os jogos, e somente se estiver ativo nas preferências
     if (!isAdminOrCounselor) return;
+    if (!isNotificationCategoryAllowed('missing_games', uid)) return;
 
     const coveredSet = new Set(coveredDateStrings);
     const now = new Date();

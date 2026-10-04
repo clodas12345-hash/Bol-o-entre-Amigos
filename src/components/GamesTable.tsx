@@ -3,7 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, g
 import { db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
-import { useResponsiveLayout } from '../lib/formatters';
+import { useResponsiveLayout, formatAnyDateBR } from '../lib/formatters';
 import { calculateGamePrize, MEGASENA_STATS, LOTOFACIL_STATS, getCorrectGameCost } from '../lib/prizes';
 import PrizeSplitModal from './PrizeSplitModal';
 import ContestHistoryChecker from './ContestHistoryChecker';
@@ -120,13 +120,13 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     statusBadge: 'Hoje'
   });
 
-  const [currentDayStr, setCurrentDayStr] = useState(() => new Date().toLocaleDateString('pt-BR'));
+  const [currentDayStr, setCurrentDayStr] = useState(() => formatDateBR(new Date()));
 
   // Calcula o próximo sorteio e mantém o jogo/sorteio do dia ativo até o último minuto do dia (23:59:59)
   useEffect(() => {
     const calculateNextDraw = () => {
       const now = new Date();
-      const todayKey = now.toLocaleDateString('pt-BR');
+      const todayKey = formatDateBR(now);
       setCurrentDayStr(prev => (prev !== todayKey ? todayKey : prev));
 
       const currentHour = now.getHours();
@@ -246,7 +246,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     try {
       const formattedData = {
         contest: Number(manualContest) || 0,
-        date: new Date().toLocaleDateString('pt-BR'),
+        date: formatDateBR(new Date()),
         numbers: [...manualNumbers].sort((a, b) => a - b),
         accumulated: false,
         createdAt: new Date(),
@@ -667,7 +667,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     const isPast = dayTimestamp < today.getTime();
     // Arquivamento automático: jogos cuja data de sorteio já passou (isPast) vão automaticamente para o Histórico!
     const isActive = isToday || isFuture;
-    const dateStr = gDate.toLocaleDateString('pt-BR');
+    const dateStr = formatDateBR(gDate);
 
     return { gDate, dayTimestamp, isToday, isTomorrow, isFuture, isPast, isActive, dateStr };
   };
@@ -1424,30 +1424,31 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       )}
 
       {/* 1. ORDEM PRIMÁRIA: PAINEL UNIFICADO - Sorteios, Próximo Concurso e Resultado Oficial Caixa */}
-      <div className={`bg-gradient-to-r ${isMegaSena ? 'from-emerald-950 via-teal-900 to-emerald-900' : 'from-purple-950 via-indigo-950 to-purple-900'} text-white p-4 sm:p-5 rounded-2xl shadow-lg border border-purple-400/20 space-y-3.5`}>
+      <div className={`bg-gradient-to-r ${isMegaSena ? 'from-emerald-950 via-teal-900 to-emerald-900' : 'from-purple-950 via-indigo-950 to-purple-900'} text-white p-3.5 sm:p-5 rounded-2xl shadow-lg border border-purple-400/20 space-y-3`}>
         
         {/* Cabeçalho Unificado: Concurso Atual + Próximo Sorteio com Contagem Regressiva */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-white/10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-white/10">
           <div>
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] uppercase tracking-wider font-extrabold ${isMegaSena ? 'bg-emerald-400 text-emerald-950' : 'bg-amber-400 text-gray-950'} px-2.5 py-0.5 rounded-full shadow-2xs`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[10px] uppercase tracking-wider font-extrabold ${isMegaSena ? 'bg-emerald-400 text-emerald-950' : 'bg-amber-400 text-gray-950'} px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap`}>
                 Resultado Oficial Caixa
               </span>
               {latestResult?.isManual && (
-                <span className="text-[10px] bg-amber-500/30 text-amber-200 px-1.5 py-0.5 rounded font-bold">
+                <span className="text-[10px] bg-amber-500/30 text-amber-200 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
                   ✏️ Manual
                 </span>
               )}
             </div>
-            <h3 className="font-black text-base sm:text-xl mt-1.5 flex flex-wrap items-center gap-1.5 text-white">
-              <span>🎰</span> {isMegaSena ? 'Mega-Sena' : 'Lotofácil'} Concurso #{latestResult?.contest || '---'}
+            <h3 className="font-black text-sm sm:text-xl mt-1.5 flex flex-wrap items-center gap-1.5 text-white">
+              <span>🎰</span>
+              <span>{isMegaSena ? 'Mega-Sena' : 'Lotofácil'} Concurso #{latestResult?.contest || '---'}</span>
               {latestResult?.date && (
-                <span className="text-xs font-normal text-purple-200 font-sans">
-                  ({latestResult.date})
+                <span className="text-xs font-normal text-purple-200 font-sans whitespace-nowrap">
+                  ({formatAnyDateBR(latestResult.date)})
                 </span>
               )}
               {((isMegaSena && latestResult?.prize6Amount) || (!isMegaSena && latestResult?.prize15Amount)) && (
-                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] sm:text-xs px-2 py-0.5 rounded-lg border border-emerald-500/30 flex items-center gap-1 font-bold">
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] sm:text-xs px-2 py-0.5 rounded-lg border border-emerald-500/30 flex items-center gap-1 font-bold whitespace-nowrap tabular-nums">
                   💰 R$ {Number(isMegaSena ? latestResult.prize6Amount : latestResult.prize15Amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </span>
               )}
@@ -1455,20 +1456,20 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
           </div>
 
           {/* Cartão Compacto Integrado do Próximo Sorteio */}
-          <div className="bg-black/35 backdrop-blur-xs border border-white/15 px-3.5 py-2 rounded-xl flex items-center gap-2.5 shadow-inner">
-            <span className="text-xl animate-pulse">🗓️</span>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-amber-300 block uppercase tracking-wider">
+          <div className="bg-black/35 backdrop-blur-xs border border-white/15 px-3 py-2 rounded-xl flex items-center gap-2.5 shadow-inner w-full sm:w-auto">
+            <span className="text-lg sm:text-xl animate-pulse shrink-0">🗓️</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap">
+                <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider whitespace-nowrap">
                   Próximo Concurso #{latestResult?.contest ? Number(latestResult.contest) + 1 : '---'}
                 </span>
                 {latestResult?.nextEstimatedPrize && (
-                  <span className="bg-amber-400 text-gray-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm">
+                  <span className="bg-amber-400 text-gray-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap tabular-nums">
                     R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR')}
                   </span>
                 )}
               </div>
-              <span className="text-xs text-purple-100 font-bold block">
+              <span className="text-[11px] sm:text-xs text-purple-100 font-bold block mt-0.5">
                 {nextDrawInfo.isToday ? `Hoje às 20h00 • ${nextDrawInfo.timeLeft}` : `${nextDrawInfo.statusBadge} às 20h00`}
               </span>
             </div>
@@ -1568,28 +1569,29 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         {/* Dezenas Sorteadas */}
         {drawnNumbers.length > 0 ? (
           <div>
-            <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-start sm:justify-start">
+            <div className={`${isMegaSena ? 'grid grid-cols-6 sm:flex sm:flex-wrap' : 'grid grid-cols-5 sm:flex sm:flex-wrap'} gap-1.5 sm:gap-2 justify-items-center sm:justify-start`}>
               {drawnNumbers.sort((a, b) => a - b).map(num => (
                 <div
                   key={num}
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white text-purple-950 font-black text-xs sm:text-sm flex items-center justify-center shadow-md border-2 border-purple-300"
+                  className="w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-white text-purple-950 font-black text-xs sm:text-sm flex items-center justify-center shadow-md border-2 border-purple-300 tabular-nums"
                 >
                   {String(num).padStart(2, '0')}
                 </div>
               ))}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5 pt-2 border-t border-white/10">
-              <p className="text-[11px] text-purple-200 flex items-center gap-1">
-                <span>✅</span> Dezenas sorteadas do Concurso #{latestResult?.contest} conferindo as apostas do bolão.
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3 pt-2.5 border-t border-white/10">
+              <p className="text-[11px] text-purple-200 flex items-center gap-1.5 leading-snug">
+                <span className="shrink-0">✅</span>
+                <span>Dezenas sorteadas do Concurso #{latestResult?.contest} conferindo as apostas do bolão.</span>
               </p>
 
               {latestResult?.contest && (
-                <div className="text-[11px] bg-amber-400/20 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
-                  <span>📅 Próximo Sorteio:</span> Concurso #{Number(latestResult.contest) + 1}
+                <div className="text-[11px] bg-amber-400/20 text-amber-200 border border-amber-400/30 px-2.5 py-1 rounded-lg font-bold flex flex-wrap items-center justify-between sm:justify-start gap-x-1.5 gap-y-0.5">
+                  <span className="whitespace-nowrap">📅 Próximo: <strong>#{Number(latestResult.contest) + 1}</strong></span>
                   {latestResult?.nextEstimatedPrize ? (
-                    <span className="text-amber-300 ml-1">
-                      • Estimativa: R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    <span className="text-amber-300 font-extrabold whitespace-nowrap tabular-nums">
+                      • R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
                   ) : null}
                 </div>
@@ -1746,44 +1748,44 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       {/* 2. ORDEM SECUNDÁRIA: Tabela / Lista de Apostas do Bolão com Abas (Hoje vs Futuras vs Histórico) */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
         {/* Abas: Jogos de Hoje vs Apostas Futuras vs Histórico Arquivado */}
-        <div className="flex border-b border-gray-200 bg-gray-100/80 p-1 gap-1 text-xs">
+        <div className="grid grid-cols-3 border-b border-gray-200 bg-gray-100/80 p-1 gap-1 text-[11px] sm:text-xs">
           <button
             type="button"
             onClick={() => setGamesTab('today')}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
               gamesTab === 'today'
                 ? 'bg-purple-900 text-white shadow-xs font-black'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
             }`}
           >
             <span>🎯</span>
-            <span>Jogos de Hoje ({todayGames.length})</span>
+            <span className="truncate">Hoje ({todayGames.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setGamesTab('future')}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
               gamesTab === 'future'
                 ? 'bg-purple-900 text-white shadow-xs font-black'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
             }`}
           >
             <span>⏳</span>
-            <span>Apostas Futuras ({futureGames.length})</span>
+            <span className="truncate">Futuras ({futureGames.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setGamesTab('history')}
-            className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
               gamesTab === 'history'
                 ? 'bg-purple-900 text-white shadow-xs font-black'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
             }`}
           >
             <span>📜</span>
-            <span>Histórico ({historyGames.length})</span>
+            <span className="truncate">Histórico ({historyGames.length})</span>
           </button>
         </div>
 
@@ -1957,145 +1959,160 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                         : 'border-gray-200'
                   }`}
                 >
-                  {/* Cabeçalho do Grupo do Concurso - Clicável em qualquer lugar para expandir/recolher */}
+                  {/* Cabeçalho do Grupo do Concurso - Layout Estruturado e Responsivo */}
                   <div 
                     onClick={() => toggleGroup(group.key, !!group.isToday, isFirstGroup)}
-                    className={`p-3 sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2.5 border-b cursor-pointer select-none transition ${
+                    className={`p-3.5 sm:px-5 sm:py-4 flex flex-col gap-3 border-b cursor-pointer select-none transition ${
                       isDayGroup 
-                        ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-900 text-white border-emerald-700/50 hover:brightness-110' 
+                        ? 'bg-gradient-to-br from-emerald-950 via-teal-900 to-emerald-950 text-white border-emerald-700/50 hover:brightness-105' 
                         : group.isFuture 
-                          ? 'bg-gradient-to-r from-blue-950 via-indigo-900 to-blue-900 text-white border-blue-700/50 hover:brightness-110' 
-                          : 'bg-gray-100/90 text-gray-800 border-gray-200 hover:bg-gray-200/80'
+                          ? 'bg-gradient-to-br from-blue-950 via-indigo-900 to-slate-900 text-white border-blue-700/50 hover:brightness-105' 
+                          : 'bg-slate-100 text-gray-800 border-gray-200 hover:bg-slate-200/70'
                     }`}
                     title={isExpanded ? "Clique para recolher este concurso" : "Clique para expandir as apostas deste concurso"}
                   >
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      {isDayGroup ? (
-                        <span className="bg-emerald-500 text-white text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs animate-pulse">
-                          <span className="w-2 h-2 rounded-full bg-white inline-block"></span>
-                          Sorteio do Dia ({group.dateStr})
-                        </span>
-                      ) : group.isTomorrow ? (
-                        <span className="bg-amber-500 text-gray-950 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                          <span>⏳</span> Próximo Sorteio ({group.dateStr})
-                        </span>
-                      ) : group.isFuture ? (
-                        <span className="bg-blue-500 text-white text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                          <span>📅</span> Sorteio Futuro ({group.dateStr})
-                        </span>
-                      ) : (
-                        <span className="bg-gray-300 text-gray-800 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                          <span>📁</span> Histórico ({group.dateStr})
-                        </span>
-                      )}
+                    {/* Linha 1: Status + Título do Concurso + Data */}
+                    <div className="flex items-start sm:items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isDayGroup ? (
+                          <span className="bg-emerald-500 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-xs whitespace-nowrap">
+                            <span className="w-2 h-2 rounded-full bg-white animate-ping inline-block"></span>
+                            Aposta do Dia
+                          </span>
+                        ) : group.isTomorrow ? (
+                          <span className="bg-amber-400 text-gray-950 text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs whitespace-nowrap">
+                            <span>⏳</span> Próximo Sorteio
+                          </span>
+                        ) : group.isFuture ? (
+                          <span className="bg-blue-500 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs whitespace-nowrap">
+                            <span>📅</span> Aposta Futura
+                          </span>
+                        ) : (
+                          <span className="bg-gray-300 text-gray-800 text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1 whitespace-nowrap">
+                            <span>📁</span> Histórico
+                          </span>
+                        )}
 
-                      <span className={`font-black text-sm sm:text-base ${isDayGroup || group.isFuture ? 'text-amber-300' : 'text-purple-950'}`}>
-                        {group.contestTitle}
-                      </span>
+                        <span className={`font-black text-base sm:text-lg tracking-tight whitespace-nowrap ${isDayGroup || group.isFuture ? 'text-amber-300' : 'text-purple-950'}`}>
+                          {group.contestTitle}
+                        </span>
+                      </div>
 
-                      <span className={`text-xs ${isDayGroup || group.isFuture ? 'text-gray-200' : 'text-gray-600'}`}>
-                        • Data: <strong>{group.dateStr}</strong>
-                      </span>
-
-                      <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
-                        isDayGroup || group.isFuture 
-                          ? 'bg-white/15 text-white' 
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 whitespace-nowrap tabular-nums ${
+                        isDayGroup || group.isFuture
+                          ? 'bg-black/25 text-white border border-white/10'
                           : 'bg-white text-gray-700 border border-gray-200'
                       }`}>
-                        {group.games.length} {group.games.length === 1 ? 'aposta' : 'apostas'}
+                        <span>📅</span>
+                        <span>{formatAnyDateBR(group.dateStr)}</span>
                       </span>
-
-                      {group.totalCost > 0 && (
-                        <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
-                          isDayGroup || group.isFuture 
-                            ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40' 
-                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                        }`}>
-                          Custo: R$ {group.totalCost.toFixed(2)}
-                        </span>
-                      )}
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                      {group.totalPrize > 0 && (
-                        <span className="bg-amber-400 text-gray-950 font-black text-xs px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1">
-                          <span>🎉</span> R$ {group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    {/* Linha 2: Métricas (Qtd Apostas, Custo, Prêmio) + Botões de Ação */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                        <span className={`text-xs px-2.5 py-1 rounded-lg font-bold whitespace-nowrap ${
+                          isDayGroup || group.isFuture 
+                            ? 'bg-white/15 text-white border border-white/15' 
+                            : 'bg-white text-gray-700 border border-gray-200'
+                        }`}>
+                          🎟️ {group.games.length} {group.games.length === 1 ? 'aposta' : 'apostas'}
                         </span>
-                      )}
 
-                      {!isDayGroup && !group.isFuture && group.contestNumber && (
+                        {group.totalCost > 0 && (
+                          <span className={`text-xs px-2.5 py-1 rounded-lg font-bold whitespace-nowrap tabular-nums ${
+                            isDayGroup || group.isFuture 
+                              ? 'bg-emerald-500/25 text-emerald-100 border border-emerald-400/30' 
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          }`}>
+                            💰 R$ {group.totalCost.toFixed(2).replace('.', ',')}
+                          </span>
+                        )}
+
+                        {group.totalPrize > 0 && (
+                          <span className="bg-amber-400 text-gray-950 font-black text-xs px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1 whitespace-nowrap tabular-nums">
+                            <span>🎉</span> R$ {group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap ml-auto" onClick={e => e.stopPropagation()}>
+                        {!isDayGroup && !group.isFuture && group.contestNumber && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNavigateContest(group.contestNumber!);
+                            }}
+                            disabled={isUpdatingResult}
+                            className={`text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-40 shadow-xs whitespace-nowrap ${
+                              isGroupOfCurrentResult
+                                ? 'bg-amber-400 text-gray-950 ring-2 ring-amber-300'
+                                : 'bg-purple-900 hover:bg-purple-800 text-white'
+                            }`}
+                            title={`Conferir resultados do Concurso #${group.contestNumber}`}
+                          >
+                            <span>{isGroupOfCurrentResult ? '✓ Conferindo' : '🎯 Conferir'}</span>
+                          </button>
+                        )}
+
+                        {isAdminOrCounselor && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const text = encodeURIComponent(
+                                `🍀 *BALANÇO DO BOLÃO - ${group.contestTitle}* 🍀\n\n` +
+                                `📅 Data: ${formatAnyDateBR(group.dateStr)}\n` +
+                                `🎟️ Total de Apostas: ${group.games.length}\n` +
+                                `💰 Custo Total: R$ ${group.totalCost.toFixed(2)}\n` +
+                                `🏆 Prêmios Ganhos: R$ ${group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
+                                `⭐ Apostas Premiadas: ${group.winningGamesCount}\n\n` +
+                                `📊 Confira o balanço completo no aplicativo do Bolão!`
+                              );
+                              window.open(`https://wa.me/?text=${text}`, '_blank');
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                            title="Enviar balanço deste concurso no WhatsApp"
+                          >
+                            <span>📲</span> WhatsApp
+                          </button>
+                        )}
+
+                        {canDeleteGames && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGroupToDelete(group);
+                            }}
+                            className={`text-xs font-black px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs border whitespace-nowrap ${
+                              isDayGroup || group.isFuture
+                                ? 'bg-red-600/90 hover:bg-red-500 text-white border-red-400/50'
+                                : 'bg-red-100 hover:bg-red-200 text-red-800 border-red-300'
+                            }`}
+                            title="Excluir todas as apostas cadastradas para este concurso"
+                          >
+                            <span>🗑️</span> Excluir
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleNavigateContest(group.contestNumber!);
+                            toggleGroup(group.key, !!group.isToday, isFirstGroup);
                           }}
-                          disabled={isUpdatingResult}
-                          className={`text-xs font-black px-3 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-40 shadow-xs ${
-                            isGroupOfCurrentResult
-                              ? 'bg-amber-400 text-gray-950 ring-2 ring-amber-300'
+                          className={`text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap ${
+                            isDayGroup || group.isFuture
+                              ? 'bg-white text-slate-900 hover:bg-slate-100'
                               : 'bg-purple-900 hover:bg-purple-800 text-white'
                           }`}
-                          title={`Conferir resultados do Concurso #${group.contestNumber}`}
+                          title={isExpanded ? "Recolher apostas deste concurso" : "Expandir para ver as dezenas"}
                         >
-                          <span>{isGroupOfCurrentResult ? '✓ Conferindo este' : '🎯 Conferir Concurso'}</span>
+                          <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
                         </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const text = encodeURIComponent(
-                            `🍀 *BALANÇO DO BOLÃO - ${group.contestTitle}* 🍀\n\n` +
-                            `📅 Data: ${group.dateStr}\n` +
-                            `🎟️ Total de Apostas: ${group.games.length}\n` +
-                            `💰 Custo Total: R$ ${group.totalCost.toFixed(2)}\n` +
-                            `🏆 Prêmios Ganhos: R$ ${group.totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
-                            `⭐ Apostas Premiadas: ${group.winningGamesCount}\n\n` +
-                            `📊 Confira o balanço completo no aplicativo do Bolão!`
-                          );
-                          window.open(`https://wa.me/?text=${text}`, '_blank');
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer"
-                        title="Enviar balanço deste concurso no WhatsApp"
-                      >
-                        <span>📲</span> WhatsApp
-                      </button>
-
-                      {canDeleteGames && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setGroupToDelete(group);
-                          }}
-                          className={`text-xs font-black px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs border ${
-                            isDayGroup || group.isFuture
-                              ? 'bg-red-600 hover:bg-red-500 text-white border-red-400/50'
-                              : 'bg-red-100 hover:bg-red-200 text-red-800 border-red-300'
-                          }`}
-                          title="Excluir todas as apostas cadastradas para este concurso"
-                        >
-                          <span>🗑️</span> Excluir Jogos
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleGroup(group.key, !!group.isToday, isFirstGroup);
-                        }}
-                        className={`text-xs font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs ${
-                          isDayGroup || group.isFuture
-                            ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
-                            : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-                        }`}
-                        title={isExpanded ? "Recolher apostas deste concurso" : "Expandir para ver as dezenas"}
-                      >
-                        <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
-                      </button>
+                      </div>
                     </div>
                   </div>
 
@@ -2295,14 +2312,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                   })() : (
                     <div 
                       onClick={() => toggleGroup(group.key, !!group.isToday, isFirstGroup)}
-                      className="px-4 py-2.5 bg-gray-50/70 hover:bg-gray-100 cursor-pointer flex items-center justify-between text-xs text-gray-600 transition"
+                      className="px-4 py-3 bg-slate-50 hover:bg-purple-50/60 cursor-pointer flex items-center justify-between gap-2 text-xs text-slate-700 transition"
                       title="Clique para expandir as dezenas deste concurso"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">🔒</span>
-                        <span>{group.games.length} {group.games.length === 1 ? 'aposta cadastrada' : 'apostas cadastradas'} (recolhidas).</span>
+                      <div className="flex items-center gap-2 font-medium">
+                        <span className="w-6 h-6 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center text-xs shrink-0">🎟️</span>
+                        <span>
+                          <strong>{group.games.length}</strong> {group.games.length === 1 ? 'aposta pronta para conferência' : 'apostas prontas para conferência'}
+                        </span>
                       </div>
-                      <span className="font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1">
+                      <span className="font-black text-purple-700 bg-purple-100/80 hover:bg-purple-200/80 px-2.5 py-1 rounded-lg flex items-center gap-1 whitespace-nowrap shrink-0 transition">
                         Ver dezenas ▼
                       </span>
                     </div>

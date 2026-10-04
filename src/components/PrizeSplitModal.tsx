@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatFirstAndLastName } from '../lib/formatters';
+import { usePermissions } from '../lib/PermissionsContext';
 
 interface PrizeSplitModalProps {
   totalPrize: number;
@@ -14,6 +15,8 @@ export default function PrizeSplitModal({
   contestName,
   onClose,
 }: PrizeSplitModalProps) {
+  const { isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
   // Filtro de elegibilidade: apenas membros com cota ativa / pagamento "Pago" ou todos
   const [onlyPaid, setOnlyPaid] = useState(true);
 
@@ -110,12 +113,14 @@ export default function PrizeSplitModal({
               <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                 Participantes Contemplados ({eligibleMembers.length} pessoas • {totalEligibleQuotas} cotas)
               </h3>
-              <button
-                onClick={handleCopySummary}
-                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
-              >
-                <span>📲</span> Enviar no WhatsApp
-              </button>
+              {isAdminOrCounselor && (
+                <button
+                  onClick={handleCopySummary}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  <span>📲</span> Enviar no WhatsApp
+                </button>
+              )}
             </div>
 
             <div className="max-h-60 overflow-y-auto overscroll-contain touch-pan-y border border-gray-200 rounded-xl divide-y divide-gray-100">

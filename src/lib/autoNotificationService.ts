@@ -50,7 +50,8 @@ export async function triggerNewContestNotification(contestNum: number) {
     // Also trigger native app / web push notification
     await sendAppNotification('🍀 Novo Concurso', {
       body: formattedMsg,
-      id: contestNum
+      id: contestNum,
+      category: 'new_contest'
     });
 
     // 4. Update the notified contests list
@@ -113,7 +114,8 @@ export async function triggerResultNotification(contestNum: number, winningCount
     } else if (!notifiedList.includes(contestNum)) {
       await sendAppNotification(title, {
         body: formattedMsg,
-        id: contestNum + 500000
+        id: contestNum + 500000,
+        category: 'official_result'
       });
     }
 

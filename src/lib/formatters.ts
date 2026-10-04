@@ -84,6 +84,76 @@ export function formatCPF(cpf?: string | null): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
+/**
+ * Formata qualquer valor de data (string ISO YYYY-MM-DD, DD/MM/YYYY, Date ou Timestamp do Firestore)
+ * obrigatoriamente para o padrão brasileiro DD/MM/AAAA.
+ */
+export function formatAnyDateBR(dateVal: any): string {
+  if (!dateVal) return '';
+
+  let d: Date | null = null;
+
+  if (typeof dateVal.toDate === 'function') {
+    d = dateVal.toDate();
+  } else if (typeof dateVal === 'object' && typeof dateVal.seconds === 'number') {
+    d = new Date(dateVal.seconds * 1000);
+  } else if (typeof dateVal === 'object' && typeof dateVal._seconds === 'number') {
+    d = new Date(dateVal._seconds * 1000);
+  } else if (dateVal instanceof Date) {
+    d = dateVal;
+  } else if (typeof dateVal === 'string') {
+    const trimmed = dateVal.trim();
+    if (!trimmed) return '';
+
+    // Se for YYYY-MM-DD ou ISO com T
+    const datePart = trimmed.split('T')[0].split(' ')[0];
+    if (datePart.includes('-')) {
+      const parts = datePart.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+        } else if (parts[2].length === 4) {
+          return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`;
+        }
+      }
+    }
+
+    // Se for com barra (DD/MM/YYYY ou YYYY/MM/DD ou MM/DD/YYYY)
+    if (datePart.includes('/')) {
+      const parts = datePart.split('/');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+        }
+        const p0 = Number(parts[0]);
+        const p1 = Number(parts[1]);
+        const yearStr = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        // Se o segundo número for > 12 (ex: 10/25/2026), veio em formato americano MM/DD/YYYY
+        if (p1 > 12 && p0 <= 12) {
+          return `${String(p1).padStart(2, '0')}/${String(p0).padStart(2, '0')}/${yearStr}`;
+        }
+        return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yearStr}`;
+      }
+    }
+
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      d = parsed;
+    } else {
+      return trimmed;
+    }
+  }
+
+  if (d && !isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  return String(dateVal);
+}
+
 export function getAppPublicUrl(): string {
   return 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
 }

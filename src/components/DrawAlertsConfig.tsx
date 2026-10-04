@@ -3,6 +3,7 @@ import { doc, updateDoc, getDoc, collection, query, orderBy, limit, onSnapshot }
 import { db, auth, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { usePermissions } from '../lib/PermissionsContext';
 import { downloadOrShareFile } from '../lib/fileDownloadHelper';
 import { 
   requestNotificationPermission, 
@@ -43,6 +44,8 @@ const DAYS_MAP = [
 
 export default function DrawAlertsConfig() {
   const { activePool, setIsQuotaExceeded } = usePool();
+  const { isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
 
@@ -452,7 +455,7 @@ export default function DrawAlertsConfig() {
           </div>
 
           {/* Botões de 1-Clique para Calendário e Lembretes */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className={`grid grid-cols-1 ${isAdminOrCounselor ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2`}>
             <button
               type="button"
               onClick={handleAddToGoogleCalendar}
@@ -472,14 +475,16 @@ export default function DrawAlertsConfig() {
               <span>Baixar Lembrete (.ics / Apple / Outlook)</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleShareWhatsAppReminder}
-              className="bg-emerald-600/80 hover:bg-emerald-600 text-white p-2.5 rounded-xl border border-emerald-500/50 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer group"
-            >
-              <span className="text-base group-hover:scale-110 transition-transform">📢</span>
-              <span>Avisar Grupo no WhatsApp</span>
-            </button>
+            {isAdminOrCounselor && (
+              <button
+                type="button"
+                onClick={handleShareWhatsAppReminder}
+                className="bg-emerald-600/80 hover:bg-emerald-600 text-white p-2.5 rounded-xl border border-emerald-500/50 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">📢</span>
+                <span>Avisar Grupo no WhatsApp</span>
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Bloco 1: Horários de Notificação */}

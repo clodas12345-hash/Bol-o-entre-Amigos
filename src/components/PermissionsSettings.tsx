@@ -289,24 +289,41 @@ export default function PermissionsSettings({ embedded = false }: PermissionsSet
                   {/* Coluna Participante */}
                   <div className="col-span-6 sm:col-span-2 flex flex-col items-center justify-center">
                     <span className="sm:hidden text-[10px] font-bold text-emerald-700 mb-1">Participante</span>
-                    <button
-                      type="button"
-                      disabled={!isRealAdmin}
-                      onClick={() => handleToggle('participant', def.key, isParticipantAllowed)}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed ${
-                        isParticipantAllowed ? 'bg-emerald-600' : 'bg-gray-300'
-                      }`}
-                      title={isRealAdmin ? (isParticipantAllowed ? 'Desativar para Participante' : 'Ativar para Participante') : 'Apenas o Gestor pode alterar'}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                          isParticipantAllowed ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                    <span className={`text-[10px] font-black mt-1 uppercase ${isParticipantAllowed ? 'text-emerald-700' : 'text-gray-400'}`}>
-                      {isParticipantAllowed ? 'Liberado' : 'Bloqueado'}
-                    </span>
+                    {(() => {
+                      const isWhatsAppRestrictedForParticipant =
+                        def.key === 'whatsapp_view' ||
+                        def.key === 'whatsapp_broadcast' ||
+                        def.key === 'members_send_reminder';
+                      const effectiveParticipantAllowed = isWhatsAppRestrictedForParticipant ? false : isParticipantAllowed;
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!isRealAdmin || isWhatsAppRestrictedForParticipant}
+                            onClick={() => handleToggle('participant', def.key, effectiveParticipantAllowed)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed ${
+                              effectiveParticipantAllowed ? 'bg-emerald-600' : 'bg-gray-300'
+                            }`}
+                            title={
+                              isWhatsAppRestrictedForParticipant
+                                ? 'Participantes não podem enviar mensagens pelo WhatsApp'
+                                : isRealAdmin
+                                ? (effectiveParticipantAllowed ? 'Desativar para Participante' : 'Ativar para Participante')
+                                : 'Apenas o Gestor pode alterar'
+                            }
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                effectiveParticipantAllowed ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                          <span className={`text-[10px] font-black mt-1 uppercase ${effectiveParticipantAllowed ? 'text-emerald-700' : 'text-gray-400'}`}>
+                            {effectiveParticipantAllowed ? 'Liberado' : 'Bloqueado'}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               );

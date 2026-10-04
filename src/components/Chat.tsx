@@ -1,15 +1,47 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, setDoc, deleteDoc, limit } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { formatFirstAndLastName } from '../lib/formatters';
-import PageHeader from './PageHeader';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { getIsAdmin } from '../lib/authHelpers';
 import { usePermissions } from '../lib/PermissionsContext';
 import { containsBadWords } from '../lib/profanityFilter';
+import { Camera, Image as ImageIcon, Mic, AtSign, Bot, Send, Reply, Smile, Trash2, Lock, Unlock, Sparkles, X, Check, AlertTriangle, ArrowLeft, EyeOff } from 'lucide-react';
+
+function formatMessageTime(dateVal: any): string {
+  if (!dateVal) return '';
+  try {
+    const d = typeof dateVal.toDate === 'function'
+      ? dateVal.toDate()
+      : (typeof dateVal.seconds === 'number' ? new Date(dateVal.seconds * 1000) : new Date(dateVal));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+function getSenderColor(name: string): string {
+  const colors = [
+    'text-emerald-700',
+    'text-blue-700',
+    'text-amber-700',
+    'text-rose-700',
+    'text-teal-700',
+    'text-indigo-700',
+    'text-cyan-700'
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
 
 export default function Chat() {
+  const navigate = useNavigate();
   const { setIsQuotaExceeded, activePool } = usePool();
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -17,7 +49,12 @@ export default function Chat() {
   const [isChatLocked, setIsChatLocked] = useState(false);
   const [lockedByInfo, setLockedByInfo] = useState<string | null>(null);
   const [activeZoomImage, setActiveZoomImage] = useState<string | null>(null);
+  const [selectedActionMsgId, setSelectedActionMsgId] = useState<string | null>(null);
+  const [showCameraOptions, setShowCameraOptions] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const cameraCaptureInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
 
   const [aiLearnings, setAiLearnings] = useState<any[]>([]);
   const [autoAiEnabled, setAutoAiEnabled] = useState<boolean>(() => {
@@ -28,54 +65,105 @@ export default function Chat() {
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const voiceBaseTextRef = useRef<string>('');
+  const isStoppingVoiceRef = useRef<boolean>(false);
+
+  const stopVoiceRecognitionSafely = () => {
+    isStoppingVoiceRef.current = true;
+    voiceBaseTextRef.current = '';
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.abort?.();
+        recognitionRef.current.stop?.();
+      } catch (e) {
+        console.warn(e);
+      }
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopVoiceRecognitionSafely();
+    };
+  }, []);
 
   const startVoiceToText = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      addToast('Seu dispositivo ou navegador não suporta a escuta nativa de voz. Digite a mensagem manualmente.', 'error');
+      addToast('Seu dispositivo ou navegador não suporta ditado por voz. Digite a mensagem ou use o microfone do teclado.', 'error');
       return;
     }
 
     if (isListening) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) { console.warn(e); }
-      }
-      setIsListening(false);
+      stopVoiceRecognitionSafely();
       return;
     }
 
     try {
+      stopVoiceRecognitionSafely();
+      isStoppingVoiceRef.current = false;
+      voiceBaseTextRef.current = newMessage.trim();
+
       const recognition = new SpeechRecognition();
       recognition.lang = 'pt-BR';
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
-        setIsListening(true);
-        addToast('🎙️ Ouvindo seu áudio... Fale normalmente para converter em mensagem de texto!', 'info');
+        if (!isStoppingVoiceRef.current) {
+          setIsListening(true);
+        }
       };
 
       recognition.onresult = (event: any) => {
-        let currentTranscript = '';
+        if (isStoppingVoiceRef.current) return;
+        if (!event.results || event.results.length === 0) return;
+
+        const transcripts: string[] = [];
         for (let i = 0; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript;
+          const t = (event.results[i][0]?.transcript || '').trim();
+          if (!t) continue;
+          if (transcripts.length > 0) {
+            const prev = transcripts[transcripts.length - 1];
+            const prevLower = prev.toLowerCase();
+            const curLower = t.toLowerCase();
+            if (curLower.startsWith(prevLower) || curLower.includes(prevLower)) {
+              transcripts[transcripts.length - 1] = t;
+              continue;
+            }
+            if (prevLower.startsWith(curLower)) {
+              continue;
+            }
+          }
+          transcripts.push(t);
         }
-        if (currentTranscript.trim()) {
-          setNewMessage(currentTranscript);
+
+        const spokenText = transcripts.join(' ').replace(/\s+/g, ' ').trim();
+        if (spokenText && !isStoppingVoiceRef.current) {
+          const base = voiceBaseTextRef.current;
+          setNewMessage(base ? `${base} ${spokenText}` : spokenText);
         }
       };
 
       recognition.onerror = (event: any) => {
         console.warn('Erro no áudio de voz:', event.error);
         setIsListening(false);
-        if (event.error !== 'no-speech') {
-          addToast('Não foi possível compreender o áudio. Tente falar novamente mais perto do microfone.', 'error');
+        recognitionRef.current = null;
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          addToast('Não foi possível compreender o áudio. Tente falar novamente.', 'error');
         }
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        recognitionRef.current = null;
       };
 
       recognitionRef.current = recognition;
@@ -83,6 +171,7 @@ export default function Chat() {
     } catch (err) {
       console.error('Erro ao acessar microfone:', err);
       setIsListening(false);
+      recognitionRef.current = null;
       addToast('Erro ao iniciar escuta do microfone.', 'error');
     }
   };
@@ -117,11 +206,9 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    // Limitamos as últimas 100 mensagens para economizar cota e melhorar performance
     const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(100));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Revertemos para exibir em ordem cronológica (asc)
       setMessages(list.reverse());
     }, err => {
       console.warn('Messages snapshot error:', err);
@@ -146,7 +233,7 @@ export default function Chat() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length]);
 
   // Efeito para a IA responder automaticamente perguntas no chat em tempo real
   useEffect(() => {
@@ -166,11 +253,11 @@ export default function Chat() {
         msg.id &&
         msg.status === 'approved' &&
         !msg.deleted &&
+        !msg.photoHiddenForModeration &&
         !msg.isAiBot &&
         msg.uid !== 'bot_ai_assistant' &&
         !processedMsgIdsRef.current.has(msg.id)
       ) {
-        // Verifica se já existe resposta da IA para esta mensagem
         const alreadyAnsweredByAi = messages.some(
           m => m.isAiBot && m.replyTo?.id === msg.id
         );
@@ -185,7 +272,6 @@ export default function Chat() {
 
         if (isQuestion) {
           processedMsgIdsRef.current.add(msg.id);
-          // Aguarda 1.5s para dar tempo de renderizar e responder
           setTimeout(() => {
             askAiAssistant(msg.text, msg.id, msg.displayName);
           }, 1500);
@@ -221,29 +307,67 @@ export default function Chat() {
     }
   };
 
-  const deleteMessage = async (msgId: string) => {
-    try {
-      const currentUser = getCurrentUser();
-      const moderatorTitle = isAdmin ? 'Administrador' : (isCounselor ? 'Conselheiro' : 'Participante');
-      const moderatorName = currentUser.displayName || 'Moderador';
-      const deletedByFormatted = `${formatFirstAndLastName(moderatorName)} (${moderatorTitle})`;
+  const deleteMessage = async (msg: any) => {
+    const msgId = msg.id;
+    const currentUser = getCurrentUser();
+    const moderatorTitle = isAdmin ? 'Administrador' : (isCounselor ? 'Conselheiro' : 'Participante');
+    const moderatorName = currentUser.displayName || 'Participante';
+    const actorFormatted = `${formatFirstAndLastName(moderatorName)} (${moderatorTitle})`;
 
+    // Se for uma FOTO, deixa ela OFF (oculta) para um moderador verificar se há conteúdo inapropriado
+    if (msg.imageUrl) {
+      try {
+        await updateDoc(doc(db, 'messages', msgId), {
+          photoHiddenForModeration: true,
+          hiddenBy: actorFormatted,
+          hiddenAt: serverTimestamp(),
+          status: 'pending_photo_moderation'
+        });
+        setSelectedActionMsgId(null);
+        addToast('📷 Foto deixada OFF e encaminhada para verificação de um moderador!', 'info');
+      } catch (err) {
+        console.error('Erro ao ocultar foto para moderação:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
+        addToast('Erro ao sinalizar foto para moderação.', 'error');
+      }
+      return;
+    }
+
+    try {
       await updateDoc(doc(db, 'messages', msgId), {
         deleted: true,
-        deletedBy: deletedByFormatted,
+        deletedBy: actorFormatted,
         deletedAt: serverTimestamp()
       });
+      setSelectedActionMsgId(null);
       addToast('Mensagem apagada com sucesso!', 'success');
     } catch (err) {
       console.warn('Erro ao atualizar mensagem, executando exclusao direta:', err);
       try {
         await deleteDoc(doc(db, 'messages', msgId));
+        setSelectedActionMsgId(null);
         addToast('Mensagem apagada com sucesso!', 'success');
       } catch (deleteErr) {
         console.error('Erro ao apagar mensagem:', deleteErr);
         if (isQuotaError(deleteErr)) setIsQuotaExceeded(true);
         addToast('Erro ao apagar mensagem no chat.', 'error');
       }
+    }
+  };
+
+  const approveHiddenPhoto = async (msgId: string) => {
+    try {
+      const currentUser = getCurrentUser();
+      await updateDoc(doc(db, 'messages', msgId), {
+        photoHiddenForModeration: false,
+        status: 'approved',
+        approvedBy: currentUser.displayName,
+        approvedAt: serverTimestamp()
+      });
+      addToast('✅ Foto verificada e liberada novamente no chat!', 'success');
+    } catch (err) {
+      console.error('Erro ao liberar foto:', err);
+      addToast('Erro ao liberar foto.', 'error');
     }
   };
 
@@ -276,7 +400,7 @@ export default function Chat() {
   const rejectMessage = async (msgId: string) => {
     try {
       await deleteDoc(doc(db, 'messages', msgId));
-      addToast('Mensagem rejeitada e removida.', 'info');
+      addToast('Conteúdo rejeitado e excluído definitivamente.', 'info');
     } catch (err) {
       console.error('Erro ao rejeitar mensagem:', err);
       addToast('Erro ao rejeitar mensagem.', 'error');
@@ -285,10 +409,12 @@ export default function Chat() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    setShowCameraOptions(false);
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      addToast('A imagem é muito grande. Escolha uma imagem de até 2MB.', 'error');
+    if (file.size > 4 * 1024 * 1024) {
+      addToast('A imagem é muito grande. Escolha uma imagem de até 4MB.', 'error');
+      e.target.value = '';
       return;
     }
 
@@ -300,6 +426,7 @@ export default function Chat() {
       }
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const getCurrentUser = () => {
@@ -339,9 +466,10 @@ export default function Chat() {
         createdAt: serverTimestamp(),
         uid: currentUser.uid,
         displayName: currentUser.displayName,
-        status: 'approved'
+        status: 'approved',
+        photoHiddenForModeration: false
       });
-      addToast('Foto enviada com sucesso!', 'success');
+      addToast('📷 Foto enviada com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao enviar imagem:', err);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
@@ -458,6 +586,7 @@ export default function Chat() {
         reactions: newReactions
       });
       setActiveReactionMsgId(null);
+      setSelectedActionMsgId(null);
     } catch (err) {
       console.error('Erro ao reagir:', err);
     }
@@ -471,10 +600,10 @@ export default function Chat() {
         return (
           <span 
             key={index} 
-            className={`font-black px-1.5 py-0.5 rounded-md text-[11px] sm:text-xs inline-block my-0.5 mx-0.5 shadow-2xs ${
+            className={`font-black px-1.5 py-0.5 rounded-md text-[11px] sm:text-xs inline-block my-0.5 mx-0.5 ${
               isMe 
-                ? 'bg-white/30 text-white border border-white/40' 
-                : 'bg-blue-100 text-blue-900 border border-blue-200 font-extrabold'
+                ? 'bg-emerald-900/15 text-emerald-950 font-extrabold' 
+                : 'bg-blue-100 text-blue-900 font-extrabold'
             }`}
           >
             {part}
@@ -487,6 +616,7 @@ export default function Chat() {
 
   const askAiAssistant = async (questionText: string, targetMsgId?: string, targetDisplayName?: string) => {
     try {
+      setSelectedActionMsgId(null);
       addToast('🤖 IA do Bolão analisando e gerando resposta...', 'info');
       const recentHistory = messages.slice(-20).map(m => ({
         displayName: m.displayName,
@@ -536,27 +666,68 @@ export default function Chat() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    const sentText = newMessage.trim();
+    if (!sentText || isSending) return;
+
     if (isChatLocked && !canModerate) {
       addToast('O chat está travado pela moderação. Apenas Administradores e Conselheiros podem enviar mensagens.', 'error');
       return;
     }
 
-    setIsSending(true);
-    const currentUser = getCurrentUser();
-    const badWordsCheck = containsBadWords(newMessage.trim());
+    // 1. Para o reconhecimento de voz imediatamente e limpa o campo na hora (sem travar a tela!)
+    stopVoiceRecognitionSafely();
+    setNewMessage('');
 
-    // Se o usuário não for moderador e contiver palavras de baixo calão, necessita aprovação
+    const currentReply = replyingTo;
+    setReplyingTo(null);
+    setShowMentionDropdown(false);
+    setShowCameraOptions(false);
+
+    const currentUser = getCurrentUser();
+    const badWordsCheck = containsBadWords(sentText);
+
     const needsApproval = !canModerate && badWordsCheck.hasBadWords;
     const msgStatus = needsApproval ? 'pending_approval' : 'approved';
 
-    const replyData = replyingTo ? {
-      id: replyingTo.id,
-      displayName: replyingTo.displayName,
-      text: replyingTo.text || (replyingTo.imageUrl ? '📷 Foto' : '')
+    const replyData = currentReply ? {
+      id: currentReply.id,
+      displayName: currentReply.displayName,
+      text: currentReply.text || (currentReply.imageUrl ? '📷 Foto' : ''),
+      uid: currentReply.uid || null
     } : null;
 
-    const sentText = newMessage.trim();
+    // Detecta se alguém foi marcado (@Nome, @Todos ou @Administradores)
+    const lowerSentText = sentText.toLowerCase();
+    const hasAtMention = /@[\wÁ-ÿ]+/.test(sentText);
+    const mentionEveryone = /@(todos|todo\s*mundo|grupo)\b/i.test(sentText);
+    const mentionAdmins = /@(administradores|admins|admin|moderadores)\b/i.test(sentText);
+
+    const mentionedMemberTargets: { id: string; uid?: string; displayName: string }[] = [];
+    if (hasAtMention && !mentionEveryone) {
+      membersList.forEach(m => {
+        const mName = String(m.displayName || m.name || '').trim();
+        if (!mName) return;
+        const mNameLower = mName.toLowerCase();
+        const firstNameLower = mNameLower.split(/\s+/)[0];
+        if (
+          lowerSentText.includes(`@${mNameLower}`) ||
+          (firstNameLower.length >= 2 && new RegExp(`@${firstNameLower}\\b`, 'i').test(sentText))
+        ) {
+          mentionedMemberTargets.push({
+            id: m.id,
+            uid: m.uid || m.id,
+            displayName: mName
+          });
+        }
+      });
+    }
+
+    const mentionedUserIds = Array.from(
+      new Set(
+        mentionedMemberTargets.flatMap(t => [t.id, t.uid].filter(Boolean) as string[])
+      )
+    );
+    const mentionedNames = mentionedMemberTargets.map(t => t.displayName.toLowerCase());
 
     try {
       const docRef = await addDoc(collection(db, 'messages'), {
@@ -567,33 +738,60 @@ export default function Chat() {
         displayName: currentUser.displayName,
         status: msgStatus,
         flaggedWords: badWordsCheck.foundWords || [],
-        replyTo: replyData
+        replyTo: replyData,
+        hasMentions: hasAtMention,
+        mentionEveryone,
+        mentionAdmins,
+        mentionedUserIds,
+        mentionedNames
       });
 
-      // Aprendizado Contínuo da IA: Se um Administrador ou Conselheiro enviou a mensagem, a IA grava o aprendizado
-      if (canModerate && sentText.length > 3) {
-        try {
-          await addDoc(collection(db, 'ai_learnings'), {
-            topic: sentText.slice(0, 80),
-            question: replyingTo?.text || 'Instrução do Administrador/Conselheiro',
-            answer: sentText,
-            author: `${currentUser.displayName} (${isAdmin ? 'Administrador' : 'Conselheiro'})`,
+      // Se houver menção explícita e a mensagem estiver aprovada:
+      // - Se for @Todos -> todos recebem notificação
+      // - Se for @Pessoa específica -> APENAS a pessoa marcada recebe a notificação
+      if (!needsApproval && hasAtMention) {
+        if (mentionEveryone) {
+          addDoc(collection(db, 'notifications'), {
+            userId: 'all',
+            title: `📢 ${formatFirstAndLastName(currentUser.displayName)} marcou @Todos no Chat`,
+            message: sentText.slice(0, 120),
+            type: 'chat',
+            read: false,
             createdAt: serverTimestamp()
+          }).catch(() => {});
+        } else if (mentionedUserIds.length > 0) {
+          mentionedUserIds.forEach(targetUid => {
+            if (targetUid && targetUid !== currentUser.uid) {
+              addDoc(collection(db, 'notifications'), {
+                userId: targetUid,
+                title: `💬 ${formatFirstAndLastName(currentUser.displayName)} marcou você no Chat`,
+                message: sentText.slice(0, 120),
+                type: 'chat',
+                isDirectMention: true,
+                read: false,
+                createdAt: serverTimestamp()
+              }).catch(() => {});
+            }
           });
-        } catch (learnErr) {
-          console.warn('Erro ao gravar aprendizado na IA:', learnErr);
         }
       }
 
-      setNewMessage('');
-      setReplyingTo(null);
+      // Grava aprendizado em background sem bloquear
+      if (canModerate && sentText.length > 3) {
+        addDoc(collection(db, 'ai_learnings'), {
+          topic: sentText.slice(0, 80),
+          question: currentReply?.text || 'Instrução do Administrador/Conselheiro',
+          answer: sentText,
+          author: `${currentUser.displayName} (${isAdmin ? 'Administrador' : 'Conselheiro'})`,
+          createdAt: serverTimestamp()
+        }).catch(learnErr => {
+          console.warn('Erro ao gravar aprendizado na IA:', learnErr);
+        });
+      }
 
       if (needsApproval) {
         addToast('⚠️ Sua mensagem contém termos de baixo calão e precisa de autorização de um Conselheiro ou Administrador para ser publicada.', 'info');
       } else {
-        addToast('Mensagem enviada!', 'success');
-
-        // Se a mensagem contiver @IA, @Assistente ou for uma dúvida explícita
         const lowerText = sentText.toLowerCase();
         const isAiQuestion = lowerText.includes('@ia') || lowerText.includes('@assistente') || lowerText.includes('@bot') ||
           (lowerText.includes('?') && (lowerText.includes('quanto') || lowerText.includes('qual') || lowerText.includes('pix') || lowerText.includes('cota') || lowerText.includes('pagar') || lowerText.includes('valor') || lowerText.includes('colaborar')));
@@ -606,203 +804,357 @@ export default function Chat() {
       }
     } catch (err) {
       console.error('Erro ao enviar mensagem:', err);
+      setNewMessage(sentText);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
       addToast('Erro ao enviar mensagem.', 'error');
-    } finally {
-      setIsSending(false);
     }
   };
 
-  const pendingApprovalCount = messages.filter(m => m.status === 'pending_approval').length;
+  const pendingApprovalCount = messages.filter(
+    m => m.status === 'pending_approval' || m.photoHiddenForModeration || m.status === 'pending_photo_moderation'
+  ).length;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-3">
-      <PageHeader
-        title="Chat do Grupo do Bolão"
-        subtitle="Conversas, avisos de sorteio e envio de comprovantes em tempo real"
-        icon="💬"
-      />
-
-      <div className="flex flex-col h-[calc(100vh-190px)] border border-gray-200 rounded-xl bg-white shadow-xs overflow-hidden">
-        {/* Barra superior de status do chat */}
-        <div className="bg-gray-100 px-3 sm:px-4 py-2 border-b flex justify-between items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`w-2.5 h-2.5 rounded-full ${isChatLocked ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`}></span>
-            <span className="text-xs font-bold text-gray-800">
-              {isChatLocked 
-                ? `🔒 Chat Fechado ${lockedByInfo ? `por ${lockedByInfo}` : '(Modo Ordem)'}` 
-                : '🟢 Chat Aberto'}
-            </span>
-
-            {/* Badge de Aprendizado Contínuo da IA */}
-            <span 
-              className="text-[10px] sm:text-xs bg-purple-50 text-purple-800 border border-purple-200 font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs"
-              title="Respostas do Administrador e Conselheiros registradas que alimentam a IA"
+    <div className="max-w-4xl mx-auto">
+      <div className="flex flex-col h-[calc(100vh-88px)] min-h-[460px] border border-slate-200/90 rounded-2xl bg-[#efeae2] shadow-lg overflow-hidden relative">
+        {/* Header Único do Chat com Botão Voltar Integrado */}
+        <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-emerald-950 text-white px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-sm z-20 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="h-9 px-2.5 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white flex items-center gap-1 text-xs font-bold transition cursor-pointer shrink-0 border border-white/20"
+              title="Voltar para o início"
             >
-              🧠 {aiLearnings.length} Resposta(s) Aprendida(s)
-            </span>
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar</span>
+            </button>
+
+            <div className="relative shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/15 backdrop-blur-xs flex items-center justify-center text-sm sm:text-base border border-white/20 shadow-inner">
+                🍀
+              </div>
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-emerald-950 ${
+                  isChatLocked ? 'bg-red-500 animate-pulse' : 'bg-emerald-400'
+                }`}
+              />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-xs sm:text-sm font-black tracking-tight text-white truncate">
+                  {activePool?.name || 'Chat do Bolão'}
+                </h3>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-emerald-200/90 font-medium truncate">
+                <span>
+                  {isChatLocked
+                    ? `Trancado ${lockedByInfo ? `por ${lockedByInfo}` : ''}`
+                    : 'Chat aberto'}
+                </span>
+                <span>·</span>
+                <span className="inline-flex items-center gap-0.5 text-emerald-300 font-semibold">
+                  <Sparkles className="w-2.5 h-2.5" />
+                  {aiLearnings.length} IA
+                </span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
+              type="button"
               onClick={toggleAutoAi}
-              className={`text-xs px-2.5 py-1 rounded-lg font-extrabold transition cursor-pointer flex items-center gap-1 shadow-2xs border ${
+              className={`h-8 px-2.5 rounded-xl text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5 border whitespace-nowrap ${
                 autoAiEnabled
-                  ? 'bg-purple-700 hover:bg-purple-800 text-white border-purple-800'
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700 border-gray-300'
+                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border-emerald-400/40'
+                  : 'bg-white/10 hover:bg-white/15 text-white/70 border-white/15'
               }`}
-              title="Ligar/Desligar resposta automática da IA para perguntas em tempo real"
+              title="Ligar/Desligar resposta automática da IA para dúvidas no chat"
             >
-              <span>{autoAiEnabled ? '🤖 IA Automática ON' : '⏸️ IA Automática OFF'}</span>
+              <Bot className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">IA Auto</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${autoAiEnabled ? 'bg-emerald-400' : 'bg-gray-400'}`} />
             </button>
 
             {canModerate && (
               <button
+                type="button"
                 onClick={toggleChatLock}
-                className={`text-xs px-2.5 py-1 rounded-lg font-black transition cursor-pointer flex items-center gap-1 shadow-2xs ${
-                  isChatLocked 
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
-                    : 'bg-red-600 hover:bg-red-700 text-white'
+                className={`h-8 px-2.5 rounded-xl text-[11px] font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap ${
+                  isChatLocked
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 shadow-xs'
+                    : 'bg-red-500/20 hover:bg-red-500/30 text-red-100 border border-red-400/30'
                 }`}
                 title={isChatLocked ? 'Liberar chat para todos os participantes' : 'Travar chat (apenas moderadores poderão postar)'}
               >
-                {isChatLocked ? '🔓 Destravar' : '🔒 Travar'}
+                {isChatLocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{isChatLocked ? 'Destravar' : 'Travar'}</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Alerta de Mensagens Pendentes para Moderadores */}
+        {/* Alerta de Mensagens/Fotos Pendentes para Moderadores */}
         {canModerate && pendingApprovalCount > 0 && (
-          <div className="bg-amber-500 text-white text-xs px-4 py-2 font-bold flex items-center justify-between border-b border-amber-600 shadow-2xs animate-pulse">
+          <div className="bg-amber-500 text-white text-xs px-3.5 py-2 font-bold flex items-center justify-between border-b border-amber-600 shadow-xs z-10">
             <span className="flex items-center gap-1.5">
-              <span>⚠️</span> {pendingApprovalCount} mensagem(ns) com linguagem sensível aguardando sua análise e aprovação abaixo.
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{pendingApprovalCount} item(ns) aguardando verificação da moderação.</span>
             </span>
           </div>
         )}
 
-        {/* Lista de Mensagens */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
+        {/* Área de Mensagens com fundo suave estilo WhatsApp */}
+        <div
+          className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-2 relative"
+          onClick={() => {
+            if (selectedActionMsgId) setSelectedActionMsgId(null);
+            if (activeReactionMsgId) setActiveReactionMsgId(null);
+            if (showCameraOptions) setShowCameraOptions(false);
+          }}
+        >
           {messages.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-400 text-xs italic">
-              Nenhuma mensagem ainda. Seja o primeiro a mandar um olá ou enviar um comprovante!
+            <div className="h-full flex flex-col items-center justify-center text-center p-6">
+              <div className="bg-white/90 backdrop-blur-xs px-5 py-4 rounded-2xl shadow-xs border border-black/5 max-w-xs space-y-1.5">
+                <div className="text-2xl">💬</div>
+                <p className="text-xs font-bold text-slate-700">Nenhuma mensagem ainda</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Envie uma mensagem para o grupo, tire dúvidas ou compartilhe seu comprovante!
+                </p>
+              </div>
             </div>
           ) : (
-            messages.map(msg => {
+            messages.map((msg, idx) => {
               const activeUser = getCurrentUser();
               const isMe = msg.uid === activeUser.uid || (msg.displayName && activeUser.displayName && msg.displayName === activeUser.displayName);
-              const canDeleteThisMsg = canModerate || isMe;
+              const isAi = !!msg.isAiBot || msg.uid === 'bot_ai_assistant';
+              const isPhotoMsg = !!msg.imageUrl;
+              const isPhotoHidden = !!msg.photoHiddenForModeration || msg.status === 'pending_photo_moderation';
+              // Qualquer participante pode deletar/ocultar fotos para revisão de moderador; mensagens de texto seguem autor ou moderador
+              const canDeleteThisMsg = canModerate || isMe || isPhotoMsg;
               const isPending = msg.status === 'pending_approval';
+              const isActionOpen = selectedActionMsgId === msg.id;
 
-              // Se a mensagem está pendente e o usuário não for moderador nem autor, oculta a mensagem
+              const prevMsg = idx > 0 ? messages[idx - 1] : null;
+              const isSameAuthorAsPrev = prevMsg && !prevMsg.deleted && !prevMsg.photoHiddenForModeration && prevMsg.uid === msg.uid && prevMsg.displayName === msg.displayName;
+              const timeStr = formatMessageTime(msg.createdAt);
+              const senderName = formatFirstAndLastName(msg.displayName);
+
               if (isPending && !canModerate && !isMe) {
                 return null;
               }
 
+              // Foto que foi deletada/ocultada (OFF) para um moderador verificar conteúdo inapropriado
+              if (isPhotoHidden && !msg.deleted) {
+                return (
+                  <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} my-1.5`}>
+                    {canModerate ? (
+                      <div className="p-3 rounded-2xl max-w-[88%] sm:max-w-md bg-amber-50 border-2 border-amber-400 text-amber-950 shadow-md space-y-2.5 text-xs">
+                        <div className="flex items-center justify-between gap-2 border-b border-amber-200 pb-1.5">
+                          <span className="font-black text-amber-900 flex items-center gap-1.5 text-[11px]">
+                            <EyeOff className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Foto OFF para Verificação de Moderador</span>
+                          </span>
+                          <span className="text-[10px] font-bold bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-full">
+                            De: {senderName}
+                          </span>
+                        </div>
+
+                        {msg.hiddenBy && (
+                          <p className="text-[11px] text-amber-800">
+                            Sinalizada / ocultada por: <strong>{msg.hiddenBy}</strong>
+                          </p>
+                        )}
+
+                        {msg.imageUrl && (
+                          <div
+                            onClick={() => setActiveZoomImage(msg.imageUrl)}
+                            className="relative rounded-xl overflow-hidden border border-amber-300 bg-black/5 cursor-pointer group"
+                          >
+                            <img
+                              src={msg.imageUrl}
+                              alt="Foto em análise pela moderação"
+                              className="max-w-full max-h-56 object-contain mx-auto"
+                            />
+                            <span className="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                              🔍 Toque para ampliar
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => hardDeleteMessage(msg.id)}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded-xl text-[11px] transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Excluir Definitivamente
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => approveHiddenPhoto(msg.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-[11px] transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Liberar Foto
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="px-3.5 py-2 rounded-xl max-w-[85%] sm:max-w-md text-[11px] bg-amber-50/90 border border-amber-300/90 text-amber-900 flex items-center gap-2 shadow-2xs">
+                        <EyeOff className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          📷 Foto ocultada (OFF) aguardando verificação de um moderador.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               if (msg.deleted) {
                 return (
-                  <div key={msg.id} className={`flex flex-col group/msg ${isMe ? 'items-end' : 'items-start'} my-1.5`}>
-                    <div className="flex items-center gap-1.5 mb-1 px-1 flex-wrap">
-                      <span className="text-[11px] text-gray-500 font-medium">
-                        {formatFirstAndLastName(msg.displayName)}
-                      </span>
-                      <span className="text-[10px] bg-red-100 text-red-800 border border-red-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-2xs">
-                        <span>🚫</span> Mensagem apagada por <strong className="font-extrabold">{msg.deletedBy || 'Moderação'}</strong>
+                  <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} my-1`}>
+                    <div
+                      className={`px-3 py-1.5 rounded-xl max-w-[82%] sm:max-w-md text-[11px] bg-white/75 border border-slate-300/80 text-slate-500 italic flex items-center gap-2 shadow-2xs`}
+                    >
+                      <span>🚫</span>
+                      <span>
+                        Mensagem apagada por <strong className="font-semibold not-italic">{msg.deletedBy || 'Moderação'}</strong>
                       </span>
                       {canModerate && (
                         <button
-                          onClick={() => hardDeleteMessage(msg.id)}
-                          className="text-red-600 hover:text-red-800 text-[10px] font-bold cursor-pointer hover:underline"
-                          title="Excluir permanentemente do banco de dados"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            hardDeleteMessage(msg.id);
+                          }}
+                          className="text-red-600 hover:text-red-800 text-[10px] font-bold not-italic cursor-pointer underline ml-1"
+                          title="Excluir permanentemente do banco"
                         >
-                          [Remover Definitivo]
+                          Remover
                         </button>
-                      )}
-                    </div>
-                    <div
-                      className={`p-3 rounded-2xl max-w-[85%] sm:max-w-md shadow-2xs text-xs sm:text-sm bg-gray-100 border border-gray-300 text-gray-500 italic relative ${
-                        isMe ? 'rounded-tr-none' : 'rounded-tl-none'
-                      }`}
-                    >
-                      {msg.text && (
-                        <p className="whitespace-pre-wrap leading-relaxed line-through decoration-red-500 decoration-2">
-                          {msg.text}
-                        </p>
-                      )}
-                      {msg.imageUrl && (
-                        <div className="mt-2 relative rounded-lg overflow-hidden border border-gray-300">
-                          <img
-                            src={msg.imageUrl}
-                            alt="Foto Apagada"
-                            className="max-w-full max-h-40 object-contain bg-gray-200 opacity-40 filter grayscale"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white font-extrabold text-xs">
-                            📷 [Imagem Apagada]
-                          </div>
-                        </div>
                       )}
                     </div>
                   </div>
                 );
               }
 
-              return (
-                <div key={msg.id} className={`flex flex-col group/msg relative ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-1.5 mb-0.5 px-1 flex-wrap">
-                    <span className="text-[11px] text-gray-500 font-bold">
-                      {formatFirstAndLastName(msg.displayName)}
-                    </span>
-
-                    {/* Botões do WhatsApp (Responder, Reagir, Apagar) */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setReplyingTo(msg)}
-                        className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md transition flex items-center gap-0.5 cursor-pointer shadow-2xs"
-                        title="Responder esta mensagem"
-                      >
-                        <span>↩️</span>
-                        <span>Responder</span>
-                      </button>
-
-                      {!msg.isAiBot && msg.text && (
-                        <button
-                          onClick={() => askAiAssistant(msg.text, msg.id, msg.displayName)}
-                          className="text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md transition flex items-center gap-0.5 cursor-pointer shadow-2xs"
-                          title="Pedir para a IA responder essa dúvida com base nas regras do grupo"
-                        >
-                          <span>🤖 IA Responde</span>
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id)}
-                        className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md transition flex items-center gap-0.5 cursor-pointer shadow-2xs"
-                        title="Reagir com emoji"
-                      >
-                        <span>😀</span>
-                      </button>
-
-                      {canDeleteThisMsg && !isPending && (
-                        <button
-                          onClick={() => deleteMessage(msg.id)}
-                          className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md transition flex items-center gap-0.5 cursor-pointer"
-                          title="Excluir mensagem"
-                        >
-                          <span>🗑️</span>
-                          <span>Apagar</span>
-                        </button>
+              if (isPending) {
+                return (
+                  <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} my-1.5`}>
+                    <div className="p-3 rounded-2xl max-w-[88%] sm:max-w-md bg-amber-50 border-2 border-amber-400 text-amber-950 shadow-sm space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-2 border-b border-amber-200 pb-1.5">
+                        <span className="font-bold text-amber-900 flex items-center gap-1 text-[11px]">
+                          <span>⏳</span> Aguardando Moderação ({senderName})
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap leading-relaxed text-xs bg-amber-100/70 p-2 rounded-lg border border-amber-200">
+                        {msg.text}
+                      </p>
+                      {canModerate ? (
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => rejectMessage(msg.id)}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" /> Rejeitar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => approveMessage(msg.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check className="w-3 h-3" /> Aprovar
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-amber-800 italic">
+                          Em análise por um Conselheiro ou Administrador.
+                        </p>
                       )}
                     </div>
                   </div>
+                );
+              }
 
-                  {/* Seletor Flutuante de Reações estilo WhatsApp */}
+              const hasReactions = msg.reactions && Object.values(msg.reactions).some((arr: any) => Array.isArray(arr) && arr.length > 0);
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} ${isSameAuthorAsPrev ? 'mt-0.5' : 'mt-2.5'} ${hasReactions ? 'mb-3' : ''} relative group/msg`}
+                >
+                  {/* Barra de Ações Compacta Flutuante (aparece ao tocar na mensagem ou passar o mouse no desktop) */}
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`flex items-center gap-0.5 bg-white/95 backdrop-blur-xs border border-slate-200/90 rounded-full px-1.5 py-0.5 shadow-md mb-1 z-20 transition-all duration-150 ${
+                      isActionOpen
+                        ? 'opacity-100 scale-100 pointer-events-auto'
+                        : 'opacity-0 scale-95 pointer-events-none hidden sm:flex sm:group-hover/msg:opacity-100 sm:group-hover/msg:scale-100 sm:group-hover/msg:pointer-events-auto'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplyingTo(msg);
+                        setSelectedActionMsgId(null);
+                      }}
+                      className="text-slate-700 hover:text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-full text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                      title="Responder"
+                    >
+                      <Reply className="w-3 h-3" />
+                      <span>Responder</span>
+                    </button>
+
+                    {!isAi && msg.text && (
+                      <button
+                        type="button"
+                        onClick={() => askAiAssistant(msg.text, msg.id, msg.displayName)}
+                        className="text-purple-700 hover:bg-purple-50 px-2 py-1 rounded-full text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                        title="Pedir para a IA responder"
+                      >
+                        <Bot className="w-3 h-3" />
+                        <span>IA</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id)}
+                      className="text-amber-600 hover:bg-amber-50 p-1 rounded-full text-[11px] transition flex items-center justify-center cursor-pointer"
+                      title="Reagir com emoji"
+                    >
+                      <Smile className="w-3.5 h-3.5" />
+                    </button>
+
+                    {canDeleteThisMsg && (
+                      <button
+                        type="button"
+                        onClick={() => deleteMessage(msg)}
+                        className="text-red-600 hover:bg-red-50 px-2 py-1 rounded-full text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                        title={isPhotoMsg ? 'Ocultar foto (OFF) para verificação de moderador' : 'Apagar mensagem'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {isPhotoMsg && <span>Apagar Foto</span>}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Seletor Flutuante de Reações */}
                   {activeReactionMsgId === msg.id && (
-                    <div className="z-20 my-1 p-1.5 bg-white border border-gray-200 rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in duration-150">
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="z-30 mb-1.5 px-2 py-1 bg-white border border-slate-200 rounded-full shadow-xl flex items-center gap-1 animate-in fade-in zoom-in-95 duration-150"
+                    >
                       {['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏'].map(emoji => (
                         <button
                           key={emoji}
+                          type="button"
                           onClick={() => toggleReaction(msg.id, emoji)}
-                          className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
+                          className="text-base hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer"
                         >
                           {emoji}
                         </button>
@@ -810,110 +1162,110 @@ export default function Chat() {
                     </div>
                   )}
 
-                  {/* Card de mensagem pendente de aprovação */}
-                  {isPending ? (
-                    <div className="p-3 rounded-2xl max-w-[90%] sm:max-w-md bg-amber-50 border-2 border-amber-400 text-amber-950 shadow-xs space-y-2 text-xs">
-                      <div className="flex items-center justify-between gap-2 border-b border-amber-200 pb-1.5">
-                        <span className="font-bold text-amber-900 flex items-center gap-1 text-[11px]">
-                          <span>⏳</span> Aguardando Autorização do Moderador
-                        </span>
-                        {msg.flaggedWords && msg.flaggedWords.length > 0 && (
-                          <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded">
-                            Linguagem detectada
-                          </span>
-                        )}
+                  {/* Balão da Mensagem estilo WhatsApp */}
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedActionMsgId(prev => (prev === msg.id ? null : msg.id));
+                    }}
+                    className={`relative max-w-[84%] sm:max-w-md px-3 py-2 rounded-2xl shadow-[0_1px_2px_rgba(0,0,0,0.12)] cursor-pointer transition-shadow select-text ${
+                      isMe
+                        ? 'bg-[#d9fdd3] text-slate-900 rounded-tr-xs border border-emerald-200/70'
+                        : isAi
+                        ? 'bg-gradient-to-br from-purple-50 to-indigo-50 text-slate-900 rounded-tl-xs border border-purple-200/80'
+                        : 'bg-white text-slate-900 rounded-tl-xs border border-white'
+                    }`}
+                  >
+                    {/* Nome do autor no topo do balão (apenas quando não sou eu e mudou o autor) */}
+                    {!isMe && !isSameAuthorAsPrev && (
+                      <div className={`text-[11px] font-extrabold leading-tight mb-1 flex items-center gap-1 ${isAi ? 'text-purple-700' : getSenderColor(senderName)}`}>
+                        <span>{isAi ? '🤖 IA Assistente do Bolão' : senderName}</span>
                       </div>
-                      <p className="whitespace-pre-wrap leading-relaxed font-mono text-xs bg-amber-100/60 p-2 rounded-lg border border-amber-200">{msg.text}</p>
-                      
-                      {canModerate ? (
-                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-amber-200">
-                          <button
-                            onClick={() => rejectMessage(msg.id)}
-                            className="bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                          >
-                            <span>❌</span> Rejeitar
-                          </button>
-                          <button
-                            onClick={() => approveMessage(msg.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                          >
-                            <span>✅</span> Autorizar Publicação
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-[10px] text-amber-800 italic">
-                          Sua mensagem contém termos sensíveis e está em análise por um Conselheiro ou Administrador.
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div
-                      className={`p-3 rounded-2xl max-w-[85%] sm:max-w-md shadow-2xs text-xs sm:text-sm relative group/bubble ${
-                        isMe
-                          ? 'bg-blue-600 text-white rounded-tr-none'
-                          : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'
-                      }`}
-                    >
-                      {/* Citação de Resposta estilo WhatsApp */}
-                      {msg.replyTo && (
-                        <div className={`mb-2 p-2 rounded-lg text-xs border-l-4 ${
-                          isMe 
-                            ? 'bg-blue-700/60 border-amber-300 text-blue-50' 
-                            : 'bg-gray-100 border-blue-600 text-gray-700'
-                        }`}>
-                          <div className={`font-bold text-[11px] ${isMe ? 'text-amber-200' : 'text-blue-700'}`}>
-                            ↩️ {formatFirstAndLastName(msg.replyTo.displayName)}
-                          </div>
-                          <div className="truncate italic text-[11px] opacity-90">{msg.replyTo.text}</div>
-                        </div>
-                      )}
+                    )}
 
-                      {/* Texto da mensagem com realce de @Menções */}
-                      {msg.text && (
-                        <p className="whitespace-pre-wrap leading-relaxed">
+                    {/* Citação de Resposta */}
+                    {msg.replyTo && (
+                      <div
+                        className={`mb-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border-l-4 ${
+                          isMe
+                            ? 'bg-emerald-900/10 border-emerald-600 text-slate-800'
+                            : 'bg-slate-100 border-teal-600 text-slate-700'
+                        }`}
+                      >
+                        <div className="font-bold text-[10px] text-teal-800">
+                          {formatFirstAndLastName(msg.replyTo.displayName)}
+                        </div>
+                        <div className="truncate opacity-85 text-[11px]">{msg.replyTo.text}</div>
+                      </div>
+                    )}
+
+                    {/* Imagem com botão rápido de ocultar/deletar para revisão de moderador */}
+                    {msg.imageUrl && (
+                      <div className="mb-1.5 relative rounded-xl overflow-hidden border border-black/10 bg-black/5">
+                        <img
+                          src={msg.imageUrl}
+                          alt="Comprovante / Foto"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveZoomImage(msg.imageUrl);
+                          }}
+                          className="max-w-full max-h-60 object-contain mx-auto cursor-pointer transition hover:opacity-95"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMessage(msg);
+                          }}
+                          className="absolute top-1.5 right-1.5 bg-black/70 hover:bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm transition cursor-pointer backdrop-blur-xs"
+                          title="Deletar/ocultar foto para verificação de moderador"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Deletar Foto</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Texto + Horário inline estilo WhatsApp */}
+                    <div className="flex items-end justify-between gap-2 flex-wrap">
+                      {msg.text ? (
+                        <p className="text-[13px] sm:text-sm whitespace-pre-wrap leading-snug break-words text-slate-800">
                           {renderMessageTextWithMentions(msg.text, isMe)}
                         </p>
-                      )}
+                      ) : <span />}
 
-                      {/* Imagem */}
-                      {msg.imageUrl && (
-                        <div className="mt-2 cursor-pointer group relative" onClick={() => setActiveZoomImage(msg.imageUrl)}>
-                          <img
-                            src={msg.imageUrl}
-                            alt="Comprovante / Foto"
-                            className="max-w-full rounded-lg border border-black/10 max-h-60 object-contain bg-black/5 transition group-hover:opacity-95"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition rounded-lg text-white text-xs font-bold gap-1">
-                            <span>🔍</span> Clique para ampliar
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Reações de Emojis estilo WhatsApp */}
-                      {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                        <div className={`flex flex-wrap gap-1 mt-2 pt-1 border-t ${isMe ? 'border-white/20' : 'border-gray-100'}`}>
-                          {Object.entries(msg.reactions).map(([emoji, uids]: [string, any]) => {
-                            if (!Array.isArray(uids) || uids.length === 0) return null;
-                            const hasReacted = uids.includes(activeUser.uid);
-                            return (
-                              <button
-                                key={emoji}
-                                onClick={() => toggleReaction(msg.id, emoji)}
-                                className={`text-[11px] px-1.5 py-0.5 rounded-full border flex items-center gap-1 font-bold cursor-pointer transition ${
-                                  hasReacted
-                                    ? (isMe ? 'bg-amber-300 text-blue-950 border-white' : 'bg-blue-100 text-blue-800 border-blue-300')
-                                    : (isMe ? 'bg-blue-700/60 text-white border-white/20' : 'bg-gray-100 text-gray-700 border-gray-200')
-                                }`}
-                              >
-                                <span>{emoji}</span>
-                                <span>{uids.length}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
+                      <span className="text-[10px] text-slate-500/90 font-medium tabular-nums ml-auto shrink-0 leading-none select-none flex items-center gap-0.5 pt-0.5">
+                        {timeStr}
+                        {isMe && <span className="text-emerald-600 font-bold text-[11px]">✓✓</span>}
+                      </span>
                     </div>
-                  )}
+
+                    {/* Pílula compacta de Reações ancorada na borda inferior do balão */}
+                    {hasReactions && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className={`absolute -bottom-2.5 ${isMe ? 'right-2' : 'left-2'} flex items-center gap-0.5 bg-white border border-slate-200/90 rounded-full px-1.5 py-0.5 shadow-sm z-10`}
+                      >
+                        {Object.entries(msg.reactions).map(([emoji, uids]: [string, any]) => {
+                          if (!Array.isArray(uids) || uids.length === 0) return null;
+                          const hasReacted = uids.includes(activeUser.uid);
+                          return (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => toggleReaction(msg.id, emoji)}
+                              className={`text-[11px] px-1 rounded-full flex items-center gap-0.5 font-bold cursor-pointer transition ${
+                                hasReacted ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>{emoji}</span>
+                              {uids.length > 1 && <span className="text-[10px] tabular-nums">{uids.length}</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })
@@ -921,46 +1273,88 @@ export default function Chat() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Citação de Resposta Fixa no Teclado */}
+        {/* Citação de Resposta Fixa Acima do Input */}
         {replyingTo && (
-          <div className="bg-blue-50 border-t border-blue-200 px-3 py-2 flex items-center justify-between text-xs text-blue-900 animate-in slide-in-from-bottom-2">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <span className="text-base">↩️</span>
+          <div className="bg-emerald-50/95 border-t border-emerald-200 px-3.5 py-2 flex items-center justify-between text-xs text-emerald-950 animate-in slide-in-from-bottom-2 z-20">
+            <div className="flex items-center gap-2 overflow-hidden border-l-3 border-emerald-600 pl-2">
               <div className="truncate">
-                <span className="font-bold text-blue-900 block">Respondendo para {formatFirstAndLastName(replyingTo.displayName)}</span>
-                <span className="text-blue-700 italic truncate block text-[11px]">
+                <span className="font-bold text-emerald-800 block text-[11px]">
+                  Respondendo a {formatFirstAndLastName(replyingTo.displayName)}
+                </span>
+                <span className="text-slate-600 truncate block text-[11px]">
                   {replyingTo.text || '📷 Foto'}
                 </span>
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setReplyingTo(null)}
-              className="p-1 hover:bg-blue-200 rounded-full text-blue-800 font-bold transition cursor-pointer"
+              className="p-1.5 hover:bg-emerald-200/60 rounded-full text-slate-600 transition cursor-pointer shrink-0"
               title="Cancelar resposta"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* Dropdown Autocomplete de @Menção estilo WhatsApp */}
+        {/* Menu de Escolha ao Clicar na Câmera: Tirar Foto ou Upload de Imagem */}
+        {showCameraOptions && (
+          <div className="bg-white border-t border-slate-200 px-3.5 py-2.5 shadow-lg z-30 flex items-center justify-between gap-2 animate-in slide-in-from-bottom-2">
+            <div className="flex items-center gap-2 flex-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCameraOptions(false);
+                  cameraCaptureInputRef.current?.click();
+                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+              >
+                <Camera className="w-4 h-4" />
+                <span>Tirar Foto</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCameraOptions(false);
+                  galleryUploadInputRef.current?.click();
+                }}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+              >
+                <ImageIcon className="w-4 h-4" />
+                <span>Upload de Imagem</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowCameraOptions(false)}
+              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer shrink-0"
+              title="Fechar opções"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Dropdown Autocomplete de @Menção */}
         {showMentionDropdown && availableMentions.length > 0 && (
-          <div className="bg-white border-t border-b border-blue-200 max-h-40 overflow-y-auto shadow-lg z-30 divide-y divide-gray-100 animate-in fade-in duration-100">
-            <div className="px-3 py-1 bg-blue-50 text-[10px] font-black text-blue-800 uppercase tracking-wider flex items-center justify-between">
-              <span>Mencionar Membro do Bolão (@)</span>
-              <span>Selecione para inserir</span>
+          <div className="bg-white border-t border-slate-200 max-h-40 overflow-y-auto shadow-lg z-30 divide-y divide-slate-100">
+            <div className="px-3.5 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center justify-between">
+              <span>Mencionar Membro (@)</span>
+              <span>Toque para inserir</span>
             </div>
             {availableMentions.map(m => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => insertMention(m.displayName)}
-                className="w-full text-left px-3 py-2 hover:bg-blue-50 transition flex items-center justify-between text-xs cursor-pointer group"
+                className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 transition flex items-center justify-between text-xs cursor-pointer group"
               >
-                <span className="font-bold text-gray-800 group-hover:text-blue-700">
+                <span className="font-bold text-slate-800 group-hover:text-emerald-700">
                   @{m.displayName}
                 </span>
-                <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-semibold group-hover:bg-blue-100 group-hover:text-blue-800">
+                <span className="text-[10px] text-slate-500 font-medium">
                   {m.role}
                 </span>
               </button>
@@ -968,29 +1362,29 @@ export default function Chat() {
           </div>
         )}
 
-        {/* Sugestões Automáticas de Dúvida Financeira para Administrador / Conselheiro */}
+        {/* Sugestões Automáticas de Dúvida Financeira para Moderadores */}
         {showFinancialSuggestions && (
-          <div className="bg-amber-50 border-t border-b border-amber-200 p-2 sm:p-2.5 z-20 animate-in slide-in-from-bottom-2 transition-all">
-            <div className="flex items-center justify-between mb-1.5 px-1">
-              <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-950">
-                <span className="bg-amber-200 text-amber-900 text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-black uppercase">💡 Resposta Automática Rápida</span>
-                <span className="truncate max-w-[200px] sm:max-w-md">
-                  {recentFinancialMsg 
-                    ? `Dúvida de ${formatFirstAndLastName(recentFinancialMsg.displayName)}: "${recentFinancialMsg.text.slice(0, 35)}..."` 
-                    : 'Palavra-chave financeira detectada:'}
+          <div className="bg-amber-50/95 border-t border-amber-200 px-3 py-2 z-20">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 truncate">
+                <span>💡 Resposta Rápida:</span>
+                <span className="truncate font-normal text-amber-800">
+                  {recentFinancialMsg
+                    ? `${formatFirstAndLastName(recentFinancialMsg.displayName)}: "${recentFinancialMsg.text.slice(0, 32)}..."`
+                    : 'Dúvida financeira'}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setDismissSmartSuggestions(true)}
-                className="text-amber-800 hover:text-amber-950 font-bold text-xs p-1 rounded hover:bg-amber-100 cursor-pointer"
+                className="text-amber-700 hover:text-amber-950 p-0.5 rounded cursor-pointer"
                 title="Ocultar sugestões"
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
               {quickReplyOptions.map((opt, idx) => (
                 <button
                   key={idx}
@@ -1001,10 +1395,9 @@ export default function Chat() {
                       setReplyingTo(recentFinancialMsg);
                     }
                   }}
-                  className="bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 font-bold px-2.5 py-1.5 rounded-lg text-xs shadow-2xs whitespace-nowrap transition cursor-pointer flex items-center gap-1 shrink-0"
+                  className="bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 font-semibold px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap transition cursor-pointer shrink-0"
                 >
-                  <span>{opt.label}</span>
-                  <span className="text-[10px] text-amber-700 font-bold">→ Usar</span>
+                  {opt.label}
                 </button>
               ))}
 
@@ -1015,122 +1408,156 @@ export default function Chat() {
                     askAiAssistant(recentFinancialMsg.text, recentFinancialMsg.id, recentFinancialMsg.displayName);
                     setDismissSmartSuggestions(true);
                   }}
-                  className="bg-purple-700 hover:bg-purple-800 text-white font-black px-2.5 py-1.5 rounded-lg text-xs shadow-xs whitespace-nowrap transition cursor-pointer flex items-center gap-1 shrink-0"
+                  className="bg-purple-700 hover:bg-purple-800 text-white font-bold px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap transition cursor-pointer flex items-center gap-1 shrink-0"
                 >
-                  <span>🤖 Responder com IA</span>
+                  <Bot className="w-3 h-3" />
+                  <span>Responder c/ IA</span>
                 </button>
               )}
             </div>
           </div>
         )}
 
-        {/* Banner de Gravação e Transcrição Ativa */}
+        {/* Banner de Gravação de Voz */}
         {isListening && (
-          <div className="bg-red-500 text-white px-3 py-2 flex items-center justify-between text-xs animate-pulse z-30 shadow-md">
-            <div className="flex items-center gap-2 font-black">
-              <span className="w-3 h-3 bg-white rounded-full animate-ping" />
-              <span>🎙️ Escutando seu áudio... Fale naturalmente para transcrever em mensagem de texto!</span>
+          <div className="bg-red-600 text-white px-3.5 py-2 flex items-center justify-between text-xs animate-pulse z-30">
+            <div className="flex items-center gap-2 font-bold">
+              <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
+              <span>Ouvindo sua voz... Fale para transcrever</span>
             </div>
             <button
               type="button"
-              onClick={startVoiceToText}
-              className="bg-white text-red-700 hover:bg-red-50 font-black px-2.5 py-1 rounded-md text-[11px] cursor-pointer shadow-2xs"
+              onClick={stopVoiceRecognitionSafely}
+              className="bg-white text-red-700 font-bold px-2.5 py-1 rounded-full text-[11px] cursor-pointer"
             >
-              Concluir ⏹️
+              Concluir
             </button>
           </div>
         )}
 
-        {/* Input de Envio */}
+        {/* Barra Inferior de Digitação (Ergonômica e Limpa no Celular) */}
         {isChatLocked && !canModerate ? (
-          <div className="p-3.5 bg-amber-50 border-t border-amber-200 text-center text-xs text-amber-900 font-bold flex items-center justify-center gap-2">
-            <span>🔒</span> O chat está temporariamente travado pela moderação para manter a ordem do grupo.
+          <div className="p-3 bg-amber-50 border-t border-amber-200 text-center text-xs text-amber-900 font-semibold flex items-center justify-center gap-2">
+            <Lock className="w-4 h-4 shrink-0 text-amber-700" />
+            <span>O chat está temporariamente trancado pela moderação.</span>
           </div>
         ) : (
-          <div className="bg-white border-t border-gray-200 p-2 sm:p-3">
+          <div className="bg-[#f0f2f5] border-t border-slate-200/80 px-2.5 py-2 shrink-0">
             {isChatLocked && canModerate && (
-              <div className="mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 font-bold flex items-center justify-between">
-                <span>🔒 Chat travado para participantes. Você tem permissão de moderação para enviar mensagens.</span>
+              <div className="mb-1.5 px-2.5 py-1 bg-amber-100/80 border border-amber-300/80 rounded-lg text-[10px] text-amber-900 font-semibold flex items-center gap-1.5">
+                <Lock className="w-3 h-3 shrink-0" />
+                <span>Chat trancado para participantes. Você pode enviar comunicados como moderador.</span>
               </div>
             )}
-            <form onSubmit={sendMessage} className="flex gap-1.5 sm:gap-2 items-center">
+
+            <form onSubmit={sendMessage} className="flex items-center gap-1.5 w-full min-w-0">
+              {/* Input oculto para Tirar Foto diretamente pela Câmera */}
               <input
+                ref={cameraCaptureInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+
+              {/* Input oculto para Upload de Imagem da Galeria/Arquivos */}
+              <input
+                ref={galleryUploadInputRef}
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
                 className="hidden"
-                id="chatFileInput"
               />
-              <label
-                htmlFor="chatFileInput"
-                className="cursor-pointer p-2.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-gray-200"
-                title="Enviar foto ou comprovante"
-              >
-                📷
-              </label>
 
-              {/* Botão para Transcrever Áudio de Voz em Texto */}
-              <button
-                type="button"
-                onClick={startVoiceToText}
-                className={`px-2.5 py-2.5 rounded-xl transition border font-black text-xs cursor-pointer flex items-center gap-1 shrink-0 ${
-                  isListening
-                    ? 'bg-red-600 text-white border-red-700 animate-bounce ring-2 ring-red-400 shadow-md'
-                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                }`}
-                title={isListening ? "Parar escuta de áudio" : "Ouvir seu áudio e converter em mensagem de texto"}
-              >
-                <span>🎙️</span>
-                <span className="hidden xs:inline text-[11px]">{isListening ? 'Gravando...' : 'Voz'}</span>
-              </button>
+              {/* Container Cápsula Unificado de Mensagem */}
+              <div className="flex-1 min-w-0 flex items-center bg-white rounded-full border border-slate-200/90 px-1.5 py-1 shadow-2xs focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/15 transition">
+                <button
+                  type="button"
+                  onClick={() => setShowCameraOptions(prev => !prev)}
+                  className={`cursor-pointer w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full transition shrink-0 ${
+                    showCameraOptions
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'text-slate-500 hover:text-emerald-600 hover:bg-slate-100'
+                  }`}
+                  title="Tirar foto ou enviar imagem"
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
 
-              {/* Botão rápido para inserir @ */}
-              <button
-                type="button"
-                onClick={() => {
-                  setNewMessage(prev => prev + '@');
-                  setShowMentionDropdown(true);
-                }}
-                className="p-2.5 text-blue-600 hover:bg-blue-50 rounded-xl transition border border-blue-200 font-black text-xs cursor-pointer"
-                title="Mencionar membro (@)"
-              >
-                @
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewMessage(prev => prev + '@');
+                    setShowMentionDropdown(true);
+                  }}
+                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-full transition cursor-pointer shrink-0"
+                  title="Mencionar participante (@)"
+                >
+                  <AtSign className="w-4 h-4" />
+                </button>
 
-              {/* Botão rápido para consultar a IA Assistente */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (newMessage.trim()) {
-                    askAiAssistant(newMessage.trim());
-                    setNewMessage('');
-                  } else {
-                    addToast('Digite sua dúvida na caixa de texto primeiro (ex: Quanto é o valor da cota e o PIX?)', 'info');
+                <input
+                  ref={messageInputRef}
+                  value={newMessage}
+                  onChange={handleInputChange}
+                  className="flex-1 min-w-0 w-full bg-transparent px-1.5 py-1 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  placeholder={
+                    isListening
+                      ? 'Ouvindo seu áudio...'
+                      : isChatLocked
+                      ? 'Digite um comunicado...'
+                      : 'Mensagem...'
                   }
-                }}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-2 rounded-xl text-xs font-black shadow-xs transition flex items-center gap-1 cursor-pointer"
-                title="Tirar dúvida diretamente com a IA do Bolão"
-              >
-                <span>🤖 IA</span>
-              </button>
+                />
 
-              <input
-                value={newMessage}
-                onChange={handleInputChange}
-                className="flex-1 border border-gray-300 bg-white p-2.5 text-xs sm:text-sm rounded-xl focus:outline-blue-500"
-                placeholder={
-                  isListening 
-                    ? "Fale no microfone... Transcrevendo áudio em texto..." 
-                    : (isChatLocked ? "Chat travado. Digite seu comunicado..." : "Digite uma mensagem ou use @ para mencionar...")
-                }
-                disabled={isSending}
-              />
+                {/* Botão de Microfone embutido dentro da cápsula */}
+                <button
+                  type="button"
+                  onClick={startVoiceToText}
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${
+                    isListening
+                      ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-300'
+                      : 'text-slate-500 hover:text-emerald-600 hover:bg-slate-100'
+                  }`}
+                  title={isListening ? 'Parar gravação de voz' : 'Gravar mensagem por voz'}
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+
+                {/* Botão Consultar IA embutido na cápsula */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newMessage.trim()) {
+                      const qText = newMessage.trim();
+                      stopVoiceRecognitionSafely();
+                      setNewMessage('');
+                      askAiAssistant(qText);
+                    } else {
+                      addToast('Digite sua dúvida primeiro (ex: Qual é o valor da cota e o PIX?) e toque em IA.', 'info');
+                    }
+                  }}
+                  className="h-7 px-2 rounded-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 text-[10px] font-bold flex items-center gap-0.5 transition cursor-pointer shrink-0 ml-0.5"
+                  title="Perguntar para a IA do Bolão"
+                >
+                  <Bot className="w-3 h-3" />
+                  <span>IA</span>
+                </button>
+              </div>
+
+              {/* Botão Enviar Fixo e Sempre Visível na Lateral Direita */}
               <button
                 type="submit"
-                disabled={isSending || !newMessage.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition disabled:opacity-50 cursor-pointer"
+                disabled={!newMessage.trim()}
+                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition shrink-0 ${
+                  newMessage.trim()
+                    ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white cursor-pointer'
+                    : 'bg-emerald-600/50 text-white/80 cursor-not-allowed'
+                }`}
+                title="Enviar mensagem"
               >
-                {isSending ? '...' : 'Enviar'}
+                <Send className="w-4 h-4 translate-x-0.5" />
               </button>
             </form>
           </div>
@@ -1139,16 +1566,17 @@ export default function Chat() {
 
       {/* Modal de Zoom da Imagem */}
       {activeZoomImage && (
-        <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200"
+        <div
+          className="fixed inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200"
           onClick={() => setActiveZoomImage(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
             <button
+              type="button"
               onClick={() => setActiveZoomImage(null)}
-              className="absolute -top-12 right-0 bg-white/20 hover:bg-white/40 text-white font-black px-3 py-1.5 rounded-full text-sm transition cursor-pointer"
+              className="absolute -top-12 right-0 bg-white/20 hover:bg-white/30 text-white font-bold px-3.5 py-1.5 rounded-full text-xs transition cursor-pointer flex items-center gap-1"
             >
-              ✕ Fechar
+              <X className="w-4 h-4" /> Fechar
             </button>
             <img
               src={activeZoomImage}

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { calculateGamePrize, LOTOFACIL_PRICES } from '../lib/prizes';
 import { useToast } from './NotificationManager';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
+import { usePermissions } from '../lib/PermissionsContext';
+import { formatAnyDateBR } from '../lib/formatters';
 
 interface VolantesHistoryComparatorProps {
   games: any[];
@@ -47,6 +49,8 @@ export default function VolantesHistoryComparator({
   onOpenPrizeSplit
 }: VolantesHistoryComparatorProps) {
   const { addToast } = useToast();
+  const { isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
   const [isLoading, setIsLoading] = useState(false);
   const [contestsCache, setContestsCache] = useState<Record<number, ContestInfo>>({});
   const [selectedContestFilter, setSelectedContestFilter] = useState<string>('all');
@@ -331,14 +335,16 @@ export default function VolantesHistoryComparator({
               <span>{isLoading ? 'Varrendo...' : 'Varrer Apostas'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleCopyWhatsAppReport}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Copiar resumo de auditoria para o WhatsApp"
-            >
-              <span>📢</span> WhatsApp
-            </button>
+            {isAdminOrCounselor && (
+              <button
+                type="button"
+                onClick={handleCopyWhatsAppReport}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Enviar resumo de auditoria para o WhatsApp"
+              >
+                <span>📢</span> WhatsApp
+              </button>
+            )}
 
             <button
               type="button"
@@ -531,7 +537,7 @@ export default function VolantesHistoryComparator({
                           </span>
                           {contestInfo?.date && (
                             <span className="text-gray-500 text-[11px]">
-                              Sorteio em: <strong>{contestInfo.date}</strong>
+                              Sorteio em: <strong>{formatAnyDateBR(contestInfo.date)}</strong>
                             </span>
                           )}
                           {contestInfo?.accumulated !== undefined && (
