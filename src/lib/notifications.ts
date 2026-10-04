@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { getNextDrawDate } from './drawCalendar';
+import { getNextDrawDate, isDrawDay, formatDateBR } from './drawCalendar';
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Capacitor.isNativePlatform()) {
@@ -308,3 +308,89 @@ export async function notifyWinningPrize(
     id: Number(contestNum) || Math.floor(Math.random() * 1000000) + 1
   });
 }
+
+/**
+ * Agenda (ou cancela) notificações nativas a cada 2 horas nos dias em que não houver
+ * jogo feito/cadastrado. Exclusivo para Administradores e Conselheiros.
+ */
+export async function syncMissingGamesTwoHourReminders(
+  coveredDateStrings: string[],
+  isAdminOrCounselor: boolean,
+  lotteryType: 'lotofacil' | 'megasena' = 'lotofacil'
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+
+  try {
+    // 1. Cancela agendamentos anteriores da faixa 800000..899999
+    try {
+      const pending = await LocalNotifications.getPending();
+      if (pending && pending.notifications.length > 0) {
+        const idsToCancel = pending.notifications
+          .filter(n => n.id >= 800000 && n.id <= 899999)
+          .map(n => ({ id: n.id }));
+        if (idsToCancel.length > 0) {
+          await LocalNotifications.cancel({ notifications: idsToCancel });
+        }
+      }
+    } catch (cancelErr) {
+      console.warn('Erro ao limpar lembretes de 2h anteriores:', cancelErr);
+    }
+
+    // Apenas Admin e Conselheiros recebem alertas de realizar os jogos
+    if (!isAdminOrCounselor) return;
+
+    const coveredSet = new Set(coveredDateStrings);
+    const now = new Date();
+    const hoursSlots = [8, 10, 12, 14, 16, 18, 20];
+
+    // Verifica hoje (dayOffset = 0) e os próximos 3 dias
+    for (let dayOffset = 0; dayOffset <= 3; dayOffset++) {
+      const targetDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
+      const drawCheck = isDrawDay(targetDay, lotteryType);
+      if (!drawCheck.isDraw) continue;
+
+      const dayBR = formatDateBR(targetDay);
+      // Se já houver jogo cadastrado para este dia, não agenda lembrete de falta de jogo
+      if (coveredSet.has(dayBR)) continue;
+
+      // Agenda a cada 2 horas (08h, 10h, 12h, 14h, 16h, 18h, 20h)
+      for (const hour of hoursSlots) {
+        const alarmDate = new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), hour, 0, 0, 0);
+        if (alarmDate.getTime() > now.getTime() + 30000) {
+          const notifId = 800000 + dayOffset * 100 + hour;
+          await scheduleNativeNotificationAt(
+            `⚠️ Lembrete: Jogos do Bolão Pendentes!`,
+            `Ainda não há apostas cadastradas para o sorteio de ${dayOffset === 0 ? 'hoje' : dayBR} (${dayBR}). Lembre-se de realizar e subir os jogos!`,
+            alarmDate,
+            notifId,
+            { missingGamesReminder: true }
+          );
+        }
+      }
+
+      // Se for HOJE e ainda não tiver jogo feito, garante também lembretes a cada 2h exatas a partir do momento atual
+      if (dayOffset === 0) {
+        for (let step = 1; step <= 4; step++) {
+          const relativeAlarm = new Date(now.getTime() + step * 2 * 60 * 60 * 1000);
+          if (
+            relativeAlarm.getDate() === now.getDate() &&
+            relativeAlarm.getHours() >= 7 &&
+            relativeAlarm.getHours() <= 21
+          ) {
+            const relId = 850000 + step;
+            await scheduleNativeNotificationAt(
+              `⚠️ Sem Jogos Cadastrados Hoje (${dayBR})!`,
+              `Lembrete a cada 2h: Precisa realizar e subir as apostas do bolão para o sorteio de hoje!`,
+              relativeAlarm,
+              relId,
+              { missingGamesReminder: true }
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao sincronizar lembretes de 2h de jogos pendentes:', err);
+  }
+}
+

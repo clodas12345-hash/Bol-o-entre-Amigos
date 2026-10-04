@@ -42,8 +42,7 @@ export default function PrizeSplitModal({
       text += `${idx + 1}. ${formatFirstAndLastName(m.displayName || m.email)} (${q} cota${q > 1 ? 's' : ''}): R$ ${memberShare.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
     });
 
-    navigator.clipboard.writeText(text);
-    alert('Resumo do rateio proporcional copiado para a área de transferência! Pronto para colar no WhatsApp.');
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -113,9 +112,9 @@ export default function PrizeSplitModal({
               </h3>
               <button
                 onClick={handleCopySummary}
-                className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer"
+                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
               >
-                <span>📋</span> Copiar para WhatsApp
+                <span>📲</span> Enviar no WhatsApp
               </button>
             </div>
 

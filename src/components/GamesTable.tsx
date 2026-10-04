@@ -12,11 +12,10 @@ import LottoFlyerGenerator from './LottoFlyerGenerator';
 import VolantesHistoryComparator from './VolantesHistoryComparator';
 import GameHistory, { parseDateSafely } from './GameHistory';
 import { triggerResultNotification } from '../lib/autoNotificationService';
-import { notifyWinningPrize, sendAppNotification, requestNotificationPermission } from '../lib/notifications';
+import { notifyWinningPrize, sendAppNotification, requestNotificationPermission, syncMissingGamesTwoHourReminders } from '../lib/notifications';
 import { usePermissions } from '../lib/PermissionsContext';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
 import { isDrawDay, getNextDrawDate, isNationalHoliday, formatDateBR } from '../lib/drawCalendar';
-import SystemErrorsPanel from './SystemErrorsPanel';
 
 interface GamesTableProps {
   onOpenNewGame?: () => void;
@@ -26,11 +25,20 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const { addToast } = useToast();
   const { activePool, isQuotaExceeded, setIsQuotaExceeded } = usePool();
   const { isMobile } = useResponsiveLayout(640);
-  const { can, isAdmin } = usePermissions();
+  const { can, isAdmin, isCounselor } = usePermissions();
+  const isAdminOrCounselor = isAdmin || isCounselor;
 
   const canCreateGames = can('games_create');
   const canDeleteGames = can('games_delete');
   const canEditOfficialResult = can('games_official_result_edit');
+
+  const [gamesReady, setGamesReady] = useState(false);
+  const [renewalPopupDismissed, setRenewalPopupDismissed] = useState(false);
+  const baselineBetsRef = useRef<{ initialized: boolean; activeCount: number; maxTs: number }>({
+    initialized: false,
+    activeCount: 0,
+    maxTs: 0
+  });
 
   const [games, setGames] = useState<any[]>(() => {
     try {
@@ -112,10 +120,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     statusBadge: 'Hoje'
   });
 
-  // Calcula o próximo sorteio e tempo restante (pulando domingos e feriados nacionais)
+  const [currentDayStr, setCurrentDayStr] = useState(() => new Date().toLocaleDateString('pt-BR'));
+
+  // Calcula o próximo sorteio e mantém o jogo/sorteio do dia ativo até o último minuto do dia (23:59:59)
   useEffect(() => {
     const calculateNextDraw = () => {
       const now = new Date();
+      const todayKey = now.toLocaleDateString('pt-BR');
+      setCurrentDayStr(prev => (prev !== todayKey ? todayKey : prev));
+
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
@@ -133,26 +146,32 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
       const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-      if (todayDrawCheck.isDraw && isBeforeDrawTime) {
+      if (todayDrawCheck.isDraw) {
+        // Mantém como sorteio de hoje até o último minuto do dia (23h59m59s), só mudando na virada do dia (00h00)
         isToday = true;
-        statusBadge = 'Hoje às 20h00';
-      } else if (todayDrawCheck.isDraw && isDuringDraw) {
-        isToday = true;
-        statusBadge = 'Sorteio em Apuração!';
-        setNextDrawInfo({
-          text: 'Sorteio em apuração pela Caixa!',
-          isToday: true,
-          timeLeft: 'Em andamento',
-          statusBadge
-        });
-        return;
+        if (isBeforeDrawTime) {
+          statusBadge = 'Hoje às 20h00';
+        } else if (isDuringDraw) {
+          statusBadge = 'Sorteio em Apuração!';
+          setNextDrawInfo({
+            text: 'Sorteio em apuração pela Caixa!',
+            isToday: true,
+            timeLeft: 'Em andamento',
+            statusBadge
+          });
+          return;
+        } else {
+          statusBadge = `Sorteio de Hoje (${formatDateBR(now)})`;
+          setNextDrawInfo({
+            text: `Sorteio de Hoje (${formatDateBR(now)})`,
+            isToday: true,
+            timeLeft: 'Até 23h59',
+            statusBadge
+          });
+          return;
+        }
       } else {
-        const nextDraw = getNextDrawDate(
-          todayDrawCheck.isDraw && !isBeforeDrawTime 
-            ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-            : now, 
-          lotteryType
-        );
+        const nextDraw = getNextDrawDate(now, lotteryType);
         targetDate = new Date(nextDraw.date);
         targetDate.setHours(20, 0, 0, 0);
         statusBadge = `${dayNames[targetDate.getDay()]} (${formatDateBR(targetDate)})`;
@@ -171,7 +190,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     };
 
     calculateNextDraw();
-    const interval = setInterval(calculateNextDraw, 60000);
+    const interval = setInterval(calculateNextDraw, 15000);
     return () => clearInterval(interval);
   }, [activePool?.lotteryType]);
 
@@ -277,19 +296,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   // Aba selecionada: 'today' (apenas jogos de hoje), 'future' (apostas futuras) ou 'history' (jogos de dias passados)
   const [gamesTab, setGamesTab] = useState<'today' | 'future' | 'history'>('today');
 
-  // Controle de grupos de concursos expandidos/retraídos e limites de renderização rápida
+  // Controle de grupos de concursos expandidos/retraídos e limites de renderização rápida (sempre retraído por padrão)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [expandedLimits, setExpandedLimits] = useState<Record<string, number>>({});
 
-  const isGroupExpanded = (groupKey: string, isToday: boolean, isFirstGroup?: boolean): boolean => {
-    if (expandedGroups[groupKey] !== undefined) {
-      return expandedGroups[groupKey];
-    }
-    // Ao iniciar o app, todas as informações de hoje e futuras ficam abertas por padrão
-    if (gamesTab === 'today' || gamesTab === 'future') {
-      return true;
-    }
-    return isToday || !!isFirstGroup;
+  useEffect(() => {
+    setExpandedGroups({});
+  }, [gamesTab]);
+
+  const isGroupExpanded = (groupKey: string, _isToday?: boolean, _isFirstGroup?: boolean): boolean => {
+    return Boolean(expandedGroups[groupKey]);
   };
 
   const toggleGroup = (groupKey: string, isToday: boolean, isFirstGroup?: boolean) => {
@@ -410,6 +426,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         return dateB - dateA;
       });
       setGames(list);
+      setGamesReady(true);
       setTimeout(() => {
         try {
           localStorage.setItem('bolao_cache_games', JSON.stringify(list));
@@ -426,6 +443,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       if (cached) {
         setGames(JSON.parse(cached));
       }
+      setGamesReady(true);
     });
 
     // Escuta todo o histórico de resultados salvos no Firestore em tempo real
@@ -712,49 +730,75 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     }
   }, [duplicateGamesList]);
 
-  const gamesWithPrizes = uniqueGames.map(game => {
-    const gameNumbers: number[] = Array.isArray(game.numbers)
-      ? game.numbers.map((n: any) => Number(n))
-      : [];
-    const dateInfo = getGameDateInfo(game);
-    const contestNumber = extractContestNumber(game.contest);
+  const gamesWithPrizes = useMemo(() => {
+    return uniqueGames.map(game => {
+      const gameNumbers: number[] = Array.isArray(game.numbers)
+        ? game.numbers.map((n: any) => Number(n))
+        : [];
+      const dateInfo = getGameDateInfo(game);
+      const contestNumber = extractContestNumber(game.contest);
 
-    // Busca se existe o resultado sorteado específico deste concurso no banco
-    let foundResultForContest: any = null;
-    if (contestNumber) {
-      foundResultForContest = savedResultsList.find(r => Number(r.contest) === contestNumber);
-    }
+      // Busca se existe o resultado sorteado específico deste concurso no banco
+      let foundResultForContest: any = null;
+      if (contestNumber) {
+        foundResultForContest = savedResultsList.find(r => Number(r.contest) === contestNumber);
+      }
 
-    const latestContestNum = latestResult?.contest ? Number(latestResult.contest) : 0;
-    const isHigherThanLatest = contestNumber !== null && latestContestNum > 0 && contestNumber > latestContestNum;
-    const isFutureContestTitle = String(game.contest || '').toLowerCase().includes('futuro');
+      const latestContestNum = latestResult?.contest ? Number(latestResult.contest) : 0;
 
-    // Uma aposta é estritamente PENDENTE / FUTURA apenas se:
-    // 1. Sua data de sorteio está no futuro (amanhã, próxima semana, etc.)
-    // 2. Ou seu concurso é maior que o último sorteio oficial apurado (ex: 3792 > 3791)
-    // 3. Ou o título indica explicitamente "Concurso Futuro"
-    const isPendingFuture = Boolean(
-      dateInfo.isFuture ||
-      isHigherThanLatest ||
-      isFutureContestTitle
-    );
+      // Uma aposta é FUTURA exclusivamente quando NÃO corre no dia de hoje (data estritamente futura)
+      const isPendingFuture = Boolean(dateInfo.isFuture && !dateInfo.isToday);
 
-    let targetResult = foundResultForContest || (contestNumber === latestContestNum ? latestResult : null);
+      let targetResult = foundResultForContest || (contestNumber === latestContestNum ? latestResult : null);
 
-    const resDrawn = (targetResult && Array.isArray(targetResult.numbers))
-      ? targetResult.numbers.map((n: any) => Number(n))
-      : [];
+      const resDrawn = (targetResult && Array.isArray(targetResult.numbers))
+        ? targetResult.numbers.map((n: any) => Number(n))
+        : [];
 
-    const prizeInfo = isPendingFuture
-      ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aposta Futura', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
-      : resDrawn.length === 0
-      ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: contestNumber ? `Concurso #${contestNumber} Não Apurado` : 'Aguardando Sorteio', statusText: 'Pendente', badgeColor: 'bg-amber-50 text-amber-800 border border-amber-200' }
-      : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
+      const prizeInfo = isPendingFuture
+        ? {
+            hits: 0,
+            prizeAmount: 0,
+            isWinner: false,
+            hitsText: 'Aguardando Sorteio',
+            statusText: 'Aposta Futura',
+            badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200 font-bold'
+          }
+        : dateInfo.isToday && resDrawn.length === 0
+        ? {
+            hits: 0,
+            prizeAmount: 0,
+            isWinner: false,
+            hitsText: 'Corre Hoje',
+            statusText: 'Aposta do Dia',
+            badgeColor: 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold'
+          }
+        : resDrawn.length === 0
+        ? {
+            hits: 0,
+            prizeAmount: 0,
+            isWinner: false,
+            hitsText: contestNumber ? `Concurso #${contestNumber} Não Apurado` : 'Aguardando Sorteio',
+            statusText: dateInfo.isToday ? 'Aposta do Dia' : 'Pendente',
+            badgeColor: dateInfo.isToday
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold'
+              : 'bg-amber-50 text-amber-800 border border-amber-200'
+          }
+        : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
 
-    return { ...game, gameNumbers, prizeInfo, contestNumber, isPendingFuture, ...dateInfo };
-  });
+      return {
+        ...game,
+        gameNumbers,
+        prizeInfo,
+        contestNumber,
+        isPendingFuture,
+        contestResultNumbers: resDrawn,
+        ...dateInfo
+      };
+    });
+  }, [uniqueGames, savedResultsList, latestResult, currentDayStr]);
 
-  // 1. Jogos exclusivamente de hoje
+  // 1. Jogos exclusivamente de hoje (permanecem até 23:59:59, só mudando na virada do dia às 00:00:00)
   const todayGames = useMemo(() => {
     return gamesWithPrizes.filter(g => g.isToday);
   }, [gamesWithPrizes]);
@@ -934,12 +978,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   };
 
   const collapseAllNonToday = () => {
-    const next: Record<string, boolean> = {};
-    groupedGames.forEach((g, idx) => {
-      // Mantém o sorteio do dia ou o primeiro grupo aberto
-      next[g.key] = !!g.isToday || ((gamesTab === 'today' || gamesTab === 'future') && idx === 0);
-    });
-    setExpandedGroups(next);
+    setExpandedGroups({});
   };
 
   const areAllExpanded = groupedGames.length > 0 && groupedGames.every((g, idx) => isGroupExpanded(g.key, !!g.isToday, idx === 0));
@@ -1033,8 +1072,228 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     localStorage.setItem(storageKey, new Date().toISOString());
   }, [latestResult?.contest, winningGamesCount, totalBolaoPrize, filteredGames, activePool?.id]);
 
+  // Informações sobre a última aposta cadastrada (para alertar 1 dia antes de correr a última aposta)
+  const lastBetInfo = useMemo(() => {
+    if (gamesWithPrizes.length === 0) {
+      return {
+        hasAnyBets: false,
+        maxDayTimestamp: 0,
+        lastDateStr: '',
+        lastContestNum: null as number | null,
+        diffDaysToLastBet: -999,
+        activeOrFutureCount: 0
+      };
+    }
+
+    let maxTs = 0;
+    let lastDateStr = '';
+    let lastContestNum: number | null = null;
+    let activeOrFutureCount = 0;
+
+    gamesWithPrizes.forEach(g => {
+      if (g.isToday || g.isFuture) activeOrFutureCount++;
+      const ts = g.dayTimestamp || 0;
+      if (ts > maxTs || (ts === maxTs && (g.contestNumber || 0) > (lastContestNum || 0))) {
+        maxTs = ts;
+        lastDateStr = g.dateStr;
+        lastContestNum = g.contestNumber;
+      }
+    });
+
+    const todayMid = new Date();
+    todayMid.setHours(0, 0, 0, 0);
+    const diffDaysToLastBet = maxTs > 0
+      ? Math.round((maxTs - todayMid.getTime()) / (1000 * 60 * 60 * 24))
+      : -999;
+
+    return {
+      hasAnyBets: true,
+      maxDayTimestamp: maxTs,
+      lastDateStr,
+      lastContestNum,
+      diffDaysToLastBet,
+      activeOrFutureCount
+    };
+  }, [gamesWithPrizes]);
+
+  // Encerra automaticamente o pop-up assim que novas apostas forem subidas na sessão
+  useEffect(() => {
+    if (!gamesReady) return;
+    if (!baselineBetsRef.current.initialized) {
+      baselineBetsRef.current = {
+        initialized: true,
+        activeCount: lastBetInfo.activeOrFutureCount,
+        maxTs: lastBetInfo.maxDayTimestamp
+      };
+      return;
+    }
+
+    // Se o admin/conselheiro acabou de subir novas apostas (aumentou a quantidade ativa ou a data final), fecha o pop-up na hora!
+    if (
+      lastBetInfo.activeOrFutureCount > baselineBetsRef.current.activeCount ||
+      lastBetInfo.maxDayTimestamp > baselineBetsRef.current.maxTs ||
+      lastBetInfo.diffDaysToLastBet > 1
+    ) {
+      setRenewalPopupDismissed(true);
+      baselineBetsRef.current = {
+        initialized: true,
+        activeCount: lastBetInfo.activeOrFutureCount,
+        maxTs: lastBetInfo.maxDayTimestamp
+      };
+    }
+  }, [gamesReady, lastBetInfo]);
+
+  // Sempre que o usuário reabrir o aplicativo (voltar do segundo plano), reexibe o pop-up se ainda faltar fazer os jogos
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && lastBetInfo.diffDaysToLastBet <= 1) {
+        setRenewalPopupDismissed(false);
+        baselineBetsRef.current = {
+          initialized: true,
+          activeCount: lastBetInfo.activeOrFutureCount,
+          maxTs: lastBetInfo.maxDayTimestamp
+        };
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [lastBetInfo]);
+
+  // Exibe pop-up 1 dia antes de correr a última aposta (ou no dia da última aposta / sem apostas), exclusivo para Admin e Conselheiros
+  const showLastBetReminderPopup =
+    isAdminOrCounselor &&
+    gamesReady &&
+    !renewalPopupDismissed &&
+    lastBetInfo.diffDaysToLastBet <= 1;
+
+  // Sincroniza notificações nativas a cada 2h nos dias sem jogo feito e dispara lembrete a cada 2h com app aberto
+  useEffect(() => {
+    if (!gamesReady) return;
+
+    const lotteryType = (isMegaSena ? 'megasena' : 'lotofacil') as 'lotofacil' | 'megasena';
+    const coveredDates = Array.from(new Set(gamesWithPrizes.map(g => g.dateStr)));
+
+    // 1. Agenda/cancela alarmes nativos do Android a cada 2h nos dias sem jogos
+    syncMissingGamesTwoHourReminders(coveredDates, isAdminOrCounselor, lotteryType);
+
+    if (!isAdminOrCounselor) return;
+
+    const STORAGE_KEY_2H = `bolao_last_2h_missing_games_${activePool?.id || 'main'}`;
+
+    // Se já tem jogo feito hoje, limpa o controle de 2h de hoje
+    if (todayGames.length > 0) {
+      localStorage.removeItem(STORAGE_KEY_2H);
+      return;
+    }
+
+    // 2. Se hoje é dia de sorteio e NÃO tem jogo feito, dispara notificação a cada 2h
+    const checkAndNotifyEveryTwoHours = () => {
+      const now = new Date();
+      const todayCheck = isDrawDay(now, lotteryType);
+      if (!todayCheck.isDraw) return;
+
+      const lastNotifiedRaw = localStorage.getItem(STORAGE_KEY_2H);
+      const lastNotifiedMs = lastNotifiedRaw ? Number(lastNotifiedRaw) : 0;
+      const twoHoursMs = 2 * 60 * 60 * 1000;
+
+      if (!lastNotifiedMs || Date.now() - lastNotifiedMs >= twoHoursMs) {
+        const todayBR = formatDateBR(now);
+        sendAppNotification(`⚠️ Lembrete (2h): Realizar os Jogos do Bolão!`, {
+          body: `Hoje (${todayBR}) ainda não há jogos feitos no sistema. Lembre-se de realizar e subir as apostas do bolão!`
+        });
+        localStorage.setItem(STORAGE_KEY_2H, String(Date.now()));
+      }
+    };
+
+    checkAndNotifyEveryTwoHours();
+    const interval2h = setInterval(checkAndNotifyEveryTwoHours, 60000);
+    return () => clearInterval(interval2h);
+  }, [gamesReady, gamesWithPrizes, todayGames.length, isAdminOrCounselor, isMegaSena, activePool?.id]);
+
   return (
     <div className="space-y-4">
+      {/* Pop-up Exclusivo Admin e Conselheiros: 1 dia antes de correr a última aposta (ou sem jogos ativos) */}
+      {showLastBetReminderPopup && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border-2 border-amber-500">
+            <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white p-5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider bg-black/25 px-2.5 py-1 rounded-full border border-white/20">
+                  🔒 Visível apenas para Admin e Conselheiros
+                </span>
+                <span className="text-xs font-black bg-white/20 px-2 py-0.5 rounded-md">
+                  Alerta de Renovação
+                </span>
+              </div>
+              <h3 className="text-lg sm:text-xl font-black flex items-center gap-2 leading-tight">
+                <span>⏰</span>
+                <span>
+                  {lastBetInfo.diffDaysToLastBet === 1
+                    ? 'Falta 1 Dia para Correr a Última Aposta!'
+                    : lastBetInfo.diffDaysToLastBet === 0
+                    ? 'Hoje Corre a Última Aposta Cadastrada!'
+                    : 'Atenção: Realizar os Novos Jogos do Bolão!'}
+                </span>
+              </h3>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs sm:text-sm text-amber-950 space-y-1.5">
+                {lastBetInfo.diffDaysToLastBet === 1 ? (
+                  <p className="font-bold">
+                    A última aposta registrada no sistema corre <strong>amanhã ({lastBetInfo.lastDateStr})</strong>
+                    {lastBetInfo.lastContestNum ? ` no Concurso #${lastBetInfo.lastContestNum}` : ''}.
+                  </p>
+                ) : lastBetInfo.diffDaysToLastBet === 0 ? (
+                  <p className="font-bold">
+                    A última aposta registrada no sistema corre <strong>hoje ({lastBetInfo.lastDateStr})</strong>
+                    {lastBetInfo.lastContestNum ? ` no Concurso #${lastBetInfo.lastContestNum}` : ''} e ainda não há apostas futuras cadastradas.
+                  </p>
+                ) : (
+                  <p className="font-bold">
+                    Não há apostas ativas ou futuras cadastradas no momento
+                    {lastBetInfo.lastDateStr ? ` (última aposta foi em ${lastBetInfo.lastDateStr})` : ''}.
+                  </p>
+                )}
+                <p className="text-amber-800 text-xs leading-relaxed">
+                  Lembre-se de realizar os novos jogos e subir os volantes no aplicativo. Assim que as novas apostas forem subidas, este aviso será encerrado automaticamente.
+                </p>
+              </div>
+
+              {todayGames.length === 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2.5 text-xs text-red-900">
+                  <span className="text-lg">🔔</span>
+                  <span>
+                    <strong>Sem jogo feito hoje:</strong> O aplicativo enviará notificações automáticas a cada <strong>2 horas</strong> lembrando de realizar os jogos até que as apostas sejam cadastradas.
+                  </span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                {onOpenNewGame && canCreateGames && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenNewGame();
+                    }}
+                    className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs sm:text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <span>➕</span>
+                    <span>Subir Apostas Agora</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setRenewalPopupDismissed(true)}
+                  className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs sm:text-sm rounded-xl border border-gray-300 transition cursor-pointer"
+                >
+                  Lembrar Depois
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Modal de Auditoria e Comparação Automática com Histórico */}
       {showVolantesComparator && (
         <VolantesHistoryComparator
@@ -1937,11 +2196,12 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                             <div className="mt-2.5">
                               <div className="flex flex-wrap gap-1.5 items-center">
                                 {game.gameNumbers.sort((a: number, b: number) => a - b).map((num: number) => {
-                                  const isHit = !game.isPendingFuture && drawnNumbers.includes(num);
+                                  const contestDrawn = Array.isArray(game.contestResultNumbers) ? game.contestResultNumbers : [];
+                                  const isHit = !game.isPendingFuture && contestDrawn.includes(num);
                                   return (
                                     <span
                                       key={num}
-                                      title={game.isPendingFuture ? `Número ${num} (Aguardando Sorteio)` : (isHit ? `Número ${num} sorteado!` : `Número ${num}`)}
+                                      title={contestDrawn.length === 0 ? `Número ${num} (Aguardando Sorteio)` : (isHit ? `Número ${num} sorteado!` : `Número ${num}`)}
                                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-bold text-xs flex items-center justify-center transition shadow-sm ${
                                         isHit
                                           ? 'bg-emerald-600 text-white ring-4 ring-emerald-400 font-black scale-110 shadow-lg animate-pulse'
@@ -1954,7 +2214,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                                 })}
                               </div>
                               
-                              {!game.isPendingFuture && drawnNumbers.length > 0 && (
+                              {!game.isPendingFuture && Array.isArray(game.contestResultNumbers) && game.contestResultNumbers.length > 0 && (
                                 <button
                                   onClick={() => setShowVolantesComparator(true)}
                                   className="mt-2.5 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1 rounded-md flex items-center gap-1 transition cursor-pointer"
@@ -1965,7 +2225,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                             </div>
 
                             {/* Detalhamento Completo da Premiação e Números */}
-                            {!game.isPendingFuture && drawnNumbers.length > 0 && (
+                            {!game.isPendingFuture && Array.isArray(game.contestResultNumbers) && game.contestResultNumbers.length > 0 && (
                               <div className="mt-3 pt-2.5 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
                                 {hitsInfo.matchedNumbers && hitsInfo.matchedNumbers.length > 0 ? (
                                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -2205,8 +2465,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         </div>
       )}
 
-      {/* Central de Ocorrências & Erros do Sistema (Lista Persistente em Português) */}
-      <SystemErrorsPanel />
     </div>
   );
 }

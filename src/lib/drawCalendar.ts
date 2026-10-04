@@ -261,17 +261,9 @@ export function getAdjustedActiveContestInfo(
   lotteryType: 'lotofacil' | 'megasena' = 'lotofacil'
 ) {
   const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
 
-  // Se já passou das 20h00 no dia de hoje, o sorteio do dia já está em apuração ou encerrado
-  const isAfterDrawTime = currentHour > 20 || (currentHour === 20 && currentMinute >= 0);
-
-  // Data base para avaliação do concurso ativo
+  // Mantém a data no dia atual até o último minuto do dia (23h59m59s), mudando apenas na virada do dia (00h00)
   const baseDate = new Date(now);
-  if (isAfterDrawTime) {
-    baseDate.setDate(baseDate.getDate() + 1);
-  }
 
   // Verifica se hoje/data base é dia de sorteio
   const todayDrawCheck = isDrawDay(baseDate, lotteryType);

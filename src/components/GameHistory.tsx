@@ -19,6 +19,12 @@ interface GameHistoryProps {
 export const parseDateSafely = (dateVal: any): Date => {
   if (!dateVal) return new Date();
   if (typeof dateVal.toDate === 'function') return dateVal.toDate();
+  if (typeof dateVal === 'object' && typeof dateVal.seconds === 'number') {
+    return new Date(dateVal.seconds * 1000);
+  }
+  if (typeof dateVal === 'object' && typeof dateVal._seconds === 'number') {
+    return new Date(dateVal._seconds * 1000);
+  }
   if (dateVal instanceof Date) return dateVal;
   if (typeof dateVal === 'string') {
     const trimmed = dateVal.trim();
@@ -298,12 +304,7 @@ export default function GameHistory({
     });
   }, [groupedContests]);
 
-  // Auto-expandir a primeira pasta (mês mais recente) ao abrir a tela
-  useEffect(() => {
-    if (contestsByMonth.length > 0 && Object.keys(expandedMonths).length === 0) {
-      setExpandedMonths({ [contestsByMonth[0][0]]: true });
-    }
-  }, [contestsByMonth]);
+  // Mantém todas as pastas de meses e concursos sempre retraídos por padrão ao abrir o Histórico
 
   // Identifica grupos de apostas replicados (mesmos jogos de 16 dezenas espalhados em vários concursos)
   const duplicatedContestsCluster = useMemo(() => {
@@ -371,12 +372,17 @@ export default function GameHistory({
   };
 
   const expandAll = () => {
-    const next: Record<string, boolean> = {};
-    groupedContests.forEach(c => { next[c.key] = true; });
-    setExpandedContests(next);
+    const nextMonths: Record<string, boolean> = {};
+    contestsByMonth.forEach(([m]) => { nextMonths[m] = true; });
+    setExpandedMonths(nextMonths);
+
+    const nextContests: Record<string, boolean> = {};
+    groupedContests.forEach(c => { nextContests[c.key] = true; });
+    setExpandedContests(nextContests);
   };
 
   const collapseAll = () => {
+    setExpandedMonths({});
     setExpandedContests({});
   };
 

@@ -280,8 +280,7 @@ export default function VolantesHistoryComparator({
 
     report += `\n_Conferência oficial sincronizada com a Caixa Econômica Federal._`;
 
-    navigator.clipboard.writeText(report);
-    addToast('📋 Relatório de auditoria copiado para a área de transferência!', 'success');
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(report)}`, '_blank', 'noopener,noreferrer');
   };
 
   useEffect(() => {
