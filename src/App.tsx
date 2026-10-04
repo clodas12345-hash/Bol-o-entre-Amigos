@@ -362,8 +362,14 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
-        if (data.createdAt && data.status !== 'pending_approval' && !data.deleted) {
-          const msgDate = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+        if (data.status !== 'pending_approval' && !data.deleted) {
+          const msgDate = data.createdAt?.toDate
+            ? data.createdAt.toDate()
+            : data.createdAt
+            ? new Date(data.createdAt)
+            : data.clientTimestampMs
+            ? new Date(data.clientTimestampMs)
+            : new Date();
           const msgText = String(data.text || '');
           const hasMentions = data.hasMentions === true || /@[\wÁ-ÿ]+/.test(msgText);
           const mentionEveryone = data.mentionEveryone === true || /@(todos|todo\s*mundo|grupo)\b/i.test(msgText);
@@ -379,8 +385,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
             (mentionAdmins && isModUser);
 
           // 1. Se houve marcação (@Nome ou @Todos) direcionada a este usuário hoje, dispara PUSH NATIVO IMEDIATO!
-          // (Não fica bloqueado pelo limite de 1 por dia das mensagens comuns e dispara mesmo na tela atual se foi recém-enviado)
-          const isRecentMention = Date.now() - msgDate.getTime() < 5 * 60 * 1000;
+          const isRecentMention = Math.abs(Date.now() - msgDate.getTime()) < 5 * 60 * 1000;
           if (
             hasMentions &&
             (mentionEveryone || isCurrentUserMentioned) &&
@@ -401,7 +406,8 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                 body: mentionBody,
                 id: Math.floor(Math.random() * 800000) + 100000,
                 category: 'chat_mention',
-                uid: user.uid
+                uid: user.uid,
+                targetPath: '/chat'
               });
             }
           }

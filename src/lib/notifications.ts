@@ -151,7 +151,9 @@ export function isNotificationCategoryAllowed(category?: NotificationCategory, u
 }
 
 let channelCreated = false;
-async function ensureAndroidHighImportanceChannel() {
+let permissionVerified = false;
+
+export async function ensureAndroidHighImportanceChannel() {
   if (!Capacitor.isNativePlatform() || channelCreated) return;
   try {
     await LocalNotifications.createChannel({
@@ -167,6 +169,11 @@ async function ensureAndroidHighImportanceChannel() {
   } catch {
     // Ignora caso não suportado na versão
   }
+}
+
+// Pré-inicializa o canal imediatamente ao carregar o app no Android para zero latência
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+  ensureAndroidHighImportanceChannel();
 }
 
 export function resolveNotificationTargetPath(input?: {
@@ -218,7 +225,7 @@ export function resolveNotificationTargetPath(input?: {
 }
 
 /**
- * Envia notificação imediata (respeitando as escolhas do participante caso a categoria seja informada)
+ * Envia notificação IMEDIATA (sem fila do AlarmManager, exibição em 0ms no NotificationManager)
  */
 export async function sendAppNotification(
   title: string,
@@ -243,12 +250,20 @@ export async function sendAppNotification(
 
   if (Capacitor.isNativePlatform()) {
     try {
-      const perm = await LocalNotifications.checkPermissions();
-      if (perm.display !== 'granted') {
-        await LocalNotifications.requestPermissions();
+      if (!channelCreated) {
+        await ensureAndroidHighImportanceChannel();
       }
-      await ensureAndroidHighImportanceChannel();
+      if (!permissionVerified) {
+        const perm = await LocalNotifications.checkPermissions();
+        if (perm.display === 'granted') {
+          permissionVerified = true;
+        } else {
+          const req = await LocalNotifications.requestPermissions();
+          permissionVerified = req.display === 'granted';
+        }
+      }
 
+      // Sem a propriedade `schedule`, o Capacitor aciona o NotificationManager.notify() na mesma hora (0ms de atraso!)
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -258,10 +273,6 @@ export async function sendAppNotification(
             channelId: 'bolao_high_priority',
             smallIcon: 'ic_stat_icon',
             sound: 'default',
-            schedule: {
-              at: new Date(Date.now() + 300),
-              allowWhileIdle: true
-            },
             extra: {
               autoCheckPrize: true,
               category: options?.category,

@@ -398,7 +398,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         const rawNotice = fetchRes?.data?.message || fetchRes?.message || 'Nenhuma dezena válida';
         const noticeMsg = formatErrorMessage(rawNotice);
         updateItem(item.id, { status: 'error', progress: 100, message: noticeMsg, durationMs: Date.now() - startTime });
-        return;
+        return false;
       }
 
       const data = fetchRes.data;
@@ -572,12 +572,53 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         setQueue(prev => prev.filter(q => q.id !== item.id));
       }, 3500);
 
+      return true;
     } catch (err: any) {
       console.warn('Aviso no envio em segundo plano:', err.message || err);
       logSystemError('Camera', err, `Upload/OCR do Bilhete (${item.name})`);
       if (isQuotaError(err)) setIsQuotaExceeded(true);
       const friendlyError = formatErrorMessage(err?.message || 'Falha de processamento');
       updateItem(item.id, { status: 'error', progress: 100, message: friendlyError });
+      return false;
+    }
+  };
+
+  // Executa lote de itens e, após finalizar o último, volta automaticamente tentando subir os que deram erro até que todos deem certo
+  const runBatchUntilAllSucceed = async (itemsToProcess: QueueItem[], existingSigs: Set<string>) => {
+    let pendingList = [...itemsToProcess];
+    let round = 1;
+
+    while (pendingList.length > 0) {
+      const failedInThisRound: QueueItem[] = [];
+
+      if (round > 1) {
+        // Marca todos os itens que restaram com erro como 'pending' para a nova rodada automática
+        const retryIds = new Set(pendingList.map(i => i.id));
+        setQueue(prev =>
+          prev.map(q =>
+            retryIds.has(q.id)
+              ? { ...q, status: 'pending', progress: 15, message: `Tentando novamente (${round}ª passagem)...` }
+              : q
+          )
+        );
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
+      for (let idx = 0; idx < pendingList.length; idx++) {
+        const currentItem = pendingList[idx];
+        if (idx > 0) await new Promise(r => setTimeout(r, 800));
+        const succeeded = await processQueueItem(currentItem, currentItem.options || {}, existingSigs);
+        if (!succeeded) {
+          failedInThisRound.push(currentItem);
+        }
+      }
+
+      if (failedInThisRound.length === 0) {
+        break; // Todos deram certo!
+      }
+
+      round++;
+      pendingList = failedInThisRound;
     }
   };
 
@@ -595,14 +636,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     setQueue(prev => [...prev, ...newItems]);
 
     // Pre-fetch signatures once for the batch to ensure consistency and performance
-    const poolId = options.poolId || 'default_lotofacil_pool';
     const existingSigs = await getExistingSignatures();
 
-    // Process items sequentially in background with slight pacing to avoid rate limits
-    for (let idx = 0; idx < newItems.length; idx++) {
-      if (idx > 0) await new Promise(r => setTimeout(r, 800));
-      await processQueueItem(newItems[idx], options, existingSigs);
-    }
+    await runBatchUntilAllSucceed(newItems, existingSigs);
   }, [pools, setIsQuotaExceeded]);
 
   const retryFailed = useCallback(async () => {
@@ -613,13 +649,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     if (failedItems.length === 0) return;
 
     const existingSigs = await getExistingSignatures();
-    for (let idx = 0; idx < failedItems.length; idx++) {
-      if (idx > 0) await new Promise(r => setTimeout(r, 800));
-      const item = failedItems[idx];
-      updateItem(item.id, { status: 'pending', progress: 10, message: 'Re-analisando...' });
-      await processQueueItem(item, item.options || {}, existingSigs);
-    }
-  }, [queue]);
+    await runBatchUntilAllSucceed(failedItems, existingSigs);
+  }, [queue, pools]);
 
   const clearCompleted = () => {
     setQueue(prev => prev.filter(item => item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving'));

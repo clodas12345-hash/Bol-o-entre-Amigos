@@ -1,14 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy, doc, limit, writeBatch, updateDoc } from 'firebase/firestore';
 import { db, auth, isQuotaError } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
-import { getUserNotificationPreferences, UserNotificationPreferences, resolveNotificationTargetPath } from '../lib/notifications';
+import { getUserNotificationPreferences, UserNotificationPreferences, resolveNotificationTargetPath, sendAppNotification } from '../lib/notifications';
 import { formatAnyDateBR } from '../lib/formatters';
 
 export default function NotificationBell() {
   const { setIsQuotaExceeded } = usePool();
   const navigate = useNavigate();
+  const initialLoadDoneRef = useRef(false);
   const [notifications, setNotifications] = useState<any[]>(() => {
     try {
       const cached = localStorage.getItem('bolao_cache_notifications');
@@ -44,6 +45,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     if (!activeUid) return;
+    initialLoadDoneRef.current = false;
 
     // Listen for notifications for this user OR broadcast to 'all'
     const q = query(
@@ -56,6 +58,30 @@ export default function NotificationBell() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setNotifications(list);
+
+      // Dispara push nativo instantâneo caso chegue uma nova notificação direcionada em tempo real
+      if (initialLoadDoneRef.current) {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const nData = change.doc.data();
+            if (!nData.read && nData.isDirectMention) {
+              const pushedKey = `bolao_pushed_notif_${change.doc.id}`;
+              if (!sessionStorage.getItem(pushedKey)) {
+                sessionStorage.setItem(pushedKey, '1');
+                sendAppNotification(nData.title || '💬 Nova menção no Chat', {
+                  body: nData.message || '',
+                  category: 'chat_mention',
+                  uid: activeUid,
+                  targetPath: '/chat'
+                });
+              }
+            }
+          }
+        });
+      } else {
+        initialLoadDoneRef.current = true;
+      }
+
       try {
         localStorage.setItem('bolao_cache_notifications', JSON.stringify(list));
       } catch (cacheErr) {
