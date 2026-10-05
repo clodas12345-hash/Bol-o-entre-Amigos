@@ -341,15 +341,27 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       limit(20)
     );
 
+    const normalizeMentionStr = (str: string) =>
+      String(str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\([^)]*\)/g, '')
+        .trim()
+        .toLowerCase();
+
     const unsub = onSnapshot(q, (snapshot) => {
       let count = 0;
       let latestOtherMessageToday: { text: string; displayName: string } | null = null;
       const todayBR = formatDateBR(new Date());
-      const myNameLower = String(userData?.displayName || user?.displayName || '').trim().toLowerCase();
-      const myFirstNameLower = myNameLower.split(/\s+/)[0] || '';
+
+      const rawDisplayName = String(userData?.displayName || user?.displayName || '').trim();
+      const myNameNorm = normalizeMentionStr(rawDisplayName);
+      const myShortNameNorm = normalizeMentionStr(formatFirstAndLastName(rawDisplayName));
+      const myFirstNameNorm = myNameNorm.split(/\s+/)[0] || '';
+      const myPhoneClean = normalizeBrazilianPhoneDigits(userData?.phone || user?.phoneNumber || '');
       const isModUser = isAdmin || userData?.role === 'admin' || userData?.role === 'counselor';
 
-      // Lista de IDs de menções já notificadas por push nativo neste aparelho
+      // Lista de IDs de menções já notificadas neste aparelho
       let notifiedMentionIds: string[] = [];
       try {
         const savedMentions = localStorage.getItem(`bolao_notified_mentions_${user.uid}`);
@@ -371,37 +383,45 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
             ? new Date(data.clientTimestampMs)
             : new Date();
           const msgText = String(data.text || '');
-          const hasMentions = data.hasMentions === true || /@[\wÁ-ÿ]+/.test(msgText);
-          const mentionEveryone = data.mentionEveryone === true || /@(todos|todo\s*mundo|grupo)\b/i.test(msgText);
-          const mentionAdmins = data.mentionAdmins === true || /@(administradores|admins|admin|moderadores)\b/i.test(msgText);
+          const msgNorm = normalizeMentionStr(msgText);
+          const hasMentions = data.hasMentions === true || /@\S+/.test(msgText);
+          const mentionEveryone = data.mentionEveryone === true || /@(todos|todo\s*mundo|grupo)\b/i.test(msgNorm);
+          const mentionAdmins = data.mentionAdmins === true || /@(administradores|admins|admin|moderadores|clodas)\b/i.test(msgNorm);
           const mentionedIds: string[] = Array.isArray(data.mentionedUserIds) ? data.mentionedUserIds : [];
-          const mentionedNames: string[] = Array.isArray(data.mentionedNames) ? data.mentionedNames : [];
+          const mentionedPhones: string[] = Array.isArray(data.mentionedPhones) ? data.mentionedPhones : [];
+          const mentionedNames: string[] = Array.isArray(data.mentionedNames)
+            ? data.mentionedNames.map((n: string) => normalizeMentionStr(n))
+            : [];
 
           const isCurrentUserMentioned =
             mentionedIds.includes(user.uid) ||
             (userData?.id && mentionedIds.includes(userData.id)) ||
-            (myNameLower.length >= 2 && (mentionedNames.includes(myNameLower) || msgText.toLowerCase().includes(`@${myNameLower}`))) ||
-            (myFirstNameLower.length >= 2 && new RegExp(`@${myFirstNameLower}\\b`, 'i').test(msgText)) ||
+            (userData?.uid && mentionedIds.includes(userData.uid)) ||
+            (myPhoneClean.length >= 10 && mentionedPhones.includes(myPhoneClean)) ||
+            (myNameNorm.length >= 2 && (mentionedNames.includes(myNameNorm) || msgNorm.includes(`@${myNameNorm}`))) ||
+            (myShortNameNorm.length >= 2 && (mentionedNames.includes(myShortNameNorm) || msgNorm.includes(`@${myShortNameNorm}`))) ||
+            (myFirstNameNorm.length >= 2 && new RegExp(`@${myFirstNameNorm}\\b`, 'i').test(msgNorm)) ||
             (mentionAdmins && isModUser);
 
-          // 1. Se houve marcação (@Nome ou @Todos) direcionada a este usuário hoje, dispara PUSH NATIVO IMEDIATO!
-          const isRecentMention = Math.abs(Date.now() - msgDate.getTime()) < 5 * 60 * 1000;
+          // 1. Se houve marcação (@Nome ou @Todos) direcionada a este usuário, sobe NOTIFICAÇÃO IMEDIATA!
+          const msgAgeMs = Math.abs(Date.now() - msgDate.getTime());
+          const isRecentMention = msgAgeMs < 15 * 60 * 1000;
           if (
             hasMentions &&
             (mentionEveryone || isCurrentUserMentioned) &&
             isRecentMention &&
             !updatedMentionIds.includes(docSnap.id)
           ) {
-            // Se não fui eu mesmo que mandei (ou se eu mesmo me marquei para testar o @)
-            const isSelfMentionTest = data.uid === user.uid && (isCurrentUserMentioned || mentionEveryone);
-            if (data.uid !== user.uid || isSelfMentionTest) {
-              updatedMentionIds.push(docSnap.id);
-              const senderName = data.displayName || 'Participante';
-              const mentionTitle = mentionEveryone
-                ? `📢 ${senderName} marcou @Todos no Chat`
-                : `💬 ${senderName} marcou você (@) no Chat!`;
-              const mentionBody = `${senderName}: "${msgText.slice(0, 100)}"`;
+            updatedMentionIds.push(docSnap.id);
+            const senderName = formatFirstAndLastName(data.displayName || 'Participante');
+            const mentionTitle = mentionEveryone
+              ? `📢 ${senderName} marcou @Todos no Chat`
+              : `💬 ${senderName} marcou você no Chat!`;
+            const mentionBody = `${senderName}: "${msgText.slice(0, 100)}"`;
 
+            const pushKey = `bolao_pushed_mention_${docSnap.id}_${user.uid}`;
+            if (!sessionStorage.getItem(pushKey)) {
+              sessionStorage.setItem(pushKey, '1');
               sendAppNotification(mentionTitle, {
                 body: mentionBody,
                 id: Math.floor(Math.random() * 800000) + 100000,

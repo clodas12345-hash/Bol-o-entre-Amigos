@@ -248,6 +248,23 @@ export async function sendAppNotification(
     body: options?.body
   });
 
+  // Emite banner de notificação flutuante no topo da tela (garante visualização imediata no app aberto, iFrame ou WebView)
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('bolao_in_app_push_banner', {
+          detail: {
+            id: options?.id || Date.now(),
+            title,
+            body: options?.body || '',
+            category: options?.category,
+            targetPath
+          }
+        })
+      );
+    } catch {}
+  }
+
   if (Capacitor.isNativePlatform()) {
     try {
       if (!channelCreated) {

@@ -68,12 +68,6 @@ export default function NotificationBell() {
               const pushedKey = `bolao_pushed_notif_${change.doc.id}`;
               if (!sessionStorage.getItem(pushedKey)) {
                 sessionStorage.setItem(pushedKey, '1');
-                sendAppNotification(nData.title || '💬 Nova menção no Chat', {
-                  body: nData.message || '',
-                  category: 'chat_mention',
-                  uid: activeUid,
-                  targetPath: '/chat'
-                });
               }
             }
           }
@@ -103,6 +97,7 @@ export default function NotificationBell() {
   const visibleNotifications = useMemo(() => {
     if (!prefs.pushEnabled) return [];
     return notifications.filter(notif => {
+      if (notif.isDirectMention) return true;
       const titleLower = String(notif.title || '').toLowerCase();
       if (notif.type === 'chat' || titleLower.includes('chat')) {
         return prefs.chatDailyNotification !== false;

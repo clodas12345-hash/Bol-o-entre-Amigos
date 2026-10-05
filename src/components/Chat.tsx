@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, setDoc, deleteDoc, limit } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
-import { formatFirstAndLastName } from '../lib/formatters';
+import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from '../lib/formatters';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { getIsAdmin } from '../lib/authHelpers';
@@ -38,6 +38,15 @@ function getSenderColor(name: string): string {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
+}
+
+function normalizeTextForMention(str: string): string {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 export default function Chat() {
@@ -488,11 +497,59 @@ export default function Chat() {
   const [dismissSmartSuggestions, setDismissSmartSuggestions] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'members'), (snapshot) => {
-      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setMembersList(list);
-    }, err => console.warn('Members snapshot error:', err));
-    return unsub;
+    let usersArr: any[] = [];
+    let membersArr: any[] = [];
+
+    const mergeAndSetMembers = () => {
+      const combined: any[] = [...usersArr];
+      for (const m of membersArr) {
+        const existingIdx = combined.findIndex(
+          u =>
+            u.id === m.id ||
+            (m.uid && u.uid === m.uid) ||
+            (m.phone && u.phone && normalizeBrazilianPhoneDigits(m.phone) === normalizeBrazilianPhoneDigits(u.phone)) ||
+            (m.displayName && u.displayName && normalizeTextForMention(m.displayName) === normalizeTextForMention(u.displayName))
+        );
+        if (existingIdx === -1) {
+          combined.push(m);
+        } else {
+          // Combina todos os IDs equivalentes para que a notificação chegue independentemente de o membro estar logado via Google (users) ou Celular (members)
+          const existing = combined[existingIdx];
+          const allIds = Array.from(new Set([existing.id, existing.uid, m.id, m.uid].filter(Boolean)));
+          combined[existingIdx] = {
+            ...existing,
+            ...m,
+            id: existing.id || m.id,
+            uid: existing.uid || m.uid || existing.id,
+            allIds
+          };
+        }
+      }
+      setMembersList(combined);
+    };
+
+    const unsubMembers = onSnapshot(
+      collection(db, 'members'),
+      (snapshot) => {
+        membersArr = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        mergeAndSetMembers();
+      },
+      err => console.warn('Members snapshot error:', err)
+    );
+
+    const unsubUsers = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        usersArr = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        mergeAndSetMembers();
+      },
+      err => console.warn('Users snapshot error:', err)
+    );
+
+    return () => {
+      unsubMembers();
+      unsubUsers();
+    };
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -533,7 +590,7 @@ export default function Chat() {
       displayName: m.displayName || m.name || 'Membro',
       role: m.role === 'admin' ? 'Admin' : (m.role === 'counselor' ? 'Conselheiro' : 'Participante')
     }))
-  ].filter(m => !mentionQuery || m.displayName.toLowerCase().includes(mentionQuery));
+  ].filter(m => !mentionQuery || normalizeTextForMention(m.displayName).includes(normalizeTextForMention(mentionQuery)));
 
   // Detecção inteligente de dúvidas financeiras para moderadores (Admin/Conselheiro)
   const financialKeywords = ['quanto', 'colaborar', 'custo', 'valor', 'cota', 'pix', 'pagar', 'chave', 'preço', 'contribuição', 'depósito'];
@@ -698,25 +755,37 @@ export default function Chat() {
     } : null;
 
     // Detecta se alguém foi marcado (@Nome, @Todos ou @Administradores)
-    const lowerSentText = sentText.toLowerCase();
-    const hasAtMention = /@[\wÁ-ÿ]+/.test(sentText);
-    const mentionEveryone = /@(todos|todo\s*mundo|grupo)\b/i.test(sentText);
-    const mentionAdmins = /@(administradores|admins|admin|moderadores)\b/i.test(sentText);
+    const normalizedSentText = normalizeTextForMention(sentText);
+    const hasAtMention = /@\S+/.test(sentText);
+    const mentionEveryone = /@(todos|todo\s*mundo|grupo)\b/i.test(normalizedSentText);
+    const mentionAdmins = /@(administradores|admins|admin|moderadores|clodas)\b/i.test(normalizedSentText);
 
-    const mentionedMemberTargets: { id: string; uid?: string; displayName: string }[] = [];
+    const mentionedMemberTargets: { ids: string[]; phone?: string; displayName: string }[] = [];
     if (hasAtMention && !mentionEveryone) {
       membersList.forEach(m => {
         const mName = String(m.displayName || m.name || '').trim();
         if (!mName) return;
-        const mNameLower = mName.toLowerCase();
-        const firstNameLower = mNameLower.split(/\s+/)[0];
-        if (
-          lowerSentText.includes(`@${mNameLower}`) ||
-          (firstNameLower.length >= 2 && new RegExp(`@${firstNameLower}\\b`, 'i').test(sentText))
-        ) {
+        const mNorm = normalizeTextForMention(mName);
+        const mShortNorm = normalizeTextForMention(formatFirstAndLastName(mName));
+        const firstNameNorm = mNorm.split(/\s+/)[0] || '';
+        const rawLower = mName.toLowerCase();
+
+        const isMatched =
+          (mNorm.length >= 2 && normalizedSentText.includes(`@${mNorm}`)) ||
+          (mShortNorm.length >= 2 && normalizedSentText.includes(`@${mShortNorm}`)) ||
+          (rawLower.length >= 2 && sentText.toLowerCase().includes(`@${rawLower}`)) ||
+          (firstNameNorm.length >= 2 && new RegExp(`@${firstNameNorm}\\b`, 'i').test(normalizedSentText));
+
+        if (isMatched) {
+          const candidateIds = Array.from(
+            new Set([m.id, m.uid, ...(Array.isArray(m.allIds) ? m.allIds : [])].filter(Boolean) as string[])
+          );
+          if (m.role === 'admin' || mNorm.includes('clodas')) {
+            candidateIds.push('admin_phone_clodas');
+          }
           mentionedMemberTargets.push({
-            id: m.id,
-            uid: m.uid || m.id,
+            ids: candidateIds,
+            phone: m.phone ? normalizeBrazilianPhoneDigits(m.phone) : undefined,
             displayName: mName
           });
         }
@@ -724,11 +793,20 @@ export default function Chat() {
     }
 
     const mentionedUserIds = Array.from(
+      new Set(mentionedMemberTargets.flatMap(t => t.ids))
+    );
+    const mentionedPhones = Array.from(
+      new Set(mentionedMemberTargets.map(t => t.phone).filter(Boolean) as string[])
+    );
+    const mentionedNames = Array.from(
       new Set(
-        mentionedMemberTargets.flatMap(t => [t.id, t.uid].filter(Boolean) as string[])
+        mentionedMemberTargets.flatMap(t => [
+          t.displayName.toLowerCase(),
+          normalizeTextForMention(t.displayName),
+          normalizeTextForMention(formatFirstAndLastName(t.displayName))
+        ]).filter(Boolean)
       )
     );
-    const mentionedNames = mentionedMemberTargets.map(t => t.displayName.toLowerCase());
 
     try {
       const docRef = await addDoc(collection(db, 'messages'), {
@@ -745,6 +823,7 @@ export default function Chat() {
         mentionEveryone,
         mentionAdmins,
         mentionedUserIds,
+        mentionedPhones,
         mentionedNames
       });
 
@@ -758,18 +837,21 @@ export default function Chat() {
             title: `📢 ${formatFirstAndLastName(currentUser.displayName)} marcou @Todos no Chat`,
             message: sentText.slice(0, 120),
             type: 'chat',
+            isDirectMention: true,
+            targetPath: '/chat',
             read: false,
             createdAt: serverTimestamp()
           }).catch(() => {});
         } else if (mentionedUserIds.length > 0) {
           mentionedUserIds.forEach(targetUid => {
-            if (targetUid && targetUid !== currentUser.uid) {
+            if (targetUid) {
               addDoc(collection(db, 'notifications'), {
                 userId: targetUid,
                 title: `💬 ${formatFirstAndLastName(currentUser.displayName)} marcou você no Chat`,
                 message: sentText.slice(0, 120),
                 type: 'chat',
                 isDirectMention: true,
+                targetPath: '/chat',
                 read: false,
                 createdAt: serverTimestamp()
               }).catch(() => {});
