@@ -26,14 +26,14 @@ async function processBetImageWithSharp(rawBase64: string): Promise<{ base64: st
   const contrastOffset = -(128 * contrastMultiplier) + 128; // -25.6 para manter o ponto médio em 128
 
   const processedBuffer = await sharp(inputBuffer)
-    .rotate() // Respeita orientação EXIF da câmera do celular
-    .resize(1280, 1280, {
+    .rotate() 
+    .resize(1024, 1024, { // Reduzido de 1280 para 1024 para processamento instantâneo
       fit: 'inside',
       withoutEnlargement: true
     })
     .grayscale()
     .linear(contrastMultiplier, contrastOffset)
-    .jpeg({ quality: 75, mozjpeg: true })
+    .jpeg({ quality: 70, mozjpeg: true }) // Qualidade 70 é suficiente para OCR claro
     .toBuffer();
 
   return {
@@ -104,7 +104,7 @@ async function generateWithFallback(params: {
   let lastError: any = null;
   
   for (const model of modelsToTry) {
-    const maxRetries = 3;
+    const maxRetries = 1;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`[AI] Attempting content generation with model: ${model} (attempt ${attempt}/${maxRetries})`);
@@ -432,7 +432,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100mb' }));
 
 // Rota dedicada para pré-processamento de imagem com 'sharp' (1280px + grayscale + 20% contraste)
 app.post('/api/lotofacil/preprocess-image', async (req, res) => {
@@ -461,48 +461,29 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
     const imageParts: any[] = [];
 
     if (Array.isArray(images) && images.length > 0) {
-      for (const img of images) {
+      console.log(`[OCR] Recebidas ${images.length} imagens. Enviando direto para IA...`);
+      images.forEach(img => {
         if (img && img.base64) {
-          try {
-            const sharpResult = await processBetImageWithSharp(img.base64);
+          const cleanBase64 = String(img.base64).replace(/^data:[^;]+;base64,/, '').trim();
+          if (cleanBase64) {
             imageParts.push({
               inlineData: {
-                mimeType: sharpResult.mimeType,
-                data: sharpResult.base64
+                mimeType: img.mimeType || 'image/jpeg',
+                data: cleanBase64
               }
             });
-          } catch (sharpErr) {
-            const cleanBase64 = String(img.base64).replace(/^data:[^;]+;base64,/, '').trim();
-            if (cleanBase64) {
-              imageParts.push({
-                inlineData: {
-                  mimeType: img.mimeType || 'image/jpeg',
-                  data: cleanBase64
-                }
-              });
-            }
           }
         }
-      }
+      });
     } else if (imageBase64) {
-      try {
-        const sharpResult = await processBetImageWithSharp(imageBase64);
+      const cleanBase64 = String(imageBase64).replace(/^data:[^;]+;base64,/, '').trim();
+      if (cleanBase64) {
         imageParts.push({
           inlineData: {
-            mimeType: sharpResult.mimeType,
-            data: sharpResult.base64
+            mimeType: mimeType || 'image/jpeg',
+            data: cleanBase64
           }
         });
-      } catch (sharpErr) {
-        const cleanBase64 = String(imageBase64).replace(/^data:[^;]+;base64,/, '').trim();
-        if (cleanBase64) {
-          imageParts.push({
-            inlineData: {
-              mimeType: mimeType || 'image/jpeg',
-              data: cleanBase64
-            }
-          });
-        }
       }
     }
 
@@ -510,32 +491,16 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nenhuma imagem fornecida para análise.' });
     }
 
-    const prompt = `Você é um leitor e analista inteligente de altíssima precisão especialista em bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
-
-DIRETRIZES DE EXTRAÇÃO COM PRECISÃO OFICIAL (CALENDÁRIO CAIXA):
-1. NÚMERO DO CONCURSO (MUITO CRÍTICO):
-   - Extraia EXATAMENTE o número do concurso que está impresso no bilhete (geralmente acompanhado de "CONCURSO", "CONC." ou "CONCURSO Nº").
-   - NUNCA force ou invente o número do concurso com base em datas fixas, pois a Caixa pode alterar dias de sorteios em virtude de feriados, datas comemorativas ou sorteios especiais.
-   - NUNCA confunda com número de Terminal ("TERM"), código da Lotérica ("LOT"), NSU, código de barras ou horário da aposta.
-2. DATA DO SORTEIO:
-   - Extraia a data exata do sorteio impressa no bilhete (formato YYYY-MM-DD).
-   - Lembre-se que sorteios da Caixa não ocorrem aos domingos nem em feriados nacionais.
-3. TEIMOSINHA:
-   - Se o bilhete indicar "Teimosinha" (ex: 2, 4, 8, 12 teimosinhas), capture "isTeimosinha: true" e "teimosinhaCount: <número>".
-   - Se for aposta simples para apenas um concurso, "isTeimosinha: false" e "teimosinhaCount: 1".
-4. DEZENAS ESCOLHIDAS:
-   - Extraia todas as dezenas jogadas nos círculos ou campos de jogo do bilhete.
-   - Se houver mais de um jogo no mesmo bilhete, retorne cada jogo como um array separado de números inteiros em ordem crescente no campo "games".
-
-Retorne APENAS o JSON puro (sem markdown):
+    const prompt = `Extraia dados deste bilhete da Caixa (Lotofácil/Mega-Sena) em JSON:
 {
   "success": true,
   "date": "YYYY-MM-DD",
-  "contest": "Número",
+  "contest": "número",
   "isTeimosinha": boolean,
   "teimosinhaCount": number,
-  "games": [[1, 2, 3...], [10, 11, 12...]]
-}`;
+  "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
+}
+Regra: Priorize número do concurso (CONC) e capture todas as dezenas marcadas.`;
 
     const response = await generateWithFallback({
       contents: {

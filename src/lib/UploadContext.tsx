@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp, orderBy, limit, getDoc, doc } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
 import { db, isQuotaError } from './firebase';
 import { useToast } from '../components/NotificationManager';
 import { usePool } from './PoolContext';
@@ -60,28 +61,16 @@ const performClientSideOcr = async (base64Image: string, apiKey: string): Promis
   const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
   let lastError: any = null;
 
-  const prompt = `Você é um leitor inteligente de altíssima precisão especialista de nível superior para extração de dados de bilhetes das Loterias Caixa (Lotofácil e Mega-Sena).
-DIRETRIZES CRÍTICAS:
-1. DEZENAS: Extraia todas as dezenas jogadas nos círculos coloridos roxos, verdes ou cinzas.
-2. NÚMERO DO CONCURSO (MUITO CRÍTICO):
-   - Procure EXCLUSIVAMENTE a palavra "CONCURSO", "CONC." ou "CONCURSO Nº" associada ao cabeçalho da modalidade (ex: "LOTOFÁCIL CONCURSO 3696" -> retornar "3696" como contest).
-   - NUNCA CONFUNDA COM:
-     * Número de Terminal (ex: "TERM 03012" ou "TERM 3012" -> ISSO É O TERMINAL DA MÁQUINA, NUNCA O CONCURSO!).
-     * Código da Lotérica (ex: "LOT 3012" ou "AG 3012").
-     * Número de Pedido, Compra, Transação, NSU ou Código de Segurança.
-   - Em bilhetes de 2026, os concursos da Lotofácil estão na faixa entre 3600 e 3900.
-3. DATA DO SORTEIO: Identifique a data do sorteio (ex: 28/05/2026 -> retornar "2026-05-28" como date).
-4. TEIMOSINHA: Identifique Teimosinhas se houver (ex: "2 Teimosinhas" -> isTeimosinha: true, teimosinhaCount: 2). Se for aposta simples sem teimosinha, retorne isTeimosinha: false, teimosinhaCount: 1.
-
-Retorne APENAS o JSON puro (sem markdown):
+  const prompt = `Extraia dados deste bilhete da Caixa (Lotofácil/Mega-Sena) em JSON:
 {
   "success": true,
   "date": "YYYY-MM-DD",
-  "contest": "Número",
-  "isTeimosinha": false,
-  "teimosinhaCount": 1,
+  "contest": "número",
+  "isTeimosinha": boolean,
+  "teimosinhaCount": number,
   "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
-}`;
+}
+Regra: Priorize número do concurso (CONC) e capture todas as dezenas marcadas.`;
 
   for (const model of modelsToTry) {
     try {
@@ -168,8 +157,8 @@ export const checkGameDuplicateInFirestore = async (
 export const getExistingSignatures = async (): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
-    // Busca em todos os jogos para pré-carregar assinaturas conhecidas
-    const q = query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(1000));
+    // Busca reduzida apenas para os jogos mais recentes (evita lentidão no carregamento inicial)
+    const q = query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(50));
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();
@@ -263,17 +252,17 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const prices = isMegaSena ? MEGASENA_PRICES : LOTOFACIL_PRICES;
 
     try {
-      updateItem(item.id, { status: 'compressing', progress: 20, message: 'Otimizando imagem (1280px + P&B +20% contraste)...' });
+      updateItem(item.id, { status: 'compressing', progress: 20, message: 'Preparando imagem para envio...' });
 
-      // 1. Pré-processamento inicial para 1280px + escala de cinza + 20% de contraste
-      const clientProcessed = await new Promise<{ base64: string; mimeType: string }>((resolve) => {
+      // 1. Redimensionamento básico no cliente para economizar banda (máx 1600px, Sharp cuidará dos 1280px e filtros)
+      const compressed = await new Promise<{ base64: string; mimeType: string }>((resolve) => {
         if (!item.file) return resolve({ base64: '', mimeType: '' });
         const reader = new FileReader();
         reader.onload = (e) => {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX = 1280; // Resolução máxima de 1280px
+            const MAX = 800; // Redução agressiva para upload instantâneo e processamento rápido da IA
             let w = img.width, h = img.height;
             if (w > h ? w > MAX : h > MAX) {
               if (w > h) { h = Math.round(h * (MAX / w)); w = MAX; }
@@ -283,39 +272,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'high';
+              ctx.imageSmoothingQuality = 'low'; // Velocidade máxima
               ctx.drawImage(img, 0, 0, w, h);
-              
-              // Conversão de escala de cinza + 20% de contraste (multiplicador linear 1.2)
-              try {
-                const imageData = ctx.getImageData(0, 0, w, h);
-                const data = imageData.data;
-                const contrastFactor = 1.2; // +20% de contraste
-                const contrastOffset = -(128 * contrastFactor) + 128;
-                
-                for (let i = 0; i < data.length; i += 4) {
-                  const r = data[i];
-                  const g = data[i + 1];
-                  const b = data[i + 2];
-                  
-                  // Escala de cinza (ITU-R BT.709)
-                  const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-                  
-                  // +20% de contraste
-                  let val = contrastFactor * gray + contrastOffset;
-                  if (val < 0) val = 0;
-                  if (val > 255) val = 255;
-                  
-                  data[i] = val;
-                  data[i + 1] = val;
-                  data[i + 2] = val;
-                }
-                ctx.putImageData(imageData, 0, 0);
-              } catch (preprocessErr) {
-                console.warn('[OCR Preprocessing] Aviso no filtro local:', preprocessErr);
-              }
-
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.75), mimeType: 'image/jpeg' });
+              resolve({ base64: canvas.toDataURL('image/jpeg', 0.60), mimeType: 'image/jpeg' });
             } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
           };
           img.src = e.target?.result as string;
@@ -323,50 +282,21 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         reader.readAsDataURL(item.file);
       });
 
-      if (!clientProcessed.base64) throw new Error('Falha ao processar arquivo');
+      if (!compressed.base64) throw new Error('Falha ao processar arquivo');
 
-      // 2. Processamento nativo com biblioteca 'sharp' (1280px, grayscale e +20% de contraste via MozJPEG) antes do envio à IA
-      let compressed = clientProcessed;
-      try {
-        const sharpRes = await safeFetchJson<any>(
-          getApiUrl('/api/lotofacil/preprocess-image'),
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageBase64: clientProcessed.base64 })
-          },
-          12000
-        );
-        if (sharpRes.success && sharpRes.data?.success && sharpRes.data?.base64) {
-          compressed = {
-            base64: sharpRes.data.base64,
-            mimeType: sharpRes.data.mimeType || 'image/jpeg'
-          };
-        }
-      } catch (sharpErr) {
-        console.warn('[UploadQueue] Fallback para imagem otimizada localmente:', sharpErr);
-      }
-
-      updateItem(item.id, { status: 'ocr', progress: 40, message: 'Analisando bilhete...' });
+      updateItem(item.id, { status: 'ocr', progress: 40, message: 'Enviando imagem...' });
 
       const apiUrl = getApiUrl('/api/lotofacil/ocr-receipt');
       let fetchRes: any = null;
 
-      const isWebPreview = typeof window !== 'undefined' && 
-        (window.location.hostname.includes('run.app') || 
-         window.location.hostname.includes('google.com') || 
-         window.location.href.includes('ais-dev') || 
-         window.location.href.includes('ais-pre'));
-
-      const isNativePlatform = !isWebPreview;
-
+      const isNativePlatform = Capacitor.isNativePlatform();
       let usedClientSideFallback = false;
 
       if (isNativePlatform) {
         const apiKey = await getGeminiApiKey();
         if (apiKey) {
           try {
-            updateItem(item.id, { status: 'ocr', progress: 50, message: 'Processando OCR local...' });
+            updateItem(item.id, { status: 'ocr', progress: 60, message: 'Analisando no APK...' });
             const ocrResult = await performClientSideOcr(compressed.base64, apiKey);
             fetchRes = { success: true, data: { success: true, ...ocrResult } };
             usedClientSideFallback = true;
@@ -380,6 +310,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         const maxRetries = 2;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
+            updateItem(item.id, { progress: 60, message: 'Analisando com IA...' });
             fetchRes = await safeFetchJson<any>(
               apiUrl,
               {
@@ -387,7 +318,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images: [compressed] })
               },
-              35000 // Otimizado de 120s para 35s para evitar travamento em redes oscilantes
+              60000 // Timeout estendido para 60s para processamento complexo de imagem + IA
             );
 
             if (fetchRes.success) {
@@ -397,10 +328,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             console.warn(`[UploadQueue] Tentativa ${attempt} falhou:`, fetchRes.message);
             if (attempt < maxRetries) {
               updateItem(item.id, { 
-                message: `Instabilidade de rede. Reconectando (${attempt}/${maxRetries})...`,
-                progress: 40 + (attempt * 10)
+                message: `Reconectando (${attempt}/${maxRetries})...`,
+                progress: 40 + (attempt * 5)
               });
-              await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos antes de tentar novamente
+              // Sem delay artificial para retentativa ultra-rápida
             }
           } catch (e: any) {
             console.error(`[UploadQueue] Erro inesperado na tentativa ${attempt}:`, e);
@@ -620,16 +551,20 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               : q
           )
         );
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 100)); // Delay mínimo
       }
 
-      for (let idx = 0; idx < pendingList.length; idx++) {
-        const currentItem = pendingList[idx];
-        if (idx > 0) await new Promise(r => setTimeout(r, 800));
-        const succeeded = await processQueueItem(currentItem, currentItem.options || {}, existingSigs);
-        if (!succeeded) {
-          failedInThisRound.push(currentItem);
-        }
+      // Processamento paralelo limitado (até 3 requisições simultâneas) para não sobrecarregar a conexão
+      const concurrencyLimit = 3;
+      for (let i = 0; i < pendingList.length; i += concurrencyLimit) {
+        const batch = pendingList.slice(i, i + concurrencyLimit);
+        const results = await Promise.all(
+          batch.map(item => processQueueItem(item, item.options || {}, existingSigs))
+        );
+        
+        results.forEach((succeeded, idx) => {
+          if (!succeeded) failedInThisRound.push(batch[idx]);
+        });
       }
 
       if (failedInThisRound.length === 0) {
@@ -640,6 +575,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       pendingList = failedInThisRound;
     }
   };
+
+  const [signaturesCache, setSignaturesCache] = useState<Set<string> | null>(null);
 
   const addToQueue = useCallback(async (files: File[], options: any) => {
     const newItems: QueueItem[] = files.map(file => ({
@@ -654,11 +591,15 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     setQueue(prev => [...prev, ...newItems]);
 
-    // Pre-fetch signatures once for the batch to ensure consistency and performance
-    const existingSigs = await getExistingSignatures();
+    // Pre-fetch signatures once or use cache for the batch
+    let existingSigs = signaturesCache;
+    if (!existingSigs) {
+      existingSigs = await getExistingSignatures();
+      setSignaturesCache(existingSigs);
+    }
 
     await runBatchUntilAllSucceed(newItems, existingSigs);
-  }, [pools, setIsQuotaExceeded]);
+  }, [pools, setIsQuotaExceeded, signaturesCache]);
 
   const retryFailed = useCallback(async () => {
     // Clean up already saved/successful items from the list immediately

@@ -49,6 +49,7 @@ import { fetchLotteryResultDirectly } from './lib/apiHelper';
 import { checkAndNotifyWinningGamesForResult } from './lib/autoNotificationService';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { App as CapApp } from '@capacitor/app';
 
 import logoImg from './assets/images/bolao_logo_app.png';
 
@@ -311,6 +312,33 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoViewState, setLogoViewState] = useState<'closed' | 'description' | 'full'>('closed');
+
+  const locationRef = useRef(location.pathname);
+  useEffect(() => {
+    locationRef.current = location.pathname;
+  }, [location.pathname]);
+
+  // Listener para o botão voltar do celular (Capacitor):
+  // Se estiver em qualquer tela que não seja a inicial ('/'), volta para a tela inicial.
+  // Se já estiver na tela inicial, não faz nada (nunca fecha o app).
+  useEffect(() => {
+    const handlePromise = CapApp.addListener('backButton', () => {
+      if (locationRef.current !== '/') {
+        navigate('/');
+      }
+    }).catch((err) => {
+      console.debug('Capacitor backButton listener indisponível neste ambiente:', err);
+      return null;
+    });
+
+    return () => {
+      handlePromise.then((handler) => {
+        if (handler && typeof handler.remove === 'function') {
+          handler.remove();
+        }
+      }).catch(() => {});
+    };
+  }, [navigate]);
   
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
