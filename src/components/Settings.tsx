@@ -13,12 +13,15 @@ import {
   UserNotificationPreferences,
   getUserNotificationPreferences,
   saveUserNotificationPreferencesLocal,
-  requestNotificationPermission,
+  requestNotificationPermissionWithDetails,
   requestIgnoreBatteryOptimization,
-  sendAppNotification,
+  testImmediateNotification,
+  getNotificationPermissionStatus,
+  NotificationStatusDetails,
+  getLastNotificationError,
   scheduleUpcomingDrawAlerts
 } from '../lib/notifications';
-import { formatDateBR } from '../lib/drawCalendar';
+import { Capacitor } from '@capacitor/core';
 
 export default function Settings() {
   const { can, isAdmin, isCounselor } = usePermissions();
@@ -27,6 +30,9 @@ export default function Settings() {
   const [showHowTo, setShowHowTo] = useState(false);
   const [showNotifPanel, setShowNotifPanel] = useState(true);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+  const [isTestingNotif, setIsTestingNotif] = useState(false);
+  const [notifDetails, setNotifDetails] = useState<NotificationStatusDetails | null>(null);
+  const [showSamsungGuide, setShowSamsungGuide] = useState(false);
 
   const isAdminOrCounselor = isAdmin || isCounselor;
   const isMegaSena = activePool?.lotteryType === 'megasena';
@@ -46,6 +52,16 @@ export default function Settings() {
   const [prefs, setPrefs] = useState<UserNotificationPreferences>(() =>
     getUserNotificationPreferences(activeUid)
   );
+
+  // Carrega status das permissões para depuração em tela
+  const refreshPermissionStatus = async () => {
+    const status = await getNotificationPermissionStatus();
+    setNotifDetails(status);
+  };
+
+  useEffect(() => {
+    refreshPermissionStatus();
+  }, []);
 
   // Carrega preferências salvas no perfil do participante (Firestore)
   useEffect(() => {
@@ -80,8 +96,9 @@ export default function Settings() {
 
     try {
       if (patch.pushEnabled === true) {
-        const granted = await requestNotificationPermission();
-        if (granted) {
+        const res = await requestNotificationPermissionWithDetails();
+        setNotifDetails(res);
+        if (res.granted) {
           await requestIgnoreBatteryOptimization();
         }
       }
@@ -106,17 +123,35 @@ export default function Settings() {
       console.warn('Erro ao salvar preferência:', err);
     } finally {
       setIsSavingPrefs(false);
+      refreshPermissionStatus();
     }
   };
 
-  const handleTestSelectedNotification = async () => {
-    await requestNotificationPermission();
-    await sendAppNotification('🔔 Notificação do Bolão Amigos', {
-      body: `Suas preferências de notificação estão ativas hoje (${formatDateBR(new Date())})!`,
-      category: 'test',
-      uid: activeUid
-    });
-    addToast('Notificação de teste enviada com sucesso!', 'success');
+  const handleTestNotification = async () => {
+    setIsTestingNotif(true);
+    try {
+      const res = await testImmediateNotification(activeUid);
+      await refreshPermissionStatus();
+      if (res.success) {
+        addToast(res.message, 'success');
+      } else {
+        addToast(`${res.message}${res.error ? ` (${res.error})` : ''}`, 'error');
+      }
+    } catch (err: any) {
+      addToast(`Erro ao testar notificação: ${err?.message || err}`, 'error');
+    } finally {
+      setIsTestingNotif(false);
+    }
+  };
+
+  const handleRequestPermissionClick = async () => {
+    const res = await requestNotificationPermissionWithDetails();
+    setNotifDetails(res);
+    if (res.granted) {
+      addToast('Permissão de notificações concedida com sucesso!', 'success');
+    } else {
+      addToast(`Permissão não concedida (${res.display}). Veja o guia para liberar nas configurações.`, 'error');
+    }
   };
 
   const activeCategoriesCount = [
@@ -143,7 +178,7 @@ export default function Settings() {
         )}
       </div>
 
-      {/* BOTÃO E PAINEL DE NOTIFICAÇÕES (Para todos os participantes escolherem o que desejam receber) */}
+      {/* PAINEL DE NOTIFICAÇÕES & DEPURAÇÃO */}
       <div className="bg-white rounded-2xl border border-indigo-200 shadow-xs overflow-hidden">
         <button
           type="button"
@@ -168,7 +203,7 @@ export default function Settings() {
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-blue-100/90 mt-0.5 leading-snug">
-                Toque aqui para escolher quais notificações você deseja receber no celular.
+                Configuração de notificações locais para Android (Samsung One UI, Xiaomi, Motorola) e Web.
               </p>
             </div>
           </div>
@@ -183,32 +218,36 @@ export default function Settings() {
 
         {showNotifPanel && (
           <div className="p-4 sm:p-5 space-y-4 bg-white animate-in fade-in duration-150">
-            {/* Chave Geral de Notificações */}
+            {/* Chave Geral de Notificações e Botão de Teste */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-100">
               <div className="flex items-start sm:items-center gap-3">
-                <span className="text-xl">📲</span>
+                <span className="text-2xl">📲</span>
                 <div>
                   <h3 className="text-xs sm:text-sm font-black text-indigo-950">
-                    Receber Notificações neste Aparelho
+                    Receber Notificações no Celular
                   </h3>
                   <p className="text-[11px] text-indigo-700/90">
-                    Ative ou desative todos os alertas de uma só vez, ou escolha individualmente abaixo.
+                    Ative ou desative todos os alertas locais e push de uma só vez.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-center">
+              <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
+                {/* Botão Testar Notificação Obrigatório */}
                 <button
                   type="button"
-                  onClick={handleTestSelectedNotification}
-                  className="bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold text-[11px] px-3 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
+                  onClick={handleTestNotification}
+                  disabled={isTestingNotif}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  ✨ Testar Agora
+                  <span>{isTestingNotif ? '⏳' : '🚀'}</span>
+                  <span>Testar notificação</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => handleUpdatePreference({ pushEnabled: !prefs.pushEnabled })}
-                  className={`px-3.5 py-1.5 rounded-xl font-black text-xs transition cursor-pointer shadow-xs ${
+                  className={`px-3.5 py-2 rounded-xl font-black text-xs transition cursor-pointer shadow-xs ${
                     prefs.pushEnabled
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                       : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
@@ -219,13 +258,94 @@ export default function Settings() {
               </div>
             </div>
 
+            {/* Painel de Depuração / Status da Permissão (Requisito 6) */}
+            <div className="p-3.5 rounded-xl bg-gray-900 text-gray-100 border border-gray-800 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <span>🛠️</span>
+                  <span>Diagnóstico & Status das Notificações (Android / Samsung One UI)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={refreshPermissionStatus}
+                  className="text-[10px] text-gray-400 hover:text-white underline cursor-pointer"
+                >
+                  🔄 Atualizar Status
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="bg-gray-800/80 p-2.5 rounded-lg border border-gray-700">
+                  <span className="text-[10px] uppercase text-gray-400 block font-bold">Status da Permissão</span>
+                  <div className="mt-1 flex items-center gap-1.5 font-black">
+                    {notifDetails?.granted ? (
+                      <span className="text-emerald-400 flex items-center gap-1">
+                        <span>🟢</span> Concedida ({notifDetails.display})
+                      </span>
+                    ) : (
+                      <span className="text-red-400 flex items-center gap-1">
+                        <span>🔴</span> {notifDetails?.display === 'denied' ? 'Negada (denied)' : 'Pendente / Bloqueada'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-gray-800/80 p-2.5 rounded-lg border border-gray-700">
+                  <span className="text-[10px] uppercase text-gray-400 block font-bold">Notification Channel</span>
+                  <div className="mt-1 flex items-center gap-1.5 font-bold text-blue-300">
+                    <span>📢</span> ID: &quot;default&quot; (Importância Alta / 5)
+                  </div>
+                </div>
+
+                <div className="bg-gray-800/80 p-2.5 rounded-lg border border-gray-700">
+                  <span className="text-[10px] uppercase text-gray-400 block font-bold">Alarmes Exatos / One UI</span>
+                  <div className="mt-1 flex items-center gap-1.5 font-bold text-purple-300">
+                    <span>⏰</span> {Capacitor.isNativePlatform() ? 'SCHEDULE_EXACT_ALARM Ativo' : 'Navegador Web'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Exibição de Erros em Tela para Depuração */}
+              <div className="bg-gray-950 p-2.5 rounded-lg border border-gray-800 text-[11px] font-mono">
+                <span className="text-gray-400 font-bold block mb-1">Log de Erros / Diagnóstico:</span>
+                {getLastNotificationError() || notifDetails?.error ? (
+                  <span className="text-red-400 font-semibold break-all">
+                    ⚠️ {getLastNotificationError() || notifDetails?.error}
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-medium">
+                    ✓ Nenhum erro registrado. Notificações locais configuradas e operacionais.
+                  </span>
+                )}
+              </div>
+
+              {!notifDetails?.granted && (
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleRequestPermissionClick}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
+                  >
+                    🔔 Solicitar Permissão em Tempo Real
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSamsungGuide(true)}
+                    className="bg-gray-800 hover:bg-gray-700 text-indigo-300 font-bold text-xs px-3 py-1.5 rounded-lg border border-gray-700 transition cursor-pointer"
+                  >
+                    📖 Como Liberar no Samsung One UI
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Lista de Opções para o Participante Escolher */}
             <div className={`space-y-2.5 ${!prefs.pushEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
               <p className="text-[11px] font-black uppercase tracking-wider text-gray-500 px-1">
                 Escolha quais notificações você quer receber:
               </p>
 
-              {/* 1. Notificação Diária do Chat (1 por dia) */}
+              {/* 1. Notificação Diária do Chat */}
               <label className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/20 transition cursor-pointer">
                 <div className="flex items-start gap-3 min-w-0">
                   <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg shrink-0 font-bold">
@@ -241,7 +361,7 @@ export default function Settings() {
                       </span>
                     </div>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                      Sobe apenas 1 notificação por dia caso existam novas mensagens no chat do grupo, sem incomodar a cada conversa.
+                      Sobe apenas 1 notificação por dia caso existam novas mensagens no chat do grupo.
                     </p>
                   </div>
                 </div>
@@ -356,18 +476,18 @@ export default function Settings() {
                 />
               </label>
 
-              {/* 6. Avisos Administrativos, Cotas e Pagamentos */}
+              {/* 6. Avisos de Pagamento e Cotas */}
               <label className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/20 transition cursor-pointer">
                 <div className="flex items-start gap-3 min-w-0">
-                  <span className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center text-lg shrink-0 font-bold">
-                    📢
+                  <span className="w-9 h-9 rounded-xl bg-green-100 text-green-700 flex items-center justify-center text-lg shrink-0 font-bold">
+                    💵
                   </span>
                   <div className="min-w-0">
                     <span className="text-xs sm:text-sm font-black text-gray-900 block">
-                      Comunicados do Grupo, Cotas e Pagamentos
+                      Avisos de Pagamento, Cotas e Notificações do Sistema
                     </span>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                      Avisos importantes enviados pela administração e confirmações de cota.
+                      Alertas sobre aprovação de comprovantes, novas cotas e comunicados importantes.
                     </p>
                   </div>
                 </div>
@@ -407,6 +527,61 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {/* MODAL GUIA DE CONFIGURAÇÃO SAMSUNG ONE UI / ANDROID */}
+      {showSamsungGuide && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <span>📱</span>
+                <span>Configurar Notificações no Android / Samsung</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSamsungGuide(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-bold flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-600 space-y-3">
+              <p className="font-semibold text-gray-800">
+                Para garantir que o Android (especialmente Samsung One UI e Xiaomi) entregue notificações em tempo real mesmo com o app fechado:
+              </p>
+
+              <ol className="list-decimal pl-5 space-y-2 font-medium">
+                <li>
+                  Abra as <strong>Configurações</strong> do seu celular.
+                </li>
+                <li>
+                  Vá em <strong>Aplicativos</strong> &gt; procure e toque em <strong>Bolão Amigos</strong>.
+                </li>
+                <li>
+                  Toque em <strong>Notificações</strong> e marque <strong>Permitir notificações</strong>.
+                </li>
+                <li>
+                  Em <em>Categorias de Notificação</em>, certifique-se de que o canal <strong>Notificações</strong> está ativado com Som e Pop-up.
+                </li>
+                <li>
+                  (Samsung One UI) Vá em <strong>Bateria</strong> &gt; selecione <strong>Não restrita</strong> para que o sistema não congele os alarmes dos sorteios.
+                </li>
+              </ol>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSamsungGuide(false)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-5 py-2.5 rounded-xl cursor-pointer shadow-xs"
+              >
+                Entendi, fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Seção de Seleção do Bolão Principal */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200 shadow-2xs space-y-3">

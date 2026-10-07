@@ -2,31 +2,220 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { getNextDrawDate, isDrawDay, formatDateBR } from './drawCalendar';
 
-export async function requestNotificationPermission(): Promise<boolean> {
+let lastNotificationError: string | null = null;
+
+export function getLastNotificationError(): string | null {
+  return lastNotificationError;
+}
+
+export function setLastNotificationError(err: string | null) {
+  lastNotificationError = err;
+}
+
+export interface NotificationStatusDetails {
+  granted: boolean;
+  display: 'granted' | 'denied' | 'prompt' | 'unknown';
+  exactAlarm?: string;
+  channelReady: boolean;
+  platform: 'android' | 'ios' | 'web';
+  error?: string;
+}
+
+/**
+ * Cria os canais de notificação com importância máxima (id "default", nome "Notificações")
+ * Essencial para Android 8+ e Samsung One UI exibirem heads-up banners e som.
+ */
+let channelCreated = false;
+
+export async function ensureAndroidHighImportanceChannel(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return true;
+  try {
+    // 1. Canal principal exigido com id "default" e nome "Notificações"
+    await LocalNotifications.createChannel({
+      id: 'default',
+      name: 'Notificações',
+      description: 'Notificações de sorteios, resultados, apostas e mensagens do Bolão Amigos',
+      importance: 5, // Importância máxima (Heads-up / Som / Vibração)
+      visibility: 1, // Visível na tela de bloqueio
+      vibration: true,
+      sound: 'default'
+    });
+
+    // 2. Canal complementar para compatibilidade reversa
+    await LocalNotifications.createChannel({
+      id: 'bolao_high_priority',
+      name: 'Alertas e Menções do Bolão',
+      description: 'Alertas urgentes de sorteios, prêmios e menções',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      sound: 'default'
+    });
+
+    channelCreated = true;
+    return true;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.warn('Erro ao criar NotificationChannel:', msg);
+    lastNotificationError = `Erro no canal de notificações: ${msg}`;
+    return false;
+  }
+}
+
+// Inicializa canal imediatamente se estiver no Android nativo
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+  ensureAndroidHighImportanceChannel().catch(() => {});
+}
+
+/**
+ * Solicita a permissão de notificação em tempo de execução (Android 13+ / Web)
+ * e retorna detalhes completos para feedback e depuração em tela.
+ */
+export async function requestNotificationPermissionWithDetails(): Promise<NotificationStatusDetails> {
+  await ensureAndroidHighImportanceChannel();
+
   if (Capacitor.isNativePlatform()) {
     try {
-      const status = await LocalNotifications.requestPermissions();
-      return status.display === 'granted';
-    } catch (err) {
-      console.warn('Erro ao solicitar permissão de notificações nativas:', err);
+      let check = await LocalNotifications.checkPermissions();
+      if (check.display !== 'granted') {
+        const req = await LocalNotifications.requestPermissions();
+        check = req;
+      }
+
+      const isGranted = check.display === 'granted';
+      if (!isGranted) {
+        lastNotificationError = `Permissão negada pelo usuário ou bloqueada pelo sistema (${check.display})`;
+      } else {
+        lastNotificationError = null;
+      }
+
+      let exactAlarm = 'unknown';
+      try {
+        const exactSetting = await (LocalNotifications as any).checkExactNotificationSetting?.();
+        exactAlarm = exactSetting?.exact_alarm || 'granted';
+      } catch {}
+
+      return {
+        granted: isGranted,
+        display: check.display as any,
+        exactAlarm,
+        channelReady: channelCreated,
+        platform: Capacitor.getPlatform() as any,
+        error: lastNotificationError || undefined
+      };
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      lastNotificationError = `Falha ao solicitar permissões nativas: ${msg}`;
+      return {
+        granted: false,
+        display: 'denied',
+        channelReady: channelCreated,
+        platform: Capacitor.getPlatform() as any,
+        error: msg
+      };
+    }
+  }
+
+  // Plataforma Web / PWA
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    try {
+      let currentPerm = Notification.permission;
+      if (currentPerm === 'default') {
+        currentPerm = await Notification.requestPermission();
+      }
+      const isGranted = currentPerm === 'granted';
+      if (!isGranted) {
+        lastNotificationError = `Permissão do navegador: ${currentPerm}`;
+      } else {
+        lastNotificationError = null;
+      }
+      return {
+        granted: isGranted,
+        display: currentPerm as any,
+        channelReady: true,
+        platform: 'web',
+        error: lastNotificationError || undefined
+      };
+    } catch (webErr: any) {
+      const msg = webErr?.message || String(webErr);
+      lastNotificationError = `Erro permissão Web: ${msg}`;
+      return {
+        granted: false,
+        display: 'denied',
+        channelReady: false,
+        platform: 'web',
+        error: msg
+      };
+    }
+  }
+
+  return {
+    granted: false,
+    display: 'denied',
+    channelReady: false,
+    platform: 'web',
+    error: 'Notificações não suportadas neste navegador'
+  };
+}
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  const result = await requestNotificationPermissionWithDetails();
+  return result.granted;
+}
+
+/**
+ * Consulta o status atual de permissões sem abrir diálogo
+ */
+export async function getNotificationPermissionStatus(): Promise<NotificationStatusDetails> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const check = await LocalNotifications.checkPermissions();
+      let exactAlarm = 'unknown';
+      try {
+        const exactSetting = await (LocalNotifications as any).checkExactNotificationSetting?.();
+        exactAlarm = exactSetting?.exact_alarm || 'granted';
+      } catch {}
+
+      return {
+        granted: check.display === 'granted',
+        display: check.display as any,
+        exactAlarm,
+        channelReady: channelCreated,
+        platform: Capacitor.getPlatform() as any,
+        error: lastNotificationError || undefined
+      };
+    } catch (err: any) {
+      return {
+        granted: false,
+        display: 'unknown',
+        channelReady: channelCreated,
+        platform: Capacitor.getPlatform() as any,
+        error: err?.message || String(err)
+      };
     }
   }
 
   if (typeof window !== 'undefined' && 'Notification' in window) {
-    try {
-      const perm = await Notification.requestPermission();
-      return perm === 'granted';
-    } catch (webErr) {
-      console.warn('Erro ao solicitar permissão no navegador:', webErr);
-    }
+    return {
+      granted: Notification.permission === 'granted',
+      display: Notification.permission as any,
+      channelReady: true,
+      platform: 'web',
+      error: lastNotificationError || undefined
+    };
   }
 
-  return false;
+  return {
+    granted: false,
+    display: 'unknown',
+    channelReady: false,
+    platform: 'web',
+    error: 'Navegador não suporta Notificações'
+  };
 }
 
 /**
- * Solicita exceção de otimização de bateria e verifica permissão de alarmes exatos no Android
- * para impedir que o sistema cancele ou adie alarmes com o app fechado.
+ * Solicita exceção de otimização de bateria e verificação de alarmes exatos
  */
 export async function requestIgnoreBatteryOptimization(): Promise<string> {
   if (!Capacitor.isNativePlatform()) {
@@ -41,7 +230,7 @@ export async function requestIgnoreBatteryOptimization(): Promise<string> {
     }
     await LocalNotifications.checkPermissions();
     return 'granted';
-  } catch (err) {
+  } catch (err: any) {
     console.warn('Erro ao verificar permissão de bateria/alarmes exatos:', err);
     return 'unknown';
   }
@@ -94,7 +283,10 @@ export function getUserNotificationPreferences(uid?: string | null): UserNotific
   }
 }
 
-export function saveUserNotificationPreferencesLocal(prefs: Partial<UserNotificationPreferences>, uid?: string | null): UserNotificationPreferences {
+export function saveUserNotificationPreferencesLocal(
+  prefs: Partial<UserNotificationPreferences>,
+  uid?: string | null
+): UserNotificationPreferences {
   const current = getUserNotificationPreferences(uid);
   const merged: UserNotificationPreferences = { ...current, ...prefs };
   try {
@@ -150,32 +342,6 @@ export function isNotificationCategoryAllowed(category?: NotificationCategory, u
   }
 }
 
-let channelCreated = false;
-let permissionVerified = false;
-
-export async function ensureAndroidHighImportanceChannel() {
-  if (!Capacitor.isNativePlatform() || channelCreated) return;
-  try {
-    await LocalNotifications.createChannel({
-      id: 'bolao_high_priority',
-      name: 'Alertas e Menções do Bolão',
-      description: 'Notificações urgentes de marcações (@) no chat, sorteios e prêmios',
-      importance: 5,
-      visibility: 1,
-      vibration: true,
-      sound: 'default'
-    });
-    channelCreated = true;
-  } catch {
-    // Ignora caso não suportado na versão
-  }
-}
-
-// Pré-inicializa o canal imediatamente ao carregar o app no Android para zero latência
-if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
-  ensureAndroidHighImportanceChannel();
-}
-
 export function resolveNotificationTargetPath(input?: {
   targetPath?: string;
   category?: NotificationCategory | string;
@@ -225,7 +391,7 @@ export function resolveNotificationTargetPath(input?: {
 }
 
 /**
- * Envia notificação IMEDIATA (sem fila do AlarmManager, exibição em 0ms no NotificationManager)
+ * Envia notificação IMEDIATA através do NotificationChannel de importância alta "default".
  */
 export async function sendAppNotification(
   title: string,
@@ -236,9 +402,9 @@ export async function sendAppNotification(
     uid?: string | null;
     targetPath?: string;
   }
-) {
+): Promise<{ success: boolean; error?: string }> {
   if (options?.category && !isNotificationCategoryAllowed(options.category, options.uid)) {
-    return;
+    return { success: false, error: 'Categoria desabilitada nas preferências do usuário' };
   }
 
   const targetPath = resolveNotificationTargetPath({
@@ -248,7 +414,7 @@ export async function sendAppNotification(
     body: options?.body
   });
 
-  // Emite banner de notificação flutuante no topo da tela (garante visualização imediata no app aberto, iFrame ou WebView)
+  // Emite banner in-app imediato
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(
@@ -267,27 +433,17 @@ export async function sendAppNotification(
 
   if (Capacitor.isNativePlatform()) {
     try {
-      if (!channelCreated) {
-        await ensureAndroidHighImportanceChannel();
-      }
-      if (!permissionVerified) {
-        const perm = await LocalNotifications.checkPermissions();
-        if (perm.display === 'granted') {
-          permissionVerified = true;
-        } else {
-          const req = await LocalNotifications.requestPermissions();
-          permissionVerified = req.display === 'granted';
-        }
-      }
+      await ensureAndroidHighImportanceChannel();
+      const notifId = options?.id || Math.floor(Math.random() * 1000000) + 1;
 
-      // Sem a propriedade `schedule`, o Capacitor aciona o NotificationManager.notify() na mesma hora (0ms de atraso!)
+      // Disparo imediato com canal 'default' e som padrão
       await LocalNotifications.schedule({
         notifications: [
           {
             title,
             body: options?.body || '',
-            id: options?.id || Math.floor(Math.random() * 1000000) + 1,
-            channelId: 'bolao_high_priority',
+            id: notifId,
+            channelId: 'default', // Exigência do Requisito 4
             smallIcon: 'ic_stat_icon',
             sound: 'default',
             extra: {
@@ -298,13 +454,17 @@ export async function sendAppNotification(
           }
         ]
       });
-      return;
-    } catch (capErr) {
-      console.warn('LocalNotifications.schedule imediato falhou:', capErr);
+      lastNotificationError = null;
+      return { success: true };
+    } catch (capErr: any) {
+      const msg = capErr?.message || String(capErr);
+      console.warn('LocalNotifications.schedule imediato falhou:', msg);
+      lastNotificationError = `Erro ao disparar notificação: ${msg}`;
+      return { success: false, error: msg };
     }
   }
 
-  // Fallback para notificações Web no navegador / PWA
+  // Fallback Web / PWA
   if (typeof window !== 'undefined' && 'Notification' in window) {
     try {
       if (Notification.permission === 'default') {
@@ -324,27 +484,74 @@ export async function sendAppNotification(
           } catch {}
           webNotif.close();
         };
+        lastNotificationError = null;
+        return { success: true };
       }
-    } catch (webErr) {
-      console.warn('Web notification falhou:', webErr);
+    } catch (webErr: any) {
+      const msg = webErr?.message || String(webErr);
+      lastNotificationError = `Erro Web Notification: ${msg}`;
+      return { success: false, error: msg };
     }
+  }
+
+  return { success: true };
+}
+
+/**
+ * Função utilitária para teste imediato de notificação com retorno e diagnóstico
+ */
+export async function testImmediateNotification(uid?: string | null): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    const permResult = await requestNotificationPermissionWithDetails();
+    if (!permResult.granted) {
+      return {
+        success: false,
+        message: 'Permissão de notificação negada ou não concedida pelo sistema.',
+        error: permResult.error || 'Permissão com status: ' + permResult.display
+      };
+    }
+
+    const res = await sendAppNotification('🔔 Teste de Notificação - Bolão Amigos', {
+      body: `Notificação enviada com sucesso às ${new Date().toLocaleTimeString('pt-BR')}! O canal de importância alta está funcionando.`,
+      category: 'test',
+      uid
+    });
+
+    if (res.success) {
+      return {
+        success: true,
+        message: 'Notificação imediata disparada com sucesso no canal "default"!'
+      };
+    } else {
+      return {
+        success: false,
+        message: 'Falha ao agendar notificação imediata.',
+        error: res.error
+      };
+    }
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    return {
+      success: false,
+      message: 'Erro ao disparar teste de notificação.',
+      error: msg
+    };
   }
 }
 
 /**
  * Verifica se já foi disparada a notificação diária de novas mensagens no chat hoje (DD/MM/AAAA).
- * Retorna true e marca como enviada se ainda não tiver subido hoje e a preferência estiver ativa.
  */
 export function canTriggerDailyChatNotification(uid: string): boolean {
   if (!uid) return false;
   if (!isNotificationCategoryAllowed('chat_daily', uid)) return false;
 
-  const todayBR = formatDateBR(new Date()); // DD/MM/AAAA
+  const todayBR = formatDateBR(new Date());
   const storageKey = `bolao_daily_chat_notif_${uid}`;
   const lastNotifiedDay = localStorage.getItem(storageKey);
 
   if (lastNotifiedDay === todayBR) {
-    return false; // Já subiu 1 notificação hoje
+    return false;
   }
 
   return true;
@@ -357,9 +564,7 @@ export function markDailyChatNotificationSent(uid: string): void {
 }
 
 /**
- * Agenda notificação NATIVA para um horário exato no futuro.
- * O gatilho usa 'schedule: { at: targetDate, allowWhileIdle: true }' que é registrado
- * diretamente no AlarmManager do Android e funciona mesmo se o aplicativo estiver FECHADO.
+ * Agenda notificação NATIVA para um horário exato no futuro com canal "default"
  */
 export async function scheduleNativeNotificationAt(
   title: string,
@@ -376,15 +581,18 @@ export async function scheduleNativeNotificationAt(
         return null;
       }
 
+      await ensureAndroidHighImportanceChannel();
+
       await LocalNotifications.schedule({
         notifications: [
           {
             id: notifId,
             title,
             body,
+            channelId: 'default', // Canal de importância alta (Requisito 4)
             schedule: {
               at: targetDate,
-              allowWhileIdle: true // Essencial para Android disparar em standby com app fechado
+              allowWhileIdle: true // Essencial para Android / Samsung One UI disparar com o app fechado
             },
             smallIcon: 'ic_stat_icon',
             sound: 'default',
@@ -393,10 +601,13 @@ export async function scheduleNativeNotificationAt(
         ]
       });
 
-      console.log(`[Native Notification] Agendada com sucesso para ${targetDate.toLocaleString('pt-BR')} (ID: ${notifId})`);
+      console.log(`[Native Notification] Agendada para ${targetDate.toLocaleString('pt-BR')} (ID: ${notifId})`);
+      lastNotificationError = null;
       return notifId;
-    } catch (capErr) {
-      console.warn('LocalNotifications.schedule nativo falhou:', capErr);
+    } catch (capErr: any) {
+      const msg = capErr?.message || String(capErr);
+      console.warn('LocalNotifications.schedule nativo falhou:', msg);
+      lastNotificationError = `Erro ao agendar notificação futura: ${msg}`;
     }
   }
 
@@ -405,7 +616,6 @@ export async function scheduleNativeNotificationAt(
 
 /**
  * Agenda um alarme nativo de teste para daqui a N segundos (padrão: 10s).
- * Ideal para o usuário fechar o app e testar o disparo do alarme + conferência automática com o app fechado.
  */
 export async function scheduleTestClosedAppAlarm(seconds: number = 10): Promise<Date> {
   const targetDate = new Date(Date.now() + seconds * 1000);
@@ -440,7 +650,7 @@ export async function getPendingNativeAlarms(): Promise<Array<{ id: number; titl
       body: n.body || '',
       at: n.schedule?.at ? new Date(n.schedule.at).toLocaleString('pt-BR') : undefined
     }));
-  } catch (err) {
+  } catch (err: any) {
     console.warn('Erro ao listar alarmes nativos pendentes:', err);
     return [];
   }
@@ -448,8 +658,6 @@ export async function getPendingNativeAlarms(): Promise<Array<{ id: number; titl
 
 /**
  * Agenda automaticamente no SO Android todos os alertas dos próximos sorteios
- * (19h30, 20h00, 20h35 e 21h05) utilizando gatilhos nativos do LocalNotifications.
- * Não depende de temporizadores JS (setInterval/setTimeout) e funciona com o app fechado.
  */
 export async function scheduleUpcomingDrawAlerts(
   lotteryType: 'lotofacil' | 'megasena' = 'lotofacil',
@@ -460,7 +668,9 @@ export async function scheduleUpcomingDrawAlerts(
   let scheduledCount = 0;
 
   try {
-    // 1. Limpa agendamentos anteriores da faixa de sorteios (10000 a 999999) para evitar duplicatas
+    await ensureAndroidHighImportanceChannel();
+
+    // 1. Limpa agendamentos anteriores da faixa de sorteios (10000 a 799999) para evitar duplicatas
     try {
       const pending = await LocalNotifications.getPending();
       if (pending && pending.notifications.length > 0) {
@@ -480,7 +690,7 @@ export async function scheduleUpcomingDrawAlerts(
       return 0;
     }
 
-    // 2. Calcula as datas dos próximos 7 dias de sorteio válidos (pulando domingos e feriados da Caixa)
+    // 2. Calcula as datas dos próximos 7 dias de sorteio válidos
     const now = new Date();
     let currentCheckDate = new Date(now);
 
@@ -488,7 +698,6 @@ export async function scheduleUpcomingDrawAlerts(
       const nextDraw = getNextDrawDate(currentCheckDate, lotteryType);
       const drawDate = new Date(nextDraw.date);
 
-      // Respeita os dias da semana escolhidos pelo participante
       if (Array.isArray(prefs.daysOfWeek) && !prefs.daysOfWeek.includes(drawDate.getDay())) {
         currentCheckDate = new Date(drawDate);
         currentCheckDate.setDate(currentCheckDate.getDate() + 1);
@@ -558,11 +767,10 @@ export async function scheduleUpcomingDrawAlerts(
         if (res) scheduledCount++;
       }
 
-      // Avança a data para procurar o próximo dia útil de sorteio
       currentCheckDate = new Date(drawDate);
       currentCheckDate.setDate(currentCheckDate.getDate() + 1);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn('Erro ao agendar alertas de sorteio nativos:', err);
   }
 
@@ -608,6 +816,8 @@ export async function syncMissingGamesTwoHourReminders(
   if (!Capacitor.isNativePlatform()) return;
 
   try {
+    await ensureAndroidHighImportanceChannel();
+
     // 1. Cancela agendamentos anteriores da faixa 800000..899999
     try {
       const pending = await LocalNotifications.getPending();
@@ -623,7 +833,6 @@ export async function syncMissingGamesTwoHourReminders(
       console.warn('Erro ao limpar lembretes de 2h anteriores:', cancelErr);
     }
 
-    // Apenas Admin e Conselheiros recebem alertas de realizar os jogos, e somente se estiver ativo nas preferências
     if (!isAdminOrCounselor) return;
     if (!isNotificationCategoryAllowed('missing_games', uid)) return;
 
@@ -631,17 +840,14 @@ export async function syncMissingGamesTwoHourReminders(
     const now = new Date();
     const hoursSlots = [8, 10, 12, 14, 16, 18, 20];
 
-    // Verifica hoje (dayOffset = 0) e os próximos 3 dias
     for (let dayOffset = 0; dayOffset <= 3; dayOffset++) {
       const targetDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
       const drawCheck = isDrawDay(targetDay, lotteryType);
       if (!drawCheck.isDraw) continue;
 
       const dayBR = formatDateBR(targetDay);
-      // Se já houver jogo cadastrado para este dia, não agenda lembrete de falta de jogo
       if (coveredSet.has(dayBR)) continue;
 
-      // Agenda a cada 2 horas (08h, 10h, 12h, 14h, 16h, 18h, 20h)
       for (const hour of hoursSlots) {
         const alarmDate = new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), hour, 0, 0, 0);
         if (alarmDate.getTime() > now.getTime() + 30000) {
@@ -656,7 +862,6 @@ export async function syncMissingGamesTwoHourReminders(
         }
       }
 
-      // Se for HOJE e ainda não tiver jogo feito, garante também lembretes a cada 2h exatas a partir do momento atual
       if (dayOffset === 0) {
         for (let step = 1; step <= 4; step++) {
           const relativeAlarm = new Date(now.getTime() + step * 2 * 60 * 60 * 1000);
@@ -681,4 +886,3 @@ export async function syncMissingGamesTwoHourReminders(
     console.warn('Erro ao sincronizar lembretes de 2h de jogos pendentes:', err);
   }
 }
-

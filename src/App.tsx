@@ -35,7 +35,17 @@ import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import DrawCalendarModal from './components/DrawCalendarModal';
 import { getAdjustedActiveContestInfo, formatDateBR } from './lib/drawCalendar';
-import { scheduleUpcomingDrawAlerts, sendAppNotification, canTriggerDailyChatNotification, markDailyChatNotificationSent, resolveNotificationTargetPath } from './lib/notifications';
+import { 
+  scheduleUpcomingDrawAlerts, 
+  sendAppNotification, 
+  canTriggerDailyChatNotification, 
+  markDailyChatNotificationSent, 
+  resolveNotificationTargetPath,
+  ensureAndroidHighImportanceChannel,
+  requestNotificationPermissionWithDetails,
+  getNotificationPermissionStatus,
+  NotificationStatusDetails
+} from './lib/notifications';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
@@ -348,7 +358,30 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   const [isEditingContest, setIsEditingContest] = useState(false);
   const [customContestInput, setCustomContestInput] = useState('');
   const [showDrawCalendarModal, setShowDrawCalendarModal] = useState(false);
+  const [notifPermissionStatus, setNotifPermissionStatus] = useState<NotificationStatusDetails | null>(null);
+  const [showPermissionBanner, setShowPermissionBanner] = useState(false);
+  const [showPermissionGuide, setShowPermissionGuide] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  // Solicita a permissão de notificação em tempo de execução (Android 13+ / One UI)
+  useEffect(() => {
+    const initNotifications = async () => {
+      try {
+        await ensureAndroidHighImportanceChannel();
+        const res = await requestNotificationPermissionWithDetails();
+        setNotifPermissionStatus(res);
+        if (!res.granted && (res.display === 'denied' || res.display === 'prompt')) {
+          const isDismissed = sessionStorage.getItem('bolao_notif_banner_dismissed');
+          if (!isDismissed) {
+            setShowPermissionBanner(true);
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao inicializar permissões de notificação:', err);
+      }
+    };
+    initNotifications();
+  }, []);
 
   const contestCalendarInfo = useMemo(() => {
     return getAdjustedActiveContestInfo(
@@ -910,6 +943,129 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
             : 'px-2.5 py-3 sm:p-5'
         }`}
       >
+        {/* Banner de Permissão de Notificação (Android 13+ / Samsung One UI) */}
+        {showPermissionBanner && !isChatPage && (
+          <div className="mb-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-amber-400/40">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-xl shrink-0 shadow-xs animate-bounce">
+                🔔
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs sm:text-sm font-black uppercase tracking-wide">
+                    Notificações Desativadas no Celular
+                  </h4>
+                  <span className="bg-white text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    {notifPermissionStatus?.display === 'denied' ? 'Negada (denied)' : 'Pendente'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-100 mt-0.5 leading-snug">
+                  Para receber avisos imediatos de sorteios, prêmios e mensagens (mesmo com o app fechado no Android / Samsung One UI), ative as notificações.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center flex-wrap">
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await requestNotificationPermissionWithDetails();
+                  setNotifPermissionStatus(res);
+                  if (res.granted) {
+                    setShowPermissionBanner(false);
+                    addToast('Notificações ativadas com sucesso!', 'success');
+                  } else {
+                    setShowPermissionGuide(true);
+                  }
+                }}
+                className="bg-white hover:bg-amber-50 text-amber-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <span>✨</span>
+                <span>Permitir Notificações</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPermissionGuide(true)}
+                className="bg-amber-950/60 hover:bg-amber-950 text-white font-bold text-xs px-3 py-2 rounded-xl transition cursor-pointer border border-white/20"
+              >
+                ⚙️ Como Ativar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPermissionBanner(false);
+                  sessionStorage.setItem('bolao_notif_banner_dismissed', 'true');
+                }}
+                className="text-white/80 hover:text-white text-xs px-2 py-1 rounded-lg transition cursor-pointer"
+                title="Fechar aviso temporariamente"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Guia de Configuração de Notificações */}
+        {showPermissionGuide && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                  <span>⚙️</span>
+                  <span>Como Ativar Notificações no Celular</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowPermissionGuide(false)}
+                  className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-bold flex items-center justify-center cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-600 space-y-3">
+                <p className="font-semibold text-gray-800">
+                  No Android (Samsung One UI, Xiaomi, Motorola, etc.), as notificações precisam ser autorizadas no sistema operacional:
+                </p>
+
+                <ol className="list-decimal pl-5 space-y-2 font-medium">
+                  <li>Abra as <strong>Configurações</strong> do seu celular.</li>
+                  <li>Toque em <strong>Aplicativos</strong> e procure por <strong>Bolão Amigos</strong>.</li>
+                  <li>Toque em <strong>Notificações</strong> e marque a opção <strong>Permitir notificações</strong>.</li>
+                  <li>Em <em>Categorias de Notificações</em>, verifique se o canal <strong>Notificações</strong> está ativado.</li>
+                  <li>Em <em>Bateria</em>, selecione <strong>Não restrita</strong> para que o sistema não congele os alertas com o app fechado.</li>
+                </ol>
+              </div>
+
+              <div className="flex justify-between items-center pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await requestNotificationPermissionWithDetails();
+                    setNotifPermissionStatus(res);
+                    if (res.granted) {
+                      setShowPermissionGuide(false);
+                      setShowPermissionBanner(false);
+                      addToast('Permissão concedida com sucesso!', 'success');
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer shadow-xs"
+                >
+                  🔄 Verificar se Ativou
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPermissionGuide(false)}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold text-xs px-4 py-2 rounded-xl cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Banner de Pedidos Pendentes (Entradas e Cotas) */}
         {totalPendingCount > 0 && canManageMembers && (
           <div className="mb-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
