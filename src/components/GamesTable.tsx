@@ -668,8 +668,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     // Arquivamento automático: jogos cuja data de sorteio já passou (isPast) vão automaticamente para o Histórico!
     const isActive = isToday || isFuture;
     const dateStr = formatDateBR(gDate);
+    const month = `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`;
 
-    return { gDate, dayTimestamp, isToday, isTomorrow, isFuture, isPast, isActive, dateStr };
+    return { gDate, dayTimestamp, isToday, isTomorrow, isFuture, isPast, isActive, dateStr, month };
   };
 
   const isGameActiveOrToday = (game: any): boolean => {
@@ -1797,6 +1798,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             onOpenNewGame={onOpenNewGame}
             onDeleteGame={handleDeleteGame}
             onDeleteAllArchived={handleDeleteAllArchived}
+            onGoToToday={() => setGamesTab('today')}
           />
         ) : (
           <>

@@ -427,7 +427,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 numbersKey,
                 contest: `Concurso #${currentContestNum}${gameLabel} (Teimosinha ${k + 1}/${teimCount})`,
                 contestNumber: currentContestNum,
-                month: currentMonth,
+                month: formatDateToMonthRef(seqItem.date),
                 cost: unitTotal,
                 date: Timestamp.fromDate(seqItem.date),
                 receiptURL,

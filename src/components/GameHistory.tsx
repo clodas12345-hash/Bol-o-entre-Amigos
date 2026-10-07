@@ -15,6 +15,7 @@ interface GameHistoryProps {
   onOpenNewGame?: () => void;
   onDeleteGame?: (id: string) => void;
   onDeleteAllArchived?: () => void;
+  onGoToToday?: () => void;
 }
 
 export const parseDateSafely = (dateVal: any): Date => {
@@ -68,7 +69,8 @@ export default function GameHistory({
   onClose,
   onOpenNewGame,
   onDeleteGame,
-  onDeleteAllArchived
+  onDeleteAllArchived,
+  onGoToToday
 }: GameHistoryProps) {
   const { can, isAdmin, isCounselor } = usePermissions();
   const isAdminOrCounselor = isAdmin || isCounselor;
@@ -155,7 +157,10 @@ export default function GameHistory({
         ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Sorteio (Zerado)', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
         : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
 
-      const monthStr = game.month || `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`;
+      const derivedMonth = game.date && !isNaN(gDate.getTime())
+        ? `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`
+        : '';
+      const monthStr = derivedMonth || game.month || `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`;
       const dateStr = formatAnyDateBR(gDate);
 
       return {
@@ -182,10 +187,22 @@ export default function GameHistory({
     return processedGames.filter(g => g.isArchived);
   }, [processedGames]);
 
-  // Lista de meses disponíveis no histórico
+  const currentMonthStr = useMemo(() => {
+    const now = new Date();
+    return `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  }, []);
+
+  const currentMonthActiveCount = useMemo(() => {
+    return processedGames.filter(g => (g.isToday || g.isFuture) && g.monthStr === currentMonthStr).length;
+  }, [processedGames, currentMonthStr]);
+
+  // Lista de meses disponíveis no histórico (sempre inclui o mês vigente)
   const availableMonths = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>([currentMonthStr]);
     archivedGames.forEach(g => {
+      if (g.monthStr) set.add(g.monthStr);
+    });
+    processedGames.forEach(g => {
       if (g.monthStr) set.add(g.monthStr);
     });
     return Array.from(set).sort((a, b) => {
@@ -194,7 +211,7 @@ export default function GameHistory({
       if (yA !== yB) return yB - yA;
       return mB - mA;
     });
-  }, [archivedGames]);
+  }, [archivedGames, processedGames, currentMonthStr]);
 
   // Filtros aplicados sobre o histórico
   const filteredArchivedGames = useMemo(() => {
@@ -524,10 +541,12 @@ export default function GameHistory({
                 onChange={(e) => setSelectedMonthFilter(e.target.value)}
                 className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer"
               >
-                <option value="all">Todos os Meses</option>
                 {availableMonths.map(m => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>
+                    {m === currentMonthStr ? `${m} (Mês Vigente)` : m}
+                  </option>
                 ))}
+                <option value="all">Todos os Meses</option>
               </select>
             </div>
           )}
@@ -617,6 +636,36 @@ export default function GameHistory({
 
       {/* Lista de Concursos Arquivados */}
       <div className="p-3 sm:p-4 space-y-4 bg-gray-50/50">
+
+        {/* Card informativo do Mês Vigente em Andamento se houver apostas ativas em Hoje/Futuras */}
+        {currentMonthActiveCount > 0 && (selectedMonthFilter === 'all' || selectedMonthFilter === currentMonthStr) && (
+          <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50/70 to-purple-50 border border-purple-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-2xl sm:text-3xl shrink-0">🎯</span>
+              <div>
+                <h4 className="font-extrabold text-xs sm:text-sm text-purple-950 flex items-center gap-1.5 flex-wrap">
+                  <span>Mês Vigente: {currentMonthStr}</span>
+                  <span className="bg-emerald-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full shadow-3xs">
+                    {currentMonthActiveCount} {currentMonthActiveCount === 1 ? 'Aposta Ativa' : 'Apostas Ativas'}
+                  </span>
+                </h4>
+                <p className="text-[11px] text-purple-800 mt-0.5">
+                  As apostas deste mês estão ativas na aba <strong>Hoje</strong> e serão arquivadas aqui após a apuração dos sorteios.
+                </p>
+              </div>
+            </div>
+            {onGoToToday && (
+              <button
+                type="button"
+                onClick={onGoToToday}
+                className="px-3.5 py-2 bg-purple-900 hover:bg-purple-800 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95 w-full sm:w-auto justify-center"
+              >
+                <span>🎯</span> Ver Jogos de Hoje ({currentMonthActiveCount})
+              </button>
+            )}
+          </div>
+        )}
+
         {groupedContests.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-xl border border-gray-200 shadow-2xs">
             <span className="text-4xl block mb-2">📜</span>

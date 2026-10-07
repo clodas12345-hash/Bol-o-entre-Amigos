@@ -234,7 +234,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
               numbersKey,
               contest: `Concurso #${currentContestNum} (Teimosinha ${i + 1}/${teimosinhaCount})`,
               contestNumber: currentContestNum,
-              month: monthRef.trim(),
+              month: formatDateToMonthRef(seqItem.date),
               cost: unitTotal,
               date: Timestamp.fromDate(seqItem.date),
               receiptURL,
