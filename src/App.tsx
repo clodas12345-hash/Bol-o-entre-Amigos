@@ -60,6 +60,7 @@ import { checkAndNotifyWinningGamesForResult } from './lib/autoNotificationServi
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { App as CapApp } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 import logoImg from './assets/images/bolao_logo_app.png';
 
@@ -249,7 +250,7 @@ function BackgroundUploadStatus() {
 
 function WaitingForApprovalScreen({ user, userData, onSignOut }: { user: any, userData: any, onSignOut: () => void }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-950 to-blue-950 flex items-center justify-center p-4">
+    <div className="min-h-dvh h-full bg-gradient-to-br from-blue-900 via-indigo-950 to-blue-950 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] max-w-md w-full overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-300">
         <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 text-center text-white relative">
           <div className="absolute top-4 right-4 animate-ping w-2.5 h-2.5 rounded-full bg-white opacity-75" />
@@ -1256,6 +1257,15 @@ export default function App() {
 
   const { addToast } = useToast();
 
+  // Configura a StatusBar do Android/iOS para não sobrepor o WebView e ter a cor do cabeçalho
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: '#1e3a8a' }).catch(() => {});
+      StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+    }
+  }, []);
+
   const activeUser = user || (phoneUser ? phoneUser.sessionUser : null);
   const activeUserData = userData || (phoneUser ? phoneUser.memberData : null);
 
@@ -1510,7 +1520,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600 text-sm font-semibold">
+      <div className="min-h-dvh h-full flex items-center justify-center bg-gray-50 text-gray-600 text-sm font-semibold">
         <div className="flex items-center gap-2">
           <img src={logoImg} alt="Logo" className="w-8 h-8 rounded-lg animate-pulse object-cover border border-gray-200 shadow-xs" />
           <span>Carregando Bolão Amigos...</span>

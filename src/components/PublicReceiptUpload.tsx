@@ -49,7 +49,7 @@ export default function PublicReceiptUpload() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-dvh h-full bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full">
         <h2 className="text-xl font-black text-gray-800 mb-4">Enviar Comprovante PIX</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
