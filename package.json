@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "apply-android-icons": "node scripts/apply-android-icons.mjs"
+    "apply-android-icons": "node scripts/apply-android-icons.mjs",
+    "capacitor:sync": "npm run build && npx cap sync android"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^8.0.0",
