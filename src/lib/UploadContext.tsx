@@ -111,7 +111,20 @@ Regra: Priorize número do concurso (CONC) e capture todas as dezenas marcadas.`
       
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       const cleanJson = jsonMatch ? jsonMatch[0] : text;
-      const parsed = JSON.parse(cleanJson.replace(/```json|```/gi, '').trim());
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJson.replace(/```json|```/gi, '').trim());
+      } catch (e) {
+        console.warn('[Client OCR] JSON.parse falhou, tentando extração manual...', e);
+        // Fallback simples se o JSON completo falhar: tentar encontrar o objeto principal
+        const subMatch = cleanJson.match(/\{[\s\S]*\}/);
+        if (subMatch) {
+            parsed = JSON.parse(subMatch[0].replace(/```json|```/gi, '').trim());
+        } else {
+            throw e;
+        }
+      }
       
       if (parsed && Array.isArray(parsed.games) && parsed.games.length > 0) {
         console.log(`[Client OCR] Success with model: ${model}`);

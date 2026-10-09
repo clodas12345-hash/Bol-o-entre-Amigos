@@ -529,7 +529,7 @@ Regra: Priorize número do concurso (CONC) e capture todas as dezenas marcadas.`
       const parsed = JSON.parse(cleanJson);
       res.json(parsed);
     } catch (parseErr) {
-      console.error('Failed to parse cleanJson:', cleanJson, parseErr);
+      console.warn('Failed to parse cleanJson, trying fallback:', parseErr);
       
       // Fallback: search for numbers arrays inside the raw string if parsing fails, but return success if we can recover
       const numberGroupMatches = text.match(/\[\s*(?:\d+\s*,\s*)*\d+\s*\]/g);
@@ -746,8 +746,13 @@ Retorne estritamente um objeto JSON com esta estrutura:
 
     const text = response.text || '';
     const cleanJson = text.replace(/```json|```/gi, '').trim();
-    const data = JSON.parse(cleanJson);
-    res.json({ success: true, analysis: data });
+    try {
+      const data = JSON.parse(cleanJson);
+      res.json({ success: true, analysis: data });
+    } catch (parseErr) {
+      console.warn('Failed to parse cleanJson in backtest, falling back:', parseErr);
+      throw new Error('Fallback logic handled in catch');
+    }
   } catch (error: any) {
     console.error('Backtest Error, providing robust statistical fallback:', error);
     // Provide realistic fallback analysis so the user gets immediate results even during AI quota limits
