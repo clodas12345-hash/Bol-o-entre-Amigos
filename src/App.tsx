@@ -252,7 +252,7 @@ function BackgroundUploadStatus() {
 
 function WaitingForApprovalScreen({ user, userData, onSignOut }: { user: any, userData: any, onSignOut: () => void }) {
   return (
-    <div className="min-h-dvh h-full bg-gradient-to-br from-blue-900 via-indigo-950 to-blue-950 flex items-center justify-center p-4">
+    <div className="min-h-dvh h-full bg-gradient-to-br from-blue-900 via-indigo-950 to-blue-950 flex items-center justify-center p-4 safe-area">
       <div className="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] max-w-md w-full overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-300">
         <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 text-center text-white relative">
           <div className="absolute top-4 right-4 animate-ping w-2.5 h-2.5 rounded-full bg-white opacity-75" />
@@ -695,8 +695,8 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
     >
       {!hideHeader && (
         <header
-          style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.625rem)' }}
-          className="bg-black text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-50 w-full"
+          style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.625rem)', top: 'var(--safe-top, 0px)' }}
+          className="bg-black text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky z-50 w-full"
         >
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}

@@ -48,17 +48,17 @@ service cloud.firestore {
     }
 
     match /pools/{poolId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow write: if isAdmin();
     }
 
     match /games/{gameId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow write: if isApprovedUser();
     }
 
     match /payments/{paymentId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow write: if isApprovedUser();
     }
 
@@ -71,7 +71,7 @@ service cloud.firestore {
     }
 
     match /events/{eventId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow write: if isApprovedUser();
     }
 
@@ -81,12 +81,12 @@ service cloud.firestore {
     }
 
     match /lotofacil_results/{resId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || request.auth == null;
       allow write: if isApprovedUser();
     }
 
     match /megasena_results/{resId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || request.auth == null;
       allow write: if isApprovedUser();
     }
 
@@ -96,17 +96,17 @@ service cloud.firestore {
     }
 
     match /system_config/{configId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow write: if isAdmin();
     }
 
     match /bet_releases/{releaseId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow write: if isAdmin();
     }
 
     match /bet_submissions/{submissionId} {
-      allow read: if isApprovedUser();
+      allow read: if isApprovedUser() || request.auth == null;
       allow create: if isApprovedUser();
       allow update: if isApprovedUser();
       allow delete: if isAdmin();

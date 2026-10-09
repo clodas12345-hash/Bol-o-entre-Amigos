@@ -33,6 +33,7 @@ export default function Settings() {
   const [isTestingNotif, setIsTestingNotif] = useState(false);
   const [notifDetails, setNotifDetails] = useState<NotificationStatusDetails | null>(null);
   const [showSamsungGuide, setShowSamsungGuide] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState('');
 
   const isAdminOrCounselor = isAdmin || isCounselor;
   const isMegaSena = activePool?.lotteryType === 'megasena';
@@ -596,6 +597,70 @@ export default function Settings() {
         </div>
         <div className="pt-1">
           <PoolSelector variant="light" />
+        </div>
+      </div>
+
+      {/* Seção de Link de Visualização Pública */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-indigo-200 shadow-2xs space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shrink-0">
+            🔗
+          </div>
+          <div>
+            <h3 className="font-extrabold text-sm text-gray-800">Link de Visualização Pública</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Compartilhe este link para visualização sem necessidade de login.</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            readOnly
+            value={window.location.origin}
+            className="flex-1 text-xs p-2.5 rounded-lg border bg-gray-50 text-gray-700 font-mono"
+          />
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.origin);
+              addToast('Link copiado para a área de transferência!', 'success');
+            }}
+            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition"
+          >
+            Copiar
+          </button>
+        </div>
+      </div>
+
+      {/* Seção de Envio via WhatsApp */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-green-200 shadow-2xs space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center text-lg shrink-0">
+            💬
+          </div>
+          <div>
+            <h3 className="font-extrabold text-sm text-gray-800">Enviar via WhatsApp</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Digite o número (DDD + Telefone) para abrir uma conversa.</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="tel"
+            placeholder="Ex: 11999999999"
+            value={whatsappPhone}
+            onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
+            className="flex-1 text-xs p-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+          />
+          <button
+            onClick={() => {
+              if (whatsappPhone.length < 10) {
+                addToast('Número inválido. Use DDD + Telefone (ex: 11999999999).', 'error');
+                return;
+              }
+              window.open(`https://wa.me/55${whatsappPhone}`, '_blank');
+            }}
+            className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition"
+          >
+            Enviar
+          </button>
         </div>
       </div>
 
