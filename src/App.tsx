@@ -691,14 +691,12 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
   return (
     <div
-      className={`${
-        isChatPage ? 'h-dvh overflow-hidden' : 'min-h-dvh pb-[var(--safe-bottom,0px)]'
-      } flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white`}
+      className={`${isChatPage ? 'h-dvh overflow-hidden' : 'min-h-dvh'} flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white`}
     >
       {!hideHeader && (
         <header
           style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.625rem)' }}
-          className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-50 w-full"
+          className="bg-black text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-50 w-full"
         >
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}
@@ -1220,7 +1218,10 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       )}
 
       {!isChatPage && (
-        <footer className="text-center py-4 text-[11px] text-gray-500 border-t bg-white mt-auto">
+        <footer 
+          style={{ paddingBottom: 'calc(1rem + var(--safe-bottom, 0px))', paddingTop: '1rem' }} 
+          className="text-center text-[11px] text-gray-300 border-t border-white/10 bg-black mt-auto"
+        >
           Bolão Amigos &copy; {new Date().getFullYear()} — Todos os direitos reservados.
         </footer>
       )}

@@ -37,7 +37,5 @@
     flex-direction: column;
     overflow-x: hidden;
     background-color: #f9fafb;
-    padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
   }
 }
