@@ -698,7 +698,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       {!hideHeader && (
         <header
           style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.625rem)' }}
-          className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-40 backdrop-blur-md bg-opacity-95 w-full"
+          className="bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky top-0 z-50 w-full"
         >
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}
