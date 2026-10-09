@@ -1249,7 +1249,16 @@ export default function App() {
   const [userData, setUserData] = useState<any>(null);
   const [phoneUser, setPhoneUser] = useState<any>(() => {
     const saved = localStorage.getItem('bolao_phone_user');
-    return saved ? JSON.parse(saved) : null;
+    if (saved) return JSON.parse(saved);
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'true') {
+      return {
+        sessionUser: { uid: 'guest_user', displayName: 'Visitante' },
+        memberData: { id: 'guest', role: 'viewer', approved: true, displayName: 'Visitante' }
+      };
+    }
+    return null;
   });
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [loading, setLoading] = useState(true);

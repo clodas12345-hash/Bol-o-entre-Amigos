@@ -78,6 +78,7 @@ export default function GameHistory({
 
   const [searchContestQuery, setSearchContestQuery] = useState('');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('all');
+  const [selectedYearFilter, setSelectedYearFilter] = useState('all');
   const [selectedPrizeFilter, setSelectedPrizeFilter] = useState<'all' | 'winning' | 'non_winning' | '15_hits' | '14_hits' | '13_hits'>('all');
   const [selectedNumbersFilter, setSelectedNumbersFilter] = useState<number[]>([]);
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState<string | null>(null);
@@ -196,14 +197,48 @@ export default function GameHistory({
     return processedGames.filter(g => (g.isToday || g.isFuture) && g.monthStr === currentMonthStr).length;
   }, [processedGames, currentMonthStr]);
 
-  // Lista de meses disponíveis no histórico (sempre inclui o mês vigente)
+  // Lista de anos disponíveis no histórico
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    const currentYearStr = String(new Date().getFullYear());
+    set.add(currentYearStr);
+    archivedGames.forEach(g => {
+      if (g.gDate && !isNaN(g.gDate.getTime())) {
+        set.add(String(g.gDate.getFullYear()));
+      }
+      if (g.monthStr) {
+        const parts = g.monthStr.split('/');
+        if (parts.length === 2 && parts[1]) set.add(parts[1]);
+      }
+    });
+    processedGames.forEach(g => {
+      if (g.gDate && !isNaN(g.gDate.getTime())) {
+        set.add(String(g.gDate.getFullYear()));
+      }
+      if (g.monthStr) {
+        const parts = g.monthStr.split('/');
+        if (parts.length === 2 && parts[1]) set.add(parts[1]);
+      }
+    });
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [archivedGames, processedGames]);
+
+  // Lista de meses disponíveis no histórico (filtrada pelo ano selecionado se houver)
   const availableMonths = useMemo(() => {
     const set = new Set<string>([currentMonthStr]);
     archivedGames.forEach(g => {
-      if (g.monthStr) set.add(g.monthStr);
+      if (g.monthStr) {
+        if (selectedYearFilter === 'all' || g.monthStr.endsWith(selectedYearFilter)) {
+          set.add(g.monthStr);
+        }
+      }
     });
     processedGames.forEach(g => {
-      if (g.monthStr) set.add(g.monthStr);
+      if (g.monthStr) {
+        if (selectedYearFilter === 'all' || g.monthStr.endsWith(selectedYearFilter)) {
+          set.add(g.monthStr);
+        }
+      }
     });
     return Array.from(set).sort((a, b) => {
       const [mA, yA] = a.split('/').map(Number);
@@ -211,7 +246,7 @@ export default function GameHistory({
       if (yA !== yB) return yB - yA;
       return mB - mA;
     });
-  }, [archivedGames, processedGames, currentMonthStr]);
+  }, [archivedGames, processedGames, currentMonthStr, selectedYearFilter]);
 
   // Filtros aplicados sobre o histórico
   const filteredArchivedGames = useMemo(() => {
@@ -223,6 +258,13 @@ export default function GameHistory({
         const matchesLabel = game.contest && String(game.contest).toLowerCase().includes(query);
         const matchesDate = game.dateStr && game.dateStr.includes(query);
         if (!matchesContest && !matchesLabel && !matchesDate) return false;
+      }
+
+      // Filtro de Ano
+      if (selectedYearFilter !== 'all') {
+        const gameYear = game.gDate && !isNaN(game.gDate.getTime()) ? String(game.gDate.getFullYear()) : '';
+        const matchesYear = gameYear === selectedYearFilter || (game.monthStr && game.monthStr.endsWith(selectedYearFilter));
+        if (!matchesYear) return false;
       }
 
       // Filtro de Mês
@@ -245,7 +287,7 @@ export default function GameHistory({
 
       return true;
     });
-  }, [archivedGames, searchContestQuery, selectedMonthFilter, selectedPrizeFilter, selectedNumbersFilter]);
+  }, [archivedGames, searchContestQuery, selectedYearFilter, selectedMonthFilter, selectedPrizeFilter, selectedNumbersFilter]);
 
   // Agrupamento dos Jogos Arquivados por Concurso
   interface GroupedArchivedContest {
@@ -531,6 +573,25 @@ export default function GameHistory({
               </button>
             )}
           </div>
+
+          {/* Filtro por Ano */}
+          {availableYears.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-3 py-1.5 shadow-2xs">
+              <span className="text-xs font-bold text-gray-600">Ano:</span>
+              <select
+                value={selectedYearFilter}
+                onChange={(e) => setSelectedYearFilter(e.target.value)}
+                className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer"
+              >
+                <option value="all">Todos os Anos</option>
+                {availableYears.map(y => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Filtro por Mês */}
           {availableMonths.length > 0 && (

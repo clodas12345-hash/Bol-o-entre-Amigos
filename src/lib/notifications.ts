@@ -30,9 +30,9 @@ let channelCreated = false;
 export async function ensureAndroidHighImportanceChannel(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return true;
   try {
-    // 1. Canal principal exigido com id "default" e nome "Notificações"
+    // 1. Canal principal exigido com id "padrao" e nome "Notificações"
     await LocalNotifications.createChannel({
-      id: 'default',
+      id: 'padrao',
       name: 'Notificações',
       description: 'Notificações de sorteios, resultados, apostas e mensagens do Bolão Amigos',
       importance: 5, // Importância máxima (Heads-up / Som / Vibração)
@@ -443,8 +443,8 @@ export async function sendAppNotification(
             title,
             body: options?.body || '',
             id: notifId,
-            channelId: 'default', // Exigência do Requisito 4
-            smallIcon: 'ic_stat_icon',
+            channelId: 'padrao', // Exigência do Requisito 4
+            smallIcon: 'ic_stat_icon_config_sample',
             sound: 'default',
             extra: {
               autoCheckPrize: true,
@@ -520,7 +520,7 @@ export async function testImmediateNotification(uid?: string | null): Promise<{ 
     if (res.success) {
       return {
         success: true,
-        message: 'Notificação imediata disparada com sucesso no canal "default"!'
+        message: 'Notificação imediata disparada com sucesso no canal "padrao"!'
       };
     } else {
       return {
@@ -534,6 +534,44 @@ export async function testImmediateNotification(uid?: string | null): Promise<{ 
     return {
       success: false,
       message: 'Erro ao disparar teste de notificação.',
+      error: msg
+    };
+  }
+}
+
+/**
+ * Função para disparar notificação com 5 segundos de atraso
+ */
+export async function testDelayedNotification(uid?: string | null): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    const permResult = await requestNotificationPermissionWithDetails();
+    if (!permResult.granted) {
+      return {
+        success: false,
+        message: 'Permissão de notificação negada ou não concedida pelo sistema.',
+        error: permResult.error || 'Permissão com status: ' + permResult.display
+      };
+    }
+
+    const targetDate = new Date(Date.now() + 5000); // 5 segundos
+    
+    await scheduleNativeNotificationAt(
+        '🔔 Teste de Notificação Agendada',
+        'Esta notificação foi agendada para 5 segundos após o clique.',
+        targetDate,
+        Math.floor(Math.random() * 900000) + 100000,
+        { category: 'test' }
+    );
+
+    return {
+      success: true,
+      message: 'Notificação agendada para disparar em 5 segundos no canal "padrao"!'
+    };
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    return {
+      success: false,
+      message: 'Erro ao agendar teste de notificação.',
       error: msg
     };
   }
@@ -589,12 +627,12 @@ export async function scheduleNativeNotificationAt(
             id: notifId,
             title,
             body,
-            channelId: 'default', // Canal de importância alta (Requisito 4)
+            channelId: 'padrao', // Canal de importância alta (Requisito 4)
             schedule: {
               at: targetDate,
               allowWhileIdle: true // Essencial para Android / Samsung One UI disparar com o app fechado
             },
-            smallIcon: 'ic_stat_icon',
+            smallIcon: 'ic_stat_icon_config_sample',
             sound: 'default',
             extra: extraData || { autoCheckPrize: true }
           }

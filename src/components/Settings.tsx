@@ -16,6 +16,7 @@ import {
   requestNotificationPermissionWithDetails,
   requestIgnoreBatteryOptimization,
   testImmediateNotification,
+  testDelayedNotification,
   getNotificationPermissionStatus,
   NotificationStatusDetails,
   getLastNotificationError,
@@ -145,6 +146,23 @@ export default function Settings() {
     }
   };
 
+  const handleTestDelayedNotification = async () => {
+    setIsTestingNotif(true);
+    try {
+      const res = await testDelayedNotification(activeUid);
+      await refreshPermissionStatus();
+      if (res.success) {
+        addToast(res.message, 'success');
+      } else {
+        addToast(`${res.message}${res.error ? ` (${res.error})` : ''}`, 'error');
+      }
+    } catch (err: any) {
+      addToast(`Erro ao testar notificação agendada: ${err?.message || err}`, 'error');
+    } finally {
+      setIsTestingNotif(false);
+    }
+  };
+
   const handleRequestPermissionClick = async () => {
     const res = await requestNotificationPermissionWithDetails();
     setNotifDetails(res);
@@ -242,7 +260,17 @@ export default function Settings() {
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <span>{isTestingNotif ? '⏳' : '🚀'}</span>
-                  <span>Testar notificação</span>
+                  <span>Testar agora</span>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={handleTestDelayedNotification}
+                  disabled={isTestingNotif}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <span>{isTestingNotif ? '⏳' : '⏰'}</span>
+                  <span>Testar 5s</span>
                 </button>
 
                 <button
@@ -615,12 +643,12 @@ export default function Settings() {
           <input
             type="text"
             readOnly
-            value={window.location.origin}
+            value={window.location.origin + '/?view=true'}
             className="flex-1 text-xs p-2.5 rounded-lg border bg-gray-50 text-gray-700 font-mono"
           />
           <button
             onClick={() => {
-              navigator.clipboard.writeText(window.location.origin);
+              navigator.clipboard.writeText(window.location.origin + '/?view=true');
               addToast('Link copiado para a área de transferência!', 'success');
             }}
             className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition"
@@ -655,7 +683,7 @@ export default function Settings() {
                 addToast('Número inválido. Use DDD + Telefone (ex: 11999999999).', 'error');
                 return;
               }
-              window.open(`https://wa.me/55${whatsappPhone}`, '_blank');
+              window.open(`https://wa.me/55${whatsappPhone}?text=${encodeURIComponent(`Olá! Acesse o Bolão Amigos aqui (visualização pública): ${window.location.origin}/?view=true`)}`, '_blank');
             }}
             className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition"
           >
