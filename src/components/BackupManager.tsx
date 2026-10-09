@@ -161,26 +161,48 @@ export default function BackupManager() {
     reader.readAsText(file);
   };
 
-  const executeImport = async () => {
-    if (!previewData) return;
-
+  const handleCloudRestore = async () => {
+    addToast('☁️ Verificando backup mais recente na nuvem...', 'info');
     setIsImporting(true);
+    
+    try {
+      const history = await getBackupsHistory();
+      if (!history || history.length === 0) {
+        addToast('Nenhum backup encontrado na nuvem.', 'error');
+        setIsImporting(false);
+        return;
+      }
+      
+      const latestBackup = history[0];
+      const data = JSON.parse(latestBackup.data);
+      
+      setPreviewData(data);
+      await executeImportLogic(data);
+      
+      localStorage.setItem('last_cloud_sync', new Date().toLocaleString('pt-BR'));
+    } catch (err) {
+      console.error(err);
+      addToast('Erro ao restaurar da nuvem.', 'error');
+      setIsImporting(false);
+    }
+  };
+
+  const executeImportLogic = async (data: any) => {
     setImportProgress(0);
-    setShowConfirmModal(false);
-    addToast('📤 Restaurando e mesclando registros no banco de dados...', 'info');
+    addToast('📤 Restaurando e mesclando registros do backup na nuvem...', 'info');
 
     try {
-      const collections = Object.keys(previewData).filter(c => c !== '_metadata');
+      const collections = Object.keys(data).filter(c => c !== '_metadata');
       let totalDocs = 0;
       collections.forEach(col => {
-        if (Array.isArray(previewData[col])) {
-          totalDocs += previewData[col].length;
+        if (Array.isArray(data[col])) {
+          totalDocs += data[col].length;
         }
       });
 
       let importedCount = 0;
       for (const colName of collections) {
-        const docsList = previewData[colName];
+        const docsList = data[colName];
         if (!Array.isArray(docsList)) continue;
 
         for (const docItem of docsList) {
@@ -203,18 +225,20 @@ export default function BackupManager() {
       }
 
       addToast(`🎉 Backup restaurado com sucesso! ${importedCount} registros foram importados.`, 'success');
-      setPreviewData(null);
-      setPreviewStats([]);
       
       setTimeout(() => {
         window.location.reload();
       }, 1500);
     } catch (err) {
       console.error(err);
-      addToast('Erro ao importar o arquivo para o Firestore.', 'error');
-    } finally {
+      addToast('Erro ao importar o backup para o Firestore.', 'error');
       setIsImporting(false);
     }
+  };
+
+  const executeImport = async () => {
+    if (!previewData) return;
+    await executeImportLogic(previewData);
   };
 
   const toggleSetting = (key: keyof BackupReminderSettings) => {
@@ -624,21 +648,38 @@ export default function BackupManager() {
             </p>
           </div>
 
-          <button
-            onClick={handleRunDailyCloudBackup}
-            disabled={isAutoBackingUp || isExporting || isImporting}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
-          >
-            {isAutoBackingUp ? (
-              <>
-                <span className="animate-spin text-sm">⚙️</span> Salvando na Nuvem...
-              </>
-            ) : (
-              <>
-                <span>⚡</span> Gerar Backup Diário na Nuvem
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRunDailyCloudBackup}
+              disabled={isAutoBackingUp || isExporting || isImporting}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+            >
+              {isAutoBackingUp ? (
+                <>
+                  <span className="animate-spin text-sm">⚙️</span> Salvando na Nuvem...
+                </>
+              ) : (
+                <>
+                  <span>⚡</span> Gerar Backup Diário
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleCloudRestore}
+              disabled={isAutoBackingUp || isExporting || isImporting}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+            >
+              {isImporting ? (
+                <>
+                  <span className="animate-spin text-sm">⚙️</span> Restaurando...
+                </>
+              ) : (
+                <>
+                  <span>🔄</span> Forçar Sincronização (Restaurar)
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs text-emerald-900">
@@ -647,7 +688,7 @@ export default function BackupManager() {
             <span>Status: Cópia Diária na Nuvem Ativa e Sincronizada</span>
           </div>
           <span className="text-[10px] bg-emerald-200 text-emerald-950 font-black px-2 py-0.5 rounded-full uppercase">
-            Data: {new Date().toLocaleDateString('pt-BR')}
+            Última sincronização: {localStorage.getItem('last_cloud_sync') || 'Nunca'}
           </span>
         </div>
       </div>

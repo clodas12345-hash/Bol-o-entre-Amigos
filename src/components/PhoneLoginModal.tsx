@@ -46,7 +46,8 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
     }
 
     if (isAdminNumber && isAdminPrompt) {
-      if (passwordInput.trim() !== '192506') {
+      const validAdminPasswords = ['192506', 'Clodas@2626'];
+      if (!validAdminPasswords.includes(passwordInput.trim())) {
         addToast('Senha de blindagem incorreta!', 'error');
         return;
       }

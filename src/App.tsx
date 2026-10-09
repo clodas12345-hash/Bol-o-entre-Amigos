@@ -13,6 +13,8 @@ import MembersList from './components/MembersList';
 import GamesTable from './components/GamesTable';
 import FinancialDashboard from './components/FinancialDashboard';
 import DetailedFinancialReport from './components/DetailedFinancialReport';
+import TenDayAccountabilityReport from './components/TenDayAccountabilityReport';
+import DecendioReminderBanner from './components/DecendioReminderBanner';
 import VisualChartsDashboard from './components/VisualChartsDashboard';
 import StatsThermometer from './components/StatsThermometer';
 import Chat from './components/Chat';
@@ -1607,8 +1609,16 @@ export default function App() {
 
                   {/* 5. Relatório Financeiro Detalhado (Apenas Admin) */}
                   {isUserAdmin && (
-                    <div className="bg-white rounded-xl shadow-xs border p-4">
+                    <div className="bg-white rounded-xl shadow-xs border p-4 space-y-6">
                       <DetailedFinancialReport />
+                    </div>
+                  )}
+
+                  {/* 6. Prestação de Contas a cada 10 Dias (Decêndios) */}
+                  {isUserAdmin && (
+                    <div className="space-y-6">
+                      <DecendioReminderBanner isAdmin={isUserAdmin} />
+                      <TenDayAccountabilityReport />
                     </div>
                   )}
 
