@@ -33,6 +33,7 @@ interface UploadContextType {
   addToQueue: (files: File[], options: { poolId: string; contest?: string; gameDate?: string; monthRef?: string; isTeimosinha?: boolean; teimosinhaCount?: number }) => Promise<void>;
   clearCompleted: () => void;
   retryFailed: () => Promise<void>;
+  removeItem: (id: string) => void;
   isProcessing: boolean;
 }
 
@@ -558,10 +559,12 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         duplicate: prev.duplicate + (finalStatus === 'duplicate' ? 1 : 0),
       }));
 
-      // As apostas que deram certo devem sumir da tela automaticamente, deixando apenas as pendentes e com erro
-      setTimeout(() => {
-        setQueue(prev => prev.filter(q => q.id !== item.id));
-      }, 650);
+      // Apenas itens salvos com sucesso somem automaticamente. Duplicados ficam visíveis para mostrar a mensagem que já estão no banco de dados.
+      if (finalStatus === 'success') {
+        setTimeout(() => {
+          setQueue(prev => prev.filter(q => q.id !== item.id));
+        }, 650);
+      }
 
       return true;
     } catch (err: any) {
@@ -662,13 +665,17 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   }, [queue, pools]);
 
   const clearCompleted = () => {
-    setQueue(prev => prev.filter(item => item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving'));
+    setQueue(prev => prev.filter(item => item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving' || item.status === 'error'));
+  };
+
+  const removeItem = (id: string) => {
+    setQueue(prev => prev.filter(item => item.id !== id));
   };
 
   const isProcessing = queue.some(item => item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate');
 
   return (
-    <UploadContext.Provider value={{ queue, batchStats, addToQueue, clearCompleted, retryFailed, isProcessing }}>
+    <UploadContext.Provider value={{ queue, batchStats, addToQueue, clearCompleted, retryFailed, removeItem, isProcessing }}>
       {children}
     </UploadContext.Provider>
   );

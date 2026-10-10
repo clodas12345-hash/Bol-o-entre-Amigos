@@ -67,7 +67,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import logoImg from './assets/images/bolao_logo_app.png';
 
 function BackgroundUploadStatus() {
-  const { queue, batchStats, clearCompleted, retryFailed, isProcessing } = useUpload();
+  const { queue, batchStats, clearCompleted, retryFailed, removeItem, isProcessing } = useUpload();
   const [minimized, setMinimized] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevQueueLengthRef = useRef(0);
@@ -170,7 +170,7 @@ function BackgroundUploadStatus() {
                   <button 
                     onClick={clearCompleted} 
                     className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer"
-                    title="Limpar itens com erro da tela"
+                    title="Limpar itens concluídos/erro da tela"
                   >
                     Limpar
                   </button>
@@ -202,18 +202,19 @@ function BackgroundUploadStatus() {
             </div>
           </div>
 
-          {/* Lista com apenas itens pendentes ou com erro (os que dão certo somem imediatamente) */}
+          {/* Lista de itens (sucessos somem, mas duplicados e erros ficam visíveis com mensagem e botão de excluir) */}
           <div ref={containerRef} className="max-h-64 sm:max-h-80 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-1.5 bg-gray-50/60 divide-y divide-gray-100/50">
-            {queue.filter(item => item.status !== 'success' && item.status !== 'duplicate').length === 0 ? (
+            {queue.filter(item => item.status !== 'success').length === 0 ? (
               <div className="p-4 text-center text-gray-500 text-xs font-bold">
                 🎉 Todos os bilhetes foram enviados com sucesso!
               </div>
             ) : (
-              queue.filter(item => item.status !== 'success' && item.status !== 'duplicate').map((item, idx) => (
+              queue.filter(item => item.status !== 'success').map((item, idx) => (
                 <div key={item.id} className={`p-2 rounded-xl border transition-all duration-300 ${
                   (item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate') ? 'animate-pulse-item bg-indigo-50/70 border-indigo-200' : ''
                 } ${
                   item.status === 'error' ? 'bg-red-50/90 border-red-300 shadow-xs' :
+                  item.status === 'duplicate' ? 'bg-amber-50/90 border-amber-300 shadow-xs' :
                   'bg-white border-gray-200 shadow-2xs'
                 }`}>
                   <div className="flex items-center justify-between gap-2.5">
@@ -224,31 +225,47 @@ function BackgroundUploadStatus() {
                           <span>📄</span>
                           <span className="truncate">{item.name}</span>
                         </p>
-                        <span className={`text-[9px] font-black uppercase shrink-0 ${
-                          item.status === 'error' ? 'text-red-600' : 
-                          'text-indigo-700 animate-pulse'
-                        }`}>
-                          {item.status === 'ocr' ? '🔍 Analisando...' : item.message}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`text-[9px] font-black uppercase ${
+                            item.status === 'error' ? 'text-red-600' : 
+                            item.status === 'duplicate' ? 'text-amber-700 font-bold' :
+                            'text-indigo-700 animate-pulse'
+                          }`}>
+                            {item.status === 'ocr' ? '🔍 Analisando...' : item.status === 'duplicate' ? `⚠️ ${item.message || 'Já cadastrado no banco'}` : item.message}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                         <div 
                           className={`h-full transition-all duration-500 ease-out ${
-                            item.status === 'error' ? 'bg-red-500' : 'bg-indigo-600'
+                            item.status === 'error' ? 'bg-red-500' : 
+                            item.status === 'duplicate' ? 'bg-amber-500' : 
+                            'bg-indigo-600'
                           }`} 
                           style={{ width: `${item.progress}%` }} 
                         />
                       </div>
                     </div>
                     
-                    <div className="shrink-0 flex items-center justify-center w-5">
+                    <div className="shrink-0 flex items-center gap-1.5">
                       {item.status === 'error' && (
-                        <div className="w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-[10px] font-black">✕</div>
+                        <div className="w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-[10px] font-black" title="Erro">✕</div>
+                      )}
+                      {item.status === 'duplicate' && (
+                        <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-[10px] font-black" title="Já cadastrado">!</div>
                       )}
                       {(item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate') && (
                         <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                       )}
+                      {/* Botão de Excluir este pedido de jogo individual */}
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        className="w-6 h-6 rounded-lg bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 flex items-center justify-center text-[11px] transition cursor-pointer"
+                        title="Excluir este pedido da lista"
+                      >
+                        🗑️
+                      </button>
                     </div>
                   </div>
                 </div>

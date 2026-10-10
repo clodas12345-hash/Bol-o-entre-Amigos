@@ -31,9 +31,8 @@ async function processBetImageWithSharp(rawBase64: string): Promise<{ base64: st
       fit: 'inside',
       withoutEnlargement: true
     })
-    .grayscale()
     .linear(contrastMultiplier, contrastOffset)
-    .jpeg({ quality: 70, mozjpeg: true }) // Qualidade 70 é suficiente para OCR claro
+    .jpeg({ quality: 80, mozjpeg: true }) // Qualidade 80 mantendo cores vivas
     .toBuffer();
 
   return {
@@ -797,11 +796,29 @@ app.post('/api/public/upload-receipt', async (req, res) => {
     await addDoc(collection(db, 'pending_receipts'), {
       phone,
       name,
-      imageBase64, // Nota: idealmente salvar em Storage, mas para MVP salvaremos em base64 se não for gigante
+      imageBase64,
       mimeType: mimeType || 'image/jpeg',
       createdAt: serverTimestamp(),
       status: 'pending'
     });
+
+    try {
+      const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
+      const adminSnap = await getDocs(qAdmin);
+      for (const adminDoc of adminSnap.docs) {
+        const adminData = adminDoc.data();
+        await addDoc(collection(db, 'notifications'), {
+          userId: adminData.uid || adminDoc.id,
+          title: '💸 Novo Comprovante PIX Enviado',
+          message: `${name || 'Participante'} (${phone || 'Via App'}) enviou um comprovante de pagamento!`,
+          type: 'payment',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Erro ao criar notificação de comprovante:', notifErr);
+    }
 
     res.json({ success: true, message: 'Comprovante enviado com sucesso!' });
   } catch (error) {

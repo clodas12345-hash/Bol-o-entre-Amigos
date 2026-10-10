@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, getDocs, doc, getDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, getDocs, doc, getDoc, orderBy, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { Check, Send, AlertCircle, Info, ChevronRight, PartyPopper, ShieldCheck } from 'lucide-react';
@@ -139,18 +139,40 @@ export default function MemberBetSubmission({ user, userData }: MemberBetSubmiss
           <p className="text-emerald-700 text-xs mt-1 leading-relaxed">
             Seus {userSubmission.bets.length} volantes já foram registrados e estão em processamento.
           </p>
-          <div className="mt-3 flex items-center gap-2">
-             <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs ${
-               userSubmission.status === 'pending' 
-                 ? 'bg-amber-100 text-amber-700 border border-amber-200' 
-                 : 'bg-emerald-600 text-white shadow-emerald-200'
-             }`}>
-               {userSubmission.status === 'pending' ? '⏳ Aguardando Validação' : '✅ Aposta Validada'}
-             </span>
-             {userSubmission.status === 'validated' && (
-               <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                 <ShieldCheck className="w-4 h-4" /> Jogos lançados no bolão
+          <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+             <div className="flex items-center gap-2">
+               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs ${
+                 userSubmission.status === 'pending' 
+                   ? 'bg-amber-100 text-amber-700 border border-amber-200' 
+                   : 'bg-emerald-600 text-white shadow-emerald-200'
+               }`}>
+                 {userSubmission.status === 'pending' ? '⏳ Aguardando Validação' : '✅ Aposta Validada'}
                </span>
+               {userSubmission.status === 'validated' && (
+                 <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                   <ShieldCheck className="w-4 h-4" /> Jogos lançados no bolão
+                 </span>
+               )}
+             </div>
+
+             {userSubmission.status === 'pending' && (
+               <button
+                 type="button"
+                 onClick={async () => {
+                   if (!window.confirm('Deseja realmente excluir este pedido de aposta para refazer os volantes?')) return;
+                   try {
+                     await deleteDoc(doc(db, 'bet_submissions', userSubmission.id));
+                     setUserSubmission(null);
+                     addToast('Pedido de aposta excluído. Você já pode refazer seus volantes.', 'info');
+                   } catch (err) {
+                     console.error('Error deleting submission:', err);
+                     addToast('Erro ao excluir pedido de aposta.', 'error');
+                   }
+                 }}
+                 className="bg-red-100 hover:bg-red-200 text-red-700 text-[10px] font-black uppercase px-2.5 py-1 rounded-lg transition cursor-pointer"
+               >
+                 🗑️ Excluir Pedido
+               </button>
              )}
           </div>
         </div>
