@@ -77,6 +77,9 @@ function parseCaixaDate(rawDate: any): string {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
   httpOptions: {
@@ -500,7 +503,9 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
   "teimosinhaCount": number,
   "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
 }
-Regra: Priorize número do concurso (CONC) e capture todas as dezenas marcadas.`;
+Regras Críticas:
+1. Priorize número do concurso (CONC) e capture todas as dezenas marcadas.
+2. ATENÇÃO AOS BILHETES DA MEGA-SENA: Ignore completamente qualquer quadrado ou fundo verde ao redor das dezenas ou do volante. Foque exclusivamente nos números impressos e marcados (pretos ou assinalados), desconsiderando totalmente qualquer coloração de fundo verde.`;
 
     const response = await generateWithFallback({
       contents: {

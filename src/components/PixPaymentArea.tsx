@@ -294,7 +294,7 @@ export default function PixPaymentArea({
                 </div>
               </div>
 
-              {/* Botões de Ação */}
+               {/* Botões de Ação */}
               <div className="space-y-2">
                 <button
                   type="button"
@@ -316,6 +316,44 @@ export default function PixPaymentArea({
                 >
                   <span>🔑</span> {copiedKey ? 'Chave Copiada!' : `Copiar apenas a Chave (${config.pixKey})`}
                 </button>
+
+                {/* Botão Direto para Enviar Comprovante */}
+                <label className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-purple-700 hover:bg-purple-800 text-white transition flex items-center justify-center gap-2 cursor-pointer shadow-xs">
+                  <span>📤</span> Enviar Comprovante de Pagamento
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.readAsDataURL(file);
+                      reader.onloadend = async () => {
+                        try {
+                          const res = await fetch('/api/public/upload-receipt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              name: 'Participante do Bolão',
+                              phone: 'Via App',
+                              imageBase64: reader.result,
+                              mimeType: file.type
+                            })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            addToast('Comprovante enviado com sucesso para a administração!', 'success');
+                          } else {
+                            addToast(data.message || 'Erro ao enviar comprovante.', 'error');
+                          }
+                        } catch (err) {
+                          addToast('Erro na conexão ao enviar comprovante.', 'error');
+                        }
+                      };
+                    }}
+                  />
+                </label>
               </div>
             </div>
           </div>

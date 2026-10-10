@@ -20,8 +20,16 @@ export interface QueueItem {
   options?: any;
 }
 
+export interface BatchStats {
+  total: number;
+  success: number;
+  duplicate: number;
+  round: number;
+}
+
 interface UploadContextType {
   queue: QueueItem[];
+  batchStats: BatchStats;
   addToQueue: (files: File[], options: { poolId: string; contest?: string; gameDate?: string; monthRef?: string; isTeimosinha?: boolean; teimosinhaCount?: number }) => Promise<void>;
   clearCompleted: () => void;
   retryFailed: () => Promise<void>;
@@ -74,7 +82,9 @@ const performClientSideOcr = async (base64Image: string, apiKey: string): Promis
   "teimosinhaCount": number,
   "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
 }
-Regra: Priorize número do concurso (CONC) e capture todas as dezenas marcadas.`;
+Regras Críticas:
+1. Priorize número do concurso (CONC) e capture todas as dezenas marcadas.
+2. ATENÇÃO AOS BILHETES DA MEGA-SENA: Ignore completamente qualquer quadrado ou fundo verde ao redor das dezenas ou do volante. Foque exclusivamente nos números impressos e marcados (pretos ou assinalados), desconsiderando totalmente qualquer coloração de fundo verde.`;
 
   for (const model of modelsToTry) {
     try {
@@ -174,8 +184,7 @@ export const checkGameDuplicateInFirestore = async (
 export const getExistingSignatures = async (): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
-    // Busca reduzida apenas para os jogos mais recentes (evita lentidão no carregamento inicial)
-    const q = query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(50));
+    const q = query(collection(db, 'games'));
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();
@@ -242,6 +251,7 @@ export const formatErrorMessage = (rawMsg: string): string => {
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [batchStats, setBatchStats] = useState<BatchStats>({ total: 0, success: 0, duplicate: 0, round: 1 });
   const { addToast } = useToast();
   const { pools, setIsQuotaExceeded } = usePool();
 
@@ -534,12 +544,24 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         addToast(`⚠️ ${item.name}: Jogo já cadastrado${contestInfo}. Duplicidade evitada!`, 'info');
       }
 
+      const finalStatus = savedCount > 0 ? 'success' : 'duplicate';
       updateItem(item.id, { 
-        status: savedCount > 0 ? 'success' : 'duplicate', 
+        status: finalStatus, 
         progress: 100, 
         message: finalMessage,
         durationMs: Date.now() - startTime 
       });
+
+      setBatchStats(prev => ({
+        ...prev,
+        success: prev.success + (finalStatus === 'success' ? 1 : 0),
+        duplicate: prev.duplicate + (finalStatus === 'duplicate' ? 1 : 0),
+      }));
+
+      // As apostas que deram certo devem sumir da tela automaticamente, deixando apenas as pendentes e com erro
+      setTimeout(() => {
+        setQueue(prev => prev.filter(q => q.id !== item.id));
+      }, 650);
 
       return true;
     } catch (err: any) {
@@ -559,18 +581,21 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     while (pendingList.length > 0) {
       const failedInThisRound: QueueItem[] = [];
+      setBatchStats(prev => ({ ...prev, round }));
 
       if (round > 1) {
-        // Marca todos os itens que restaram com erro como 'pending' para a nova rodada automática
+        // Pausa rápida para o usuário visualizar na tela quais itens deram erro antes de iniciar a próxima tentativa automática
+        await new Promise(r => setTimeout(r, 1500));
+
         const retryIds = new Set(pendingList.map(i => i.id));
         setQueue(prev =>
           prev.map(q =>
             retryIds.has(q.id)
-              ? { ...q, status: 'pending', progress: 15, message: `Tentando novamente (${round}ª passagem)...` }
+              ? { ...q, status: 'pending', progress: 15, message: `Tentando novamente (${round}ª tentativa)...` }
               : q
           )
         );
-        await new Promise(r => setTimeout(r, 100)); // Delay mínimo
+        await new Promise(r => setTimeout(r, 200));
       }
 
       // Processamento paralelo limitado (até 3 requisições simultâneas) para não sobrecarregar a conexão
@@ -587,7 +612,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (failedInThisRound.length === 0) {
-        break; // Todos deram certo!
+        break; // Todos deram certo e sumiram da lista!
       }
 
       round++;
@@ -608,7 +633,15 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       options
     }));
 
-    setQueue(prev => [...prev, ...newItems]);
+    setQueue(prev => {
+      const isFreshBatch = prev.length === 0;
+      setBatchStats(s =>
+        isFreshBatch
+          ? { total: newItems.length, success: 0, duplicate: 0, round: 1 }
+          : { ...s, total: s.total + newItems.length }
+      );
+      return [...prev, ...newItems];
+    });
 
     // Pre-fetch signatures once or use cache for the batch
     let existingSigs = signaturesCache;
@@ -635,7 +668,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const isProcessing = queue.some(item => item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate');
 
   return (
-    <UploadContext.Provider value={{ queue, addToQueue, clearCompleted, retryFailed, isProcessing }}>
+    <UploadContext.Provider value={{ queue, batchStats, addToQueue, clearCompleted, retryFailed, isProcessing }}>
       {children}
     </UploadContext.Provider>
   );

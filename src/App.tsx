@@ -67,7 +67,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import logoImg from './assets/images/bolao_logo_app.png';
 
 function BackgroundUploadStatus() {
-  const { queue, clearCompleted, retryFailed, isProcessing } = useUpload();
+  const { queue, batchStats, clearCompleted, retryFailed, isProcessing } = useUpload();
   const [minimized, setMinimized] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevQueueLengthRef = useRef(0);
@@ -94,14 +94,14 @@ function BackgroundUploadStatus() {
   
   if (queue.length === 0) return null;
 
-  const totalItems = queue.length;
-  const successItems = queue.filter(item => item.status === 'success').length;
-  const duplicateItems = queue.filter(item => item.status === 'duplicate').length;
+  const totalItems = Math.max(batchStats.total, queue.length);
+  const successItems = batchStats.success;
+  const duplicateItems = batchStats.duplicate;
   const failedItems = queue.filter(item => item.status === 'error').length;
-  const completedItems = successItems + duplicateItems + failedItems;
-  const pendingItems = totalItems - completedItems;
+  const completedItems = successItems + duplicateItems;
+  const pendingItems = queue.filter(item => item.status !== 'success' && item.status !== 'duplicate' && item.status !== 'error').length;
   const isCurrentlyAnalyzing = queue.some(item => item.status === 'ocr');
-  const overallProgressPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+  const overallProgressPercent = totalItems > 0 ? Math.min(100, Math.round((completedItems / totalItems) * 100)) : 0;
 
   return (
     <div className={`fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-[9999] transition-all duration-300 ease-in-out ${minimized ? 'w-auto' : 'w-80 sm:w-96 max-w-[calc(100vw-1.5rem)]'}`}>
@@ -115,14 +115,14 @@ function BackgroundUploadStatus() {
             <div className="absolute inset-0 bg-amber-400/20 animate-pulse" />
           ) : null}
           <span className="text-base leading-none relative z-10">
-            {isCurrentlyAnalyzing ? '🔍' : '📤'}
+            {isCurrentlyAnalyzing ? '🔍' : failedItems > 0 ? '⚠️' : '📤'}
           </span>
           <div className="flex flex-col items-start relative z-10">
             <span className="text-[10px] font-black uppercase tracking-wider text-white leading-none">
-              {isProcessing ? 'Enviando Apostas...' : 'Upload Concluído'}
+              {isProcessing ? (batchStats.round > 1 ? `Reprocessando (${batchStats.round}ª tent.)...` : 'Enviando Apostas...') : 'Reprocessar Erros'}
             </span>
             <span className="text-[10px] font-black mt-0.5 text-amber-300 leading-none">
-              {completedItems} de {totalItems} ({overallProgressPercent}%)
+              {completedItems} de {totalItems} salvos • Restam {queue.length}
             </span>
           </div>
           <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full relative z-10">
@@ -139,14 +139,20 @@ function BackgroundUploadStatus() {
                   {isProcessing ? (
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping absolute inset-0" />
                   ) : null}
-                  <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : failedItems > 0 ? 'bg-red-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
                 </div>
                 <div>
                   <span className="text-[11px] font-black uppercase tracking-wider block leading-none">
-                    {isProcessing ? (isCurrentlyAnalyzing ? 'Analisando Bilhetes...' : 'Subindo Apostas...') : 'Envio Concluído'}
+                    {isProcessing
+                      ? batchStats.round > 1
+                        ? `Retentando Erros (${batchStats.round}ª tentativa)...`
+                        : isCurrentlyAnalyzing
+                        ? 'Analisando Bilhetes...'
+                        : 'Subindo Apostas...'
+                      : 'Aguardando Reprocessamento'}
                   </span>
                   <span className="text-[10px] text-amber-300 font-black">
-                    Progresso: {completedItems} de {totalItems} ({overallProgressPercent}%)
+                    Concluídos: {completedItems} de {totalItems} ({overallProgressPercent}%) • Restam: {queue.length}
                   </span>
                 </div>
               </div>
@@ -157,16 +163,16 @@ function BackgroundUploadStatus() {
                     className="bg-amber-400 hover:bg-amber-300 text-indigo-950 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer shadow-xs flex items-center gap-1"
                     title="Tentar processar novamente as fotos que deram erro"
                   >
-                    <span>🔄</span> Reprocessar
+                    <span>🔄</span> Tentar Novamente
                   </button>
                 )}
-                {completedItems > 0 && (
+                {!isProcessing && queue.length > 0 && (
                   <button 
                     onClick={clearCompleted} 
                     className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer"
-                    title="Limpar itens já finalizados da lista"
+                    title="Limpar itens com erro da tela"
                   >
-                    {isProcessing ? 'Limpar Prontos' : 'Limpar Lista'}
+                    Limpar
                   </button>
                 )}
                 <button 
@@ -191,22 +197,23 @@ function BackgroundUploadStatus() {
             <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wide text-blue-100 pt-0.5">
               <span className="text-emerald-300">✓ Salvos: {successItems}</span>
               {duplicateItems > 0 && <span className="text-amber-300">! Duplic.: {duplicateItems}</span>}
-              {failedItems > 0 && <span className="text-red-300">✕ Erros: {failedItems}</span>}
-              <span className="text-indigo-200">⏳ Fila: {pendingItems}</span>
+              {failedItems > 0 && <span className="text-red-300">✕ Com Erro: {failedItems}</span>}
+              <span className="text-indigo-200">⏳ Na Fila: {pendingItems}</span>
             </div>
           </div>
 
-          {/* Lista sempre visível com todos os itens e scroll suave */}
+          {/* Lista com apenas itens pendentes ou com erro (os que dão certo somem imediatamente) */}
           <div ref={containerRef} className="max-h-64 sm:max-h-80 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-1.5 bg-gray-50/60 divide-y divide-gray-100/50">
-            {queue.map((item, idx) => {
-              const isActive = item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate';
-              return (
+            {queue.filter(item => item.status !== 'success' && item.status !== 'duplicate').length === 0 ? (
+              <div className="p-4 text-center text-gray-500 text-xs font-bold">
+                🎉 Todos os bilhetes foram enviados com sucesso!
+              </div>
+            ) : (
+              queue.filter(item => item.status !== 'success' && item.status !== 'duplicate').map((item, idx) => (
                 <div key={item.id} className={`p-2 rounded-xl border transition-all duration-300 ${
-                  isActive ? 'animate-pulse-item bg-indigo-50/70 border-indigo-200' : ''
+                  (item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate') ? 'animate-pulse-item bg-indigo-50/70 border-indigo-200' : ''
                 } ${
-                  item.status === 'success' ? 'bg-emerald-50/70 border-emerald-200' : 
-                  item.status === 'error' ? 'bg-red-50/70 border-red-200' :
-                  item.status === 'duplicate' ? 'bg-amber-50/70 border-amber-200' :
+                  item.status === 'error' ? 'bg-red-50/90 border-red-300 shadow-xs' :
                   'bg-white border-gray-200 shadow-2xs'
                 }`}>
                   <div className="flex items-center justify-between gap-2.5">
@@ -219,8 +226,6 @@ function BackgroundUploadStatus() {
                         </p>
                         <span className={`text-[9px] font-black uppercase shrink-0 ${
                           item.status === 'error' ? 'text-red-600' : 
-                          item.status === 'success' ? 'text-emerald-700' : 
-                          item.status === 'duplicate' ? 'text-amber-700' : 
                           'text-indigo-700 animate-pulse'
                         }`}>
                           {item.status === 'ocr' ? '🔍 Analisando...' : item.message}
@@ -230,10 +235,7 @@ function BackgroundUploadStatus() {
                       <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                         <div 
                           className={`h-full transition-all duration-500 ease-out ${
-                            item.status === 'error' ? 'bg-red-500' : 
-                            item.status === 'success' ? 'bg-emerald-500' : 
-                            item.status === 'duplicate' ? 'bg-amber-500' : 
-                            'bg-indigo-600'
+                            item.status === 'error' ? 'bg-red-500' : 'bg-indigo-600'
                           }`} 
                           style={{ width: `${item.progress}%` }} 
                         />
@@ -241,38 +243,30 @@ function BackgroundUploadStatus() {
                     </div>
                     
                     <div className="shrink-0 flex items-center justify-center w-5">
-                      {item.status === 'success' && (
-                        <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-black">✓</div>
-                      )}
                       {item.status === 'error' && (
                         <div className="w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-[10px] font-black">✕</div>
                       )}
-                      {item.status === 'duplicate' && (
-                        <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[10px] font-black">!</div>
-                      )}
-                      {isActive && (
+                      {(item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate') && (
                         <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                       )}
                     </div>
                   </div>
                 </div>
-              );
-            })}
+              ))
+            )}
           </div>
           
-          {isProcessing && (
-            <div className="px-3 py-1.5 bg-indigo-50 border-t border-indigo-100 flex items-center justify-between">
-              <p className="text-[9px] text-indigo-800 font-bold flex items-center gap-1">
-                <span>⚡</span> Lista fixa em tempo real ({completedItems}/{totalItems} concluídos)
-              </p>
-              <button 
-                onClick={() => setMinimized(true)}
-                className="text-[9px] font-black text-indigo-900 underline hover:no-underline cursor-pointer"
-              >
-                Minimizar
-              </button>
-            </div>
-          )}
+          <div className="px-3 py-1.5 bg-indigo-50 border-t border-indigo-100 flex items-center justify-between">
+            <p className="text-[9px] text-indigo-800 font-bold flex items-center gap-1">
+              <span>⚡</span> Apostas salvas somem automaticamente • Erros continuam tentando
+            </p>
+            <button 
+              onClick={() => setMinimized(true)}
+              className="text-[9px] font-black text-indigo-900 underline hover:no-underline cursor-pointer"
+            >
+              Minimizar
+            </button>
+          </div>
         </div>
       )}
     </div>
