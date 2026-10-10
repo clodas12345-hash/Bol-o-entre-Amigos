@@ -22,7 +22,8 @@
     min-height: 100dvh;
     max-width: 100vw;
     overflow-x: hidden;
-    padding-top: var(--safe-top);
+    margin: 0;
+    padding-top: 0;
     padding-bottom: var(--safe-bottom);
     padding-left: var(--safe-left);
     padding-right: var(--safe-right);

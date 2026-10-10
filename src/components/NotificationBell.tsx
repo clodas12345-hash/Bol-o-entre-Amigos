@@ -159,11 +159,11 @@ export default function NotificationBell() {
           setIsOpen(!isOpen);
           if (!isOpen && unreadCount > 0) markAllAsRead();
         }}
-        className="relative p-2 rounded-full hover:bg-white/10 text-white transition cursor-pointer"
+        className="relative p-1.5 rounded-full hover:bg-white/10 text-white transition cursor-pointer flex items-center justify-center"
       >
-        <span className="text-xl">🔔</span>
+        <span className="text-base sm:text-lg leading-none">🔔</span>
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">
+          <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">
             {unreadCount}
           </span>
         )}

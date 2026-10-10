@@ -695,24 +695,24 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
     >
       {!hideHeader && (
         <header
-          style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.625rem)', top: 'var(--safe-top, 0px)' }}
-          className="bg-black text-white pb-2.5 px-3 sm:px-4 shadow-lg border-b border-white/10 shrink-0 sticky z-50 w-full"
+          style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.25rem)' }}
+          className="bg-black text-white pb-1.5 px-3 sm:px-4 shadow-md border-b border-white/10 shrink-0 sticky top-0 z-50 w-full"
         >
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}
               <div className="flex items-center gap-2 min-w-0">
                   <div 
                     onClick={() => navigate('/')}
-                    className="font-black text-sm sm:text-xl tracking-wide flex items-center gap-2 hover:opacity-95 transition cursor-pointer py-0.5 shrink-0"
+                    className="font-black text-sm sm:text-lg tracking-wide flex items-center gap-2 hover:opacity-95 transition cursor-pointer shrink-0"
                     title="Página Inicial do Bolão"
                   >
-                    <img src={logoImg} alt="Logotipo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover border-2 border-white/60 shadow-md shrink-0" />
-                    <span className="font-black text-white text-sm sm:text-lg truncate drop-shadow-xs">Bolão Amigos</span>
+                    <img src={logoImg} alt="Logotipo" className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-cover border border-white/60 shadow-sm shrink-0" />
+                    <span className="font-black text-white text-sm sm:text-base truncate drop-shadow-xs">Bolão Amigos</span>
                   </div>
                 </div>
 
               {/* Chat & Notificações */}
-              <div className="flex items-center gap-1 sm:gap-2">
+              <div className="flex items-center gap-1 sm:gap-1.5">
                 {/* Ícone do Chat ao lado da Notificação (abre ou fecha ao clicar novamente) */}
                 <button
                   onClick={() => {
@@ -726,14 +726,14 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                       navigate('/chat');
                     }
                   }}
-                  className={`relative p-2 rounded-xl transition cursor-pointer flex items-center justify-center border ${
+                  className={`relative p-1.5 rounded-lg transition cursor-pointer flex items-center justify-center border ${
                     location.pathname === '/chat'
                       ? 'bg-white/30 text-white border-white/40 shadow-inner'
                       : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
                   }`}
                   title={location.pathname === '/chat' ? 'Fechar Chat' : 'Abrir Chat do Bolão'}
                 >
-                  <span className="text-base sm:text-lg">💬</span>
+                  <span className="text-sm sm:text-base leading-none">💬</span>
                   {unreadChatCount > 0 && location.pathname !== '/chat' && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 text-blue-950 text-[10px] font-black rounded-full flex items-center justify-center border-2 border-blue-900 animate-bounce shadow-sm">
                       {unreadChatCount > 9 ? '9+' : unreadChatCount}
@@ -746,7 +746,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                 {/* Botão Menu Mobile */}
                 <button
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                  className="md:hidden bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer relative"
+                  className="md:hidden bg-white/10 hover:bg-white/20 text-white p-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer relative"
                 >
                   <span>{mobileMenuOpen ? '✕' : '☰'}</span>
                   {totalPendingCount > 0 && canManageMembers && (
@@ -1273,7 +1273,7 @@ export default function App() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
       StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
-      StatusBar.setBackgroundColor({ color: '#1e3a8a' }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: '#000000' }).catch(() => {});
       StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
     }
   }, []);
