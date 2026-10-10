@@ -541,11 +541,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         durationMs: Date.now() - startTime 
       });
 
-      // Automatically remove saved items from queue after 3.5 seconds to keep list clean
-      setTimeout(() => {
-        setQueue(prev => prev.filter(q => q.id !== item.id));
-      }, 3500);
-
       return true;
     } catch (err: any) {
       console.warn('Aviso no envio em segundo plano:', err.message || err);
@@ -626,9 +621,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   }, [pools, setIsQuotaExceeded, signaturesCache]);
 
   const retryFailed = useCallback(async () => {
-    // Clean up already saved/successful items from the list immediately
-    setQueue(prev => prev.filter(item => item.status === 'error' || item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving'));
-
     const failedItems = queue.filter(item => item.status === 'error');
     if (failedItems.length === 0) return;
 

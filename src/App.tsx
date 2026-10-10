@@ -69,172 +69,201 @@ import logoImg from './assets/images/bolao_logo_app.png';
 function BackgroundUploadStatus() {
   const { queue, clearCompleted, retryFailed, isProcessing } = useUpload();
   const [minimized, setMinimized] = useState(false);
-  const [closed, setClosed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const prevQueueLengthRef = useRef(0);
+
+  // Sempre que novos arquivos forem adicionados à fila, garante que a lista fique aberta e visível
+  useEffect(() => {
+    if (queue.length > prevQueueLengthRef.current) {
+      setMinimized(false);
+    }
+    prevQueueLengthRef.current = queue.length;
+  }, [queue.length]);
 
   useEffect(() => {
-    // Rola estritamente dentro do container do painel de uploads, sem interferir na janela ou em outros modais
+    // Rola estritamente dentro do container do painel de uploads para acompanhar o item ativo
     if (!minimized && containerRef.current) {
       const container = containerRef.current;
       const activeItem = container.querySelector<HTMLElement>('.animate-pulse-item');
       if (activeItem) {
-        const targetScroll = activeItem.offsetTop - container.offsetTop;
+        const targetScroll = activeItem.offsetTop - container.offsetTop - 24;
         container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
       }
     }
   }, [queue, minimized]);
   
-  if (queue.length === 0 || closed) return null;
+  if (queue.length === 0) return null;
 
   const totalItems = queue.length;
-  const completedItems = queue.filter(item => item.status === 'success' || item.status === 'error' || item.status === 'duplicate').length;
+  const successItems = queue.filter(item => item.status === 'success').length;
+  const duplicateItems = queue.filter(item => item.status === 'duplicate').length;
   const failedItems = queue.filter(item => item.status === 'error').length;
+  const completedItems = successItems + duplicateItems + failedItems;
+  const pendingItems = totalItems - completedItems;
   const isCurrentlyAnalyzing = queue.some(item => item.status === 'ocr');
+  const overallProgressPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
   return (
-    <div className={`fixed bottom-4 right-4 z-[100] transition-all duration-300 ease-in-out ${minimized ? 'w-14 h-14' : 'w-72 sm:w-80 max-w-[calc(100vw-2rem)]'}`}>
+    <div className={`fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-[9999] transition-all duration-300 ease-in-out ${minimized ? 'w-auto' : 'w-80 sm:w-96 max-w-[calc(100vw-1.5rem)]'}`}>
       {minimized ? (
         <button 
           onClick={() => setMinimized(false)}
-          className="w-14 h-14 bg-gradient-to-tr from-indigo-950 via-blue-900 to-indigo-900 text-white rounded-full shadow-2xl flex items-center justify-center relative overflow-hidden group hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-indigo-400/30"
-          title="Ver progresso de envio dos bilhetes"
+          className="px-4 py-2.5 bg-gradient-to-tr from-indigo-950 via-blue-900 to-indigo-900 text-white rounded-full shadow-2xl flex items-center gap-2.5 relative overflow-hidden group hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-indigo-400/40"
+          title="Expandir lista de envio dos bilhetes"
         >
           {isProcessing ? (
             <div className="absolute inset-0 bg-amber-400/20 animate-pulse" />
           ) : null}
-          <div className="flex flex-col items-center justify-center relative z-10">
-            <span className="text-base leading-none">
-              {isCurrentlyAnalyzing ? '🔍' : '📤'}
+          <span className="text-base leading-none relative z-10">
+            {isCurrentlyAnalyzing ? '🔍' : '📤'}
+          </span>
+          <div className="flex flex-col items-start relative z-10">
+            <span className="text-[10px] font-black uppercase tracking-wider text-white leading-none">
+              {isProcessing ? 'Enviando Apostas...' : 'Upload Concluído'}
             </span>
-            <span className="text-[9px] font-black mt-0.5 text-amber-300">
-              {completedItems}/{totalItems}
+            <span className="text-[10px] font-black mt-0.5 text-amber-300 leading-none">
+              {completedItems} de {totalItems} ({overallProgressPercent}%)
             </span>
           </div>
-          {isProcessing && (
-            <div className="absolute top-1 right-1 w-3 h-3 bg-amber-400 rounded-full border-2 border-indigo-950 animate-ping" />
-          )}
+          <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full relative z-10">
+            ▲ Abrir
+          </span>
         </button>
       ) : (
-        <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.35)] border border-indigo-100 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+        <div className="bg-white/98 backdrop-blur-md rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] border-2 border-indigo-200 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
           {/* Header */}
-          <div className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white p-3.5 flex justify-between items-center select-none">
-            <div className="flex items-center gap-2.5">
-              <div className="relative">
-                {isProcessing ? (
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping absolute inset-0" />
-                ) : null}
-                <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
+          <div className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white p-3 flex flex-col gap-2 select-none">
+            <div className="flex justify-between items-center gap-2">
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  {isProcessing ? (
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping absolute inset-0" />
+                  ) : null}
+                  <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
+                </div>
+                <div>
+                  <span className="text-[11px] font-black uppercase tracking-wider block leading-none">
+                    {isProcessing ? (isCurrentlyAnalyzing ? 'Analisando Bilhetes...' : 'Subindo Apostas...') : 'Envio Concluído'}
+                  </span>
+                  <span className="text-[10px] text-amber-300 font-black">
+                    Progresso: {completedItems} de {totalItems} ({overallProgressPercent}%)
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="text-[11px] font-black uppercase tracking-widest block leading-none">
-                  {isProcessing ? (isCurrentlyAnalyzing ? 'Analisando Bilhetes...' : 'Processando Fila') : 'Concluído'}
-                </span>
-                <span className="text-[9px] text-blue-200 font-bold opacity-80">
-                  {completedItems} de {totalItems} processados
-                </span>
+              <div className="flex items-center gap-1">
+                {failedItems > 0 && !isProcessing && (
+                  <button 
+                    onClick={retryFailed} 
+                    className="bg-amber-400 hover:bg-amber-300 text-indigo-950 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer shadow-xs flex items-center gap-1"
+                    title="Tentar processar novamente as fotos que deram erro"
+                  >
+                    <span>🔄</span> Reprocessar
+                  </button>
+                )}
+                {completedItems > 0 && (
+                  <button 
+                    onClick={clearCompleted} 
+                    className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer"
+                    title="Limpar itens já finalizados da lista"
+                  >
+                    {isProcessing ? 'Limpar Prontos' : 'Limpar Lista'}
+                  </button>
+                )}
+                <button 
+                  onClick={() => setMinimized(true)}
+                  className="px-1.5 py-1 hover:bg-white/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
+                  title="Minimizar para barra compacta"
+                >
+                  ➖
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              {failedItems > 0 && !isProcessing && (
-                <button 
-                  onClick={retryFailed} 
-                  className="bg-amber-400 hover:bg-amber-300 text-indigo-950 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer shadow-xs flex items-center gap-1"
-                  title="Tentar processar novamente as fotos que deram tempo esgotado"
-                >
-                  <span>🔄</span> Reprocessar
-                </button>
-              )}
-              {!isProcessing && (
-                <button 
-                  onClick={clearCompleted} 
-                  className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition cursor-pointer"
-                >
-                  Limpar
-                </button>
-              )}
-              <button 
-                onClick={() => setMinimized(true)}
-                className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer text-xs"
-                title="Minimizar janela para flutuante"
-              >
-                ➖
-              </button>
-              <button 
-                onClick={() => setClosed(true)}
-                className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer text-xs text-red-200 hover:text-white"
-                title="Fechar alerta"
-              >
-                ✕
-              </button>
+
+            {/* Barra de Progresso Geral */}
+            <div className="w-full bg-indigo-950/80 rounded-full h-2 overflow-hidden border border-white/15">
+              <div
+                className={`h-full transition-all duration-300 ${isProcessing ? 'bg-gradient-to-r from-amber-400 to-emerald-400' : 'bg-emerald-400'}`}
+                style={{ width: `${Math.max(5, overallProgressPercent)}%` }}
+              />
+            </div>
+
+            {/* Resumo Rápido dos Status */}
+            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wide text-blue-100 pt-0.5">
+              <span className="text-emerald-300">✓ Salvos: {successItems}</span>
+              {duplicateItems > 0 && <span className="text-amber-300">! Duplic.: {duplicateItems}</span>}
+              {failedItems > 0 && <span className="text-red-300">✕ Erros: {failedItems}</span>}
+              <span className="text-indigo-200">⏳ Fila: {pendingItems}</span>
             </div>
           </div>
 
-          {/* List - Smooth Touch Scroll */}
-          <div ref={containerRef} className="max-h-48 sm:max-h-56 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-2 bg-gray-50/40 divide-y divide-gray-100/50">
-            {queue.map((item) => {
+          {/* Lista sempre visível com todos os itens e scroll suave */}
+          <div ref={containerRef} className="max-h-64 sm:max-h-80 overflow-y-auto overscroll-contain touch-pan-y p-2.5 space-y-1.5 bg-gray-50/60 divide-y divide-gray-100/50">
+            {queue.map((item, idx) => {
               const isActive = item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate';
               return (
-                <div key={item.id} className={`p-2.5 rounded-2xl border transition-all duration-300 ${
-                  isActive ? 'animate-pulse-item bg-indigo-50/40' : ''
+                <div key={item.id} className={`p-2 rounded-xl border transition-all duration-300 ${
+                  isActive ? 'animate-pulse-item bg-indigo-50/70 border-indigo-200' : ''
                 } ${
-                  item.status === 'success' ? 'bg-emerald-50/60 border-emerald-100' : 
-                  item.status === 'error' ? 'bg-red-50/60 border-red-100' :
-                  item.status === 'duplicate' ? 'bg-amber-50/60 border-amber-100' :
-                  'bg-white border-gray-100 shadow-xs'
+                  item.status === 'success' ? 'bg-emerald-50/70 border-emerald-200' : 
+                  item.status === 'error' ? 'bg-red-50/70 border-red-200' :
+                  item.status === 'duplicate' ? 'bg-amber-50/70 border-amber-200' :
+                  'bg-white border-gray-200 shadow-2xs'
                 }`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <p className="text-[10px] font-bold text-gray-800 truncate flex items-center gap-1.5">
-                        <span className="opacity-60">📄</span> {item.name}
-                      </p>
-                      <span className={`text-[9px] font-black uppercase shrink-0 ${
-                        item.status === 'error' ? 'text-red-600' : 
-                        item.status === 'success' ? 'text-emerald-600' : 
-                        item.status === 'duplicate' ? 'text-amber-600' : 
-                        'text-indigo-600 animate-pulse'
-                      }`}>
-                        {item.status === 'ocr' ? '🔍 Analisando...' : item.message}
-                      </span>
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-[10px] font-bold text-gray-800 truncate flex items-center gap-1">
+                          <span className="text-[9px] font-black text-gray-400">#{idx + 1}</span>
+                          <span>📄</span>
+                          <span className="truncate">{item.name}</span>
+                        </p>
+                        <span className={`text-[9px] font-black uppercase shrink-0 ${
+                          item.status === 'error' ? 'text-red-600' : 
+                          item.status === 'success' ? 'text-emerald-700' : 
+                          item.status === 'duplicate' ? 'text-amber-700' : 
+                          'text-indigo-700 animate-pulse'
+                        }`}>
+                          {item.status === 'ocr' ? '🔍 Analisando...' : item.message}
+                        </span>
+                      </div>
+                      
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ease-out ${
+                            item.status === 'error' ? 'bg-red-500' : 
+                            item.status === 'success' ? 'bg-emerald-500' : 
+                            item.status === 'duplicate' ? 'bg-amber-500' : 
+                            'bg-indigo-600'
+                          }`} 
+                          style={{ width: `${item.progress}%` }} 
+                        />
+                      </div>
                     </div>
                     
-                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-500 ease-out ${
-                          item.status === 'error' ? 'bg-red-500' : 
-                          item.status === 'success' ? 'bg-emerald-500' : 
-                          item.status === 'duplicate' ? 'bg-amber-500' : 
-                          'bg-indigo-600'
-                        }`} 
-                        style={{ width: `${item.progress}%` }} 
-                      />
+                    <div className="shrink-0 flex items-center justify-center w-5">
+                      {item.status === 'success' && (
+                        <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-black">✓</div>
+                      )}
+                      {item.status === 'error' && (
+                        <div className="w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-[10px] font-black">✕</div>
+                      )}
+                      {item.status === 'duplicate' && (
+                        <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[10px] font-black">!</div>
+                      )}
+                      {isActive && (
+                        <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="shrink-0 flex items-center justify-center w-6">
-                    {item.status === 'success' && (
-                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</div>
-                    )}
-                    {item.status === 'error' && (
-                      <div className="w-6 h-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-[10px] font-black">✕</div>
-                    )}
-                    {item.status === 'duplicate' && (
-                      <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">!</div>
-                    )}
-                    {(item.status !== 'success' && item.status !== 'error' && item.status !== 'duplicate') && (
-                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                    )}
-                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
           
           {isProcessing && (
-            <div className="px-3.5 py-1.5 bg-indigo-50/80 border-t border-indigo-100 flex items-center justify-between">
-              <p className="text-[9px] text-indigo-700 font-bold flex items-center gap-1.5">
-                <span className="animate-bounce">💡</span> Você pode navegar na tela normalmente.
+            <div className="px-3 py-1.5 bg-indigo-50 border-t border-indigo-100 flex items-center justify-between">
+              <p className="text-[9px] text-indigo-800 font-bold flex items-center gap-1">
+                <span>⚡</span> Lista fixa em tempo real ({completedItems}/{totalItems} concluídos)
               </p>
               <button 
                 onClick={() => setMinimized(true)}
