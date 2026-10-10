@@ -18,41 +18,63 @@ interface GameHistoryProps {
   onGoToToday?: () => void;
 }
 
-export const parseDateSafely = (dateVal: any): Date => {
-  if (!dateVal) return new Date();
-  if (typeof dateVal.toDate === 'function') return dateVal.toDate();
-  if (typeof dateVal === 'object' && typeof dateVal.seconds === 'number') {
-    return new Date(dateVal.seconds * 1000);
-  }
-  if (typeof dateVal === 'object' && typeof dateVal._seconds === 'number') {
-    return new Date(dateVal._seconds * 1000);
-  }
-  if (dateVal instanceof Date) return dateVal;
-  if (typeof dateVal === 'string') {
-    const trimmed = dateVal.trim();
-    if (trimmed.includes('-')) {
-      const parts = trimmed.split('T')[0].split('-');
-      if (parts.length === 3) {
-        if (parts[0].length === 4) {
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
-        } else {
-          return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+export const parseDateSafely = (dateVal: any, fallbackMonthStr?: string, contestNum?: number | null): Date => {
+  const normalizeYear = (y: number): number => {
+    if (y >= 0 && y < 100) return 2000 + y;
+    return y;
+  };
+
+  if (dateVal) {
+    if (typeof dateVal.toDate === 'function') return dateVal.toDate();
+    if (typeof dateVal === 'object' && typeof dateVal.seconds === 'number') {
+      return new Date(dateVal.seconds * 1000);
+    }
+    if (typeof dateVal === 'object' && typeof dateVal._seconds === 'number') {
+      return new Date(dateVal._seconds * 1000);
+    }
+    if (dateVal instanceof Date && !isNaN(dateVal.getTime())) return dateVal;
+    if (typeof dateVal === 'string') {
+      const trimmed = dateVal.trim();
+      if (trimmed.includes('-')) {
+        const parts = trimmed.split('T')[0].split(' ')[0].split('-');
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+          } else {
+            return new Date(normalizeYear(Number(parts[2])), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+          }
         }
       }
-    }
-    if (trimmed.includes('/')) {
-      const parts = trimmed.split('/');
-      if (parts.length === 3) {
-        if (parts[2].length === 4) {
-          return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
-        } else {
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+      if (trimmed.includes('/')) {
+        const parts = trimmed.split(' ')[0].split('/');
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+          } else {
+            return new Date(normalizeYear(Number(parts[2])), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+          }
         }
       }
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d;
     }
   }
-  const d = new Date(dateVal);
-  return isNaN(d.getTime()) ? new Date() : d;
+
+  // Se não houver data válida mas houver mês de referência (ex: "05/2025" ou "11/2024")
+  if (fallbackMonthStr && typeof fallbackMonthStr === 'string' && fallbackMonthStr.includes('/')) {
+    const [m, y] = fallbackMonthStr.split('/').map(Number);
+    if (m >= 1 && m <= 12 && y > 1900) {
+      return new Date(normalizeYear(y), m - 1, 15, 12, 0, 0);
+    }
+  }
+
+  // Se for um concurso de anos anteriores (Lotofácil <= 3575 é de 2025 ou anterior)
+  if (contestNum && contestNum > 0 && contestNum <= 3575) {
+    if (contestNum <= 3282) return new Date(2024, 11, 15, 12, 0, 0);
+    return new Date(2025, 11, 15, 12, 0, 0);
+  }
+
+  return new Date();
 };
 
 export const extractContestNumber = (contestVal: any): number | null => {
@@ -120,28 +142,69 @@ export default function GameHistory({
     }
   };
 
-  // Avaliação dos jogos e filtragem para ARQUIVAMENTO AUTOMÁTICO (apenas datas passadas)
+  // Avaliação dos jogos e filtragem para ARQUIVAMENTO AUTOMÁTICO (datas passadas, meses anteriores ou concursos já sorteados)
   const processedGames = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
+
+    // Maior concurso já salvo nos resultados oficiais
+    const maxOfficialContest = savedResultsList.reduce((max, r) => {
+      const c = Number(r?.contest) || 0;
+      return c > max ? c : max;
+    }, 0);
 
     return games.map(game => {
-      const gDate = parseDateSafely(game.date);
-      const gameDay = new Date(gDate);
-      gameDay.setHours(0, 0, 0, 0);
-
-      const dayTimestamp = gameDay.getTime();
-      const isToday = dayTimestamp === today.getTime();
-      const isFuture = dayTimestamp > today.getTime();
-      const isPast = dayTimestamp < today.getTime();
-
-      const contestNumber = extractContestNumber(game.contest);
+      const contestNumber = extractContestNumber(game.contestNumber || game.contest);
 
       // Encontra o resultado oficial gravado no histórico para este concurso
       let targetResult: any = null;
       if (contestNumber) {
         targetResult = savedResultsList.find(r => Number(r.contest) === contestNumber);
       }
+
+      // Se o resultado oficial tiver data ou o jogo tiver mês/ano anterior, garantimos a data real
+      let gDate = parseDateSafely(game.date || targetResult?.date, game.month, contestNumber);
+
+      // Correção para apostas salvas com a data de hoje por engano, mas cujo month ou concurso é de ano anterior
+      if (game.month && typeof game.month === 'string' && game.month.includes('/')) {
+        const [mPart, yPart] = game.month.split('/').map(Number);
+        const normY = yPart > 0 && yPart < 100 ? 2000 + yPart : yPart;
+        if (normY >= 2000 && normY < currentYear && gDate.getFullYear() === currentYear) {
+          gDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(gDate.getDate(), 28), 12, 0, 0);
+        }
+      } else if (contestNumber && contestNumber > 0 && contestNumber <= 3575 && gDate.getFullYear() >= 2026) {
+        // Concursos Lotofácil até ~3575 ocorreram em 2025 ou anos anteriores
+        const inferredYear = contestNumber <= 2990 ? 2023 : contestNumber <= 3282 ? 2024 : 2025;
+        gDate = new Date(inferredYear, gDate.getMonth(), Math.min(gDate.getDate(), 28), 12, 0, 0);
+      }
+
+      const gameDay = new Date(gDate);
+      gameDay.setHours(0, 0, 0, 0);
+
+      const dayTimestamp = gameDay.getTime();
+      const isPastDate = dayTimestamp < today.getTime();
+
+      // Verifica também pelo mês de referência (ex: 12/2025, 05/2024) ou se o concurso já foi sorteado
+      let isPastMonthRef = false;
+      if (game.month && typeof game.month === 'string' && game.month.includes('/')) {
+        const [mRef, yRef] = game.month.split('/').map(Number);
+        const normYRef = yRef > 0 && yRef < 100 ? 2000 + yRef : yRef;
+        if (normYRef > 2000 && (normYRef < currentYear || (normYRef === currentYear && mRef < currentMonth))) {
+          isPastMonthRef = true;
+        }
+      }
+
+      const isAlreadyDrawnContest = Boolean(
+        (targetResult && Array.isArray(targetResult.numbers) && targetResult.numbers.length > 0) ||
+        (contestNumber && maxOfficialContest > 0 && contestNumber < maxOfficialContest) ||
+        (contestNumber && contestNumber > 0 && contestNumber <= 3575)
+      );
+
+      const isPast = isPastDate || isPastMonthRef || isAlreadyDrawnContest;
+      const isToday = !isPast && dayTimestamp === today.getTime();
+      const isFuture = !isPast && dayTimestamp > today.getTime();
 
       const resDrawn = Array.isArray(targetResult?.numbers)
         ? targetResult.numbers.map((n: any) => Number(n))
@@ -151,17 +214,17 @@ export default function GameHistory({
         ? game.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b)
         : [];
 
-      const isFutureContestTitle = String(game.contest || '').toLowerCase().includes('futuro');
+      const isFutureContestTitle = !isPast && String(game.contest || '').toLowerCase().includes('futuro');
       const isPendingFuture = isFuture || isFutureContestTitle || !targetResult?.numbers?.length;
 
       const prizeInfo = (isPendingFuture || !targetResult)
-        ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Sorteio (Zerado)', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
+        ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Apuração', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
         : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
 
-      const derivedMonth = game.date && !isNaN(gDate.getTime())
+      const derivedMonth = !isNaN(gDate.getTime())
         ? `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`
         : '';
-      const monthStr = derivedMonth || game.month || `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`;
+      const monthStr = (game.month && game.month.includes('/') && !game.month.endsWith(String(currentYear)) ? game.month : derivedMonth) || game.month || `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`;
       const dateStr = formatAnyDateBR(gDate);
 
       return {
@@ -171,7 +234,7 @@ export default function GameHistory({
         isToday,
         isFuture,
         isPast,
-        // É arquivado se a data do sorteio já passou
+        // É arquivado se a data do sorteio já passou, pertence a mês/ano anterior ou concurso já sorteado
         isArchived: isPast,
         contestNumber,
         gameNumbers,
@@ -183,7 +246,7 @@ export default function GameHistory({
     });
   }, [games, savedResultsList]);
 
-  // Apenas os jogos arquivados (sorteio já realizado)
+  // Apenas os jogos arquivados (sorteio já realizado ou de datas/anos anteriores)
   const archivedGames = useMemo(() => {
     return processedGames.filter(g => g.isArchived);
   }, [processedGames]);
@@ -197,11 +260,14 @@ export default function GameHistory({
     return processedGames.filter(g => (g.isToday || g.isFuture) && g.monthStr === currentMonthStr).length;
   }, [processedGames, currentMonthStr]);
 
-  // Lista de anos disponíveis no histórico
+  // Lista de anos disponíveis no histórico (inclui anos das apostas e anos anteriores recentes para fácil consulta)
   const availableYears = useMemo(() => {
-    const set = new Set<string>();
-    const currentYearStr = String(new Date().getFullYear());
-    set.add(currentYearStr);
+    const currentYear = new Date().getFullYear();
+    const set = new Set<string>([
+      String(currentYear),
+      String(currentYear - 1),
+      String(currentYear - 2)
+    ]);
     archivedGames.forEach(g => {
       if (g.gDate && !isNaN(g.gDate.getTime())) {
         set.add(String(g.gDate.getFullYear()));
@@ -225,7 +291,10 @@ export default function GameHistory({
 
   // Lista de meses disponíveis no histórico (filtrada pelo ano selecionado se houver)
   const availableMonths = useMemo(() => {
-    const set = new Set<string>([currentMonthStr]);
+    const set = new Set<string>();
+    if (selectedYearFilter === 'all' || currentMonthStr.endsWith(selectedYearFilter)) {
+      set.add(currentMonthStr);
+    }
     archivedGames.forEach(g => {
       if (g.monthStr) {
         if (selectedYearFilter === 'all' || g.monthStr.endsWith(selectedYearFilter)) {
@@ -247,6 +316,15 @@ export default function GameHistory({
       return mB - mA;
     });
   }, [archivedGames, processedGames, currentMonthStr, selectedYearFilter]);
+
+  // Quando o usuário troca o Ano no filtro, reseta o filtro de mês se ele não pertencer ao ano selecionado
+  useEffect(() => {
+    if (selectedYearFilter !== 'all' && selectedMonthFilter !== 'all') {
+      if (!selectedMonthFilter.endsWith(selectedYearFilter)) {
+        setSelectedMonthFilter('all');
+      }
+    }
+  }, [selectedYearFilter, selectedMonthFilter]);
 
   // Filtros aplicados sobre o histórico
   const filteredArchivedGames = useMemo(() => {
@@ -731,10 +809,11 @@ export default function GameHistory({
           <div className="p-8 text-center bg-white rounded-xl border border-gray-200 shadow-2xs">
             <span className="text-4xl block mb-2">📜</span>
             <h3 className="font-bold text-gray-800 text-base mb-1">Nenhum concurso arquivado encontrado.</h3>
-            {(searchContestQuery || selectedMonthFilter !== 'all' || selectedPrizeFilter !== 'all' || selectedNumbersFilter.length > 0) && (
+            {(searchContestQuery || selectedYearFilter !== 'all' || selectedMonthFilter !== 'all' || selectedPrizeFilter !== 'all' || selectedNumbersFilter.length > 0) && (
               <button
                 onClick={() => {
                   setSearchContestQuery('');
+                  setSelectedYearFilter('all');
                   setSelectedMonthFilter('all');
                   setSelectedPrizeFilter('all');
                   setSelectedNumbersFilter([]);
@@ -747,7 +826,8 @@ export default function GameHistory({
           </div>
         ) : (
           contestsByMonth.map(([monthName, groups]) => {
-            const isMonthExpanded = expandedMonths[monthName] ?? false;
+            const isFiltering = selectedYearFilter !== 'all' || selectedMonthFilter !== 'all' || Boolean(searchContestQuery.trim());
+            const isMonthExpanded = expandedMonths[monthName] ?? isFiltering;
             const totalGamesInMonth = groups.reduce((sum, g) => sum + g.games.length, 0);
             const totalPrizeInMonth = groups.reduce((sum, g) => sum + g.totalPrize, 0);
 

@@ -31,19 +31,23 @@ interface UploadContextType {
 const UploadContext = createContext<UploadContextType | undefined>(undefined);
 
 const parseDateSafely = (dateStr: string): Date => {
+  const normalizeYear = (y: number): number => {
+    if (y >= 0 && y < 100) return 2000 + y;
+    return y;
+  };
   if (!dateStr) return new Date();
   if (dateStr.includes('-')) {
-    const parts = dateStr.split('-');
+    const parts = dateStr.trim().split('T')[0].split(' ')[0].split('-');
     if (parts.length === 3) {
       if (parts[0].length === 4) return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
-      return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+      return new Date(normalizeYear(Number(parts[2])), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
     }
   }
   if (dateStr.includes('/')) {
-    const parts = dateStr.split('/');
+    const parts = dateStr.trim().split(' ')[0].split('/');
     if (parts.length === 3) {
-      if (parts[2].length === 4) return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
-      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+      if (parts[0].length === 4) return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+      return new Date(normalizeYear(Number(parts[2])), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
     }
   }
   const fallback = new Date(dateStr);
@@ -369,19 +373,26 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       updateItem(item.id, { status: 'saving', progress: 70, message: 'Verificando duplicidades no banco...' });
 
       const receiptURL = compressed.base64;
-      const parsedDate = data.date ? parseDateSafely(data.date) : parseDateSafely(gameDate);
+      let parsedDate = data.date ? parseDateSafely(data.date) : parseDateSafely(gameDate);
       const contestStr = data.contest ? String(data.contest).trim() : (contest || '').trim();
       let startContestNum = parseInt(contestStr, 10) || 0;
 
-      // Trava de Proteção Ativa: Previne gravações incorretas no Firestore
-      // Em 2026, os concursos da Lotofácil são sempre >= 3500. Números como 3012 vêm de terminal da máquina da lotérica lido por engano.
-      const ticketYear = parsedDate.getFullYear();
-      if (!isMegaSena && ticketYear >= 2026 && startContestNum > 0 && startContestNum < 3500) {
-        console.warn(`[Segurança Firestore] Concurso inconsistente ignorado (#${startContestNum}) para o ano ${ticketYear}. Prevenindo gravação de número de terminal no banco.`);
-        startContestNum = parseInt((contest || '').trim(), 10) || 0;
+      // Se a IA não capturou a data do bilhete mas o Mês Ref ou Concurso é de ano anterior, ajusta o ano de parsedDate
+      const currentCalendarYear = new Date().getFullYear();
+      if (!data.date && monthRef && typeof monthRef === 'string' && monthRef.includes('/')) {
+        const [mPart, yPart] = monthRef.split('/').map(Number);
+        const normY = yPart > 0 && yPart < 100 ? 2000 + yPart : yPart;
+        if (normY >= 2000 && normY < currentCalendarYear && parsedDate.getFullYear() === currentCalendarYear) {
+          parsedDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(parsedDate.getDate(), 28), 12, 0, 0);
+        }
+      } else if (!isMegaSena && startContestNum > 2000 && startContestNum <= 3575 && !data.date && parsedDate.getFullYear() >= 2026) {
+        const inferredYear = startContestNum <= 2990 ? 2023 : startContestNum <= 3282 ? 2024 : 2025;
+        parsedDate = new Date(inferredYear, parsedDate.getMonth(), Math.min(parsedDate.getDate(), 28), 12, 0, 0);
       }
 
-      const currentMonth = data.date ? formatDateToMonthRef(parsedDate) : (monthRef || formatDateToMonthRef(new Date()));
+      const currentMonth = (data.date || parsedDate.getFullYear() < currentCalendarYear)
+        ? formatDateToMonthRef(parsedDate)
+        : (monthRef || formatDateToMonthRef(parsedDate));
       
       const rawGames = data.games.map((g: any) => 
         (Array.isArray(g) ? g : [])

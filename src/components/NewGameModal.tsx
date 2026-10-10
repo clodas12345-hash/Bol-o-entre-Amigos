@@ -17,29 +17,33 @@ import { triggerNewContestNotification } from '../lib/autoNotificationService';
 import { getValidDrawSequence, getNextDrawDate, formatDateToYYYYMMDD } from '../lib/drawCalendar';
 
 const parseDateSafely = (dateStr: string): Date => {
+  const normalizeYear = (y: number): number => {
+    if (y >= 0 && y < 100) return 2000 + y;
+    return y;
+  };
   if (!dateStr) return new Date();
   
   if (dateStr.includes('-')) {
-    const parts = dateStr.split('-');
+    const parts = dateStr.trim().split('T')[0].split(' ')[0].split('-');
     if (parts.length === 3) {
       if (parts[0].length === 4) {
         const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
         if (!isNaN(d.getTime())) return d;
       } else {
-        const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+        const d = new Date(normalizeYear(Number(parts[2])), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
         if (!isNaN(d.getTime())) return d;
       }
     }
   }
   
   if (dateStr.includes('/')) {
-    const parts = dateStr.split('/');
+    const parts = dateStr.trim().split(' ')[0].split('/');
     if (parts.length === 3) {
-      if (parts[2].length === 4) {
-        const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
-        if (!isNaN(d.getTime())) return d;
-      } else if (parts[0].length === 4) {
+      if (parts[0].length === 4) {
         const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+        if (!isNaN(d.getTime())) return d;
+      } else {
+        const d = new Date(normalizeYear(Number(parts[2])), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
         if (!isNaN(d.getTime())) return d;
       }
     }
@@ -193,8 +197,27 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
       const existingSigs = await getExistingSignatures();
 
       const receiptURL = null;
-      const parsedDate = parseDateSafely(gameDate);
+      let parsedDate = parseDateSafely(gameDate);
       const startContestNum = parseInt(contest.trim(), 10) || 0;
+
+      // Se o usuário digitou um Mês Ref de ano anterior (ex: 08/2025) ou um concurso de ano anterior, mas manteve a data de hoje, ajusta o ano de parsedDate
+      const currentCalendarYear = new Date().getFullYear();
+      const todayIso = new Date().toISOString().split('T')[0];
+      if (gameDate === todayIso && monthRef && monthRef.includes('/')) {
+        const [mPart, yPart] = monthRef.trim().split('/').map(Number);
+        const normY = yPart > 0 && yPart < 100 ? 2000 + yPart : yPart;
+        if (normY >= 2000 && normY < currentCalendarYear) {
+          parsedDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(parsedDate.getDate(), 28), 12, 0, 0);
+        }
+      } else if (gameDate === todayIso && !isMegaSena && startContestNum > 0 && startContestNum <= 3575) {
+        const inferredYear = startContestNum <= 2990 ? 2023 : startContestNum <= 3282 ? 2024 : 2025;
+        parsedDate = new Date(inferredYear, parsedDate.getMonth(), Math.min(parsedDate.getDate(), 28), 12, 0, 0);
+      }
+
+      const resolvedMonthRef = parsedDate.getFullYear() < currentCalendarYear
+        ? formatDateToMonthRef(parsedDate)
+        : (monthRef.trim() || formatDateToMonthRef(parsedDate));
+
       const unitTotal = prices[selectedNumbers.length] || (isMegaSena ? 5.00 : 3.50);
       const numbersKey = [...selectedNumbers].sort((a, b) => a - b).join('-');
 
@@ -271,7 +294,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             numbersKey,
             contest: contestLabel,
             contestNumber: startContestNum > 0 ? startContestNum : null,
-            month: monthRef.trim(),
+            month: resolvedMonthRef,
             cost: isTeimosinha ? unitTotal * teimosinhaCount : unitTotal,
             date: Timestamp.fromDate(parsedDate),
             receiptURL,
