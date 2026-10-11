@@ -47,7 +47,8 @@ import {
   ensureAndroidHighImportanceChannel,
   requestNotificationPermissionWithDetails,
   getNotificationPermissionStatus,
-  NotificationStatusDetails
+  NotificationStatusDetails,
+  syncActiveUserDisplayName
 } from './lib/notifications';
 import NotificationManager, { useToast } from './components/NotificationManager';
 import PoolSelector from './components/PoolSelector';
@@ -1324,6 +1325,20 @@ export default function App() {
 
   const activeUser = user || (phoneUser ? phoneUser.sessionUser : null);
   const activeUserData = userData || (phoneUser ? phoneUser.memberData : null);
+
+  // Sincroniza o nome da pessoa logada com o cache e o receptor nativo do Android para personalizar todas as notificações
+  useEffect(() => {
+    const rawName =
+      activeUserData?.name ||
+      activeUserData?.displayName ||
+      activeUser?.displayName ||
+      phoneUser?.memberData?.name ||
+      phoneUser?.sessionUser?.displayName ||
+      '';
+    if (rawName) {
+      syncActiveUserDisplayName(rawName);
+    }
+  }, [activeUserData?.name, activeUserData?.displayName, activeUser?.displayName, phoneUser]);
 
   const isUserAdmin = activeUserData?.role === 'admin' ||
     activeUser?.email === 'clodas12345@gmail.com' ||

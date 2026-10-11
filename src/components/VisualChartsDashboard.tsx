@@ -108,27 +108,33 @@ export default function VisualChartsDashboard() {
 
       {/* Gráfico Visual de Distribuição de Cotas */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 space-y-4">
-        <h3 className="text-sm font-bold text-gray-800">🎟️ Distribuição de Cotas por Membro (Top Participantes)</h3>
+        <h3 className="text-sm font-bold text-gray-800">🎟️ Distribuição de Cotas por Membro (Ordem Alfabética A-Z)</h3>
         
         <div className="space-y-2.5 max-h-72 overflow-y-auto">
-          {members.sort((a, b) => Number(b.quotas || 1) - Number(a.quotas || 1)).map(m => {
-            const quotas = Number(m.quotas) > 0 ? Number(m.quotas) : 1;
-            const percentage = totalQuotas > 0 ? (quotas / totalQuotas) * 100 : 0;
-            return (
-              <div key={m.id} className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="font-bold text-gray-800">{m.displayName || m.email}</span>
-                  <span className="text-gray-500 font-semibold">{quotas} cota(s) ({percentage.toFixed(1)}%)</span>
+          {[...members]
+            .sort((a, b) => {
+              const nameA = (a.displayName || a.name || a.email || '').trim();
+              const nameB = (b.displayName || b.name || b.email || '').trim();
+              return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+            })
+            .map(m => {
+              const quotas = Number(m.quotas) > 0 ? Number(m.quotas) : 1;
+              const percentage = totalQuotas > 0 ? (quotas / totalQuotas) * 100 : 0;
+              return (
+                <div key={m.id} className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="font-bold text-gray-800">{m.displayName || m.name || m.email}</span>
+                    <span className="text-gray-500 font-semibold">{quotas} cota(s) ({percentage.toFixed(1)}%)</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-purple-600 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, percentage * 2)}%` }}
+                    ></div>
+                  </div>
                 </div>
-                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-purple-600 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(100, percentage * 2)}%` }}
-                  ></div>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       </div>
     </div>

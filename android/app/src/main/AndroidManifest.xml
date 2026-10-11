@@ -38,6 +38,17 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
+
+        <receiver
+            android:name=".DailyPrizeCheckReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="com.lotofacil.gestor.ACTION_DAILY_PRIZE_CHECK_2155" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy, doc, limit, writeBatch, updateDoc } from 'firebase/firestore';
 import { db, auth, isQuotaError } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
-import { getUserNotificationPreferences, UserNotificationPreferences, resolveNotificationTargetPath, sendAppNotification } from '../lib/notifications';
+import { getUserNotificationPreferences, UserNotificationPreferences, resolveNotificationTargetPath, sendAppNotification, personalizeNotificationText } from '../lib/notifications';
 import { formatAnyDateBR } from '../lib/formatters';
 
 export default function NotificationBell() {
@@ -59,15 +59,24 @@ export default function NotificationBell() {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setNotifications(list);
 
-      // Dispara push nativo instantâneo caso chegue uma nova notificação direcionada em tempo real
+      // Dispara push nativo instantâneo caso chegue uma nova notificação direcionada ou de prêmio em tempo real
       if (initialLoadDoneRef.current) {
         snapshot.docChanges().forEach(change => {
           if (change.type === 'added') {
             const nData = change.doc.data();
-            if (!nData.read && nData.isDirectMention) {
+            if (!nData.read && (nData.isDirectMention || nData.type === 'prize' || nData.userId === 'all')) {
               const pushedKey = `bolao_pushed_notif_${change.doc.id}`;
-              if (!sessionStorage.getItem(pushedKey)) {
+              if (!sessionStorage.getItem(pushedKey) && !localStorage.getItem(pushedKey)) {
                 sessionStorage.setItem(pushedKey, '1');
+                localStorage.setItem(pushedKey, '1');
+                if (nData.type === 'prize') {
+                  sendAppNotification(personalizeNotificationText(nData.title || '🏆 Aposta Premiada!'), {
+                    body: personalizeNotificationText(nData.message || ''),
+                    id: Math.floor(Math.random() * 800000) + 100000,
+                    category: 'winning_prize',
+                    uid: activeUid
+                  }).catch(() => {});
+                }
               }
             }
           }
@@ -197,9 +206,9 @@ export default function NotificationBell() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h5 className={`text-sm font-bold ${!notif.read ? 'text-indigo-900' : 'text-gray-700'}`}>
-                        {notif.title}
+                        {personalizeNotificationText(notif.title)}
                       </h5>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{notif.message}</p>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{personalizeNotificationText(notif.message)}</p>
                       <div className="flex items-center justify-between gap-2 mt-2">
                         <span className="text-[9px] text-gray-400 font-bold uppercase">
                           {notif.createdAt?.toDate ? `${formatAnyDateBR(notif.createdAt)} • ${notif.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agora'}

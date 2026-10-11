@@ -21,7 +21,8 @@ interface AlertPreferences {
   notifyAt1930: boolean; // 30 min antes
   notifyAt2000: boolean; // Na hora do sorteio
   notifyAt2035: boolean; // Apuração e resultados
-  daysOfWeek: number[]; // 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
+  notifyAt2155?: boolean; // Conferência automática definitiva às 21h55
+  daysOfWeek: number[]; // 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex
 }
 
 const DEFAULT_PREFERENCES: AlertPreferences = {
@@ -29,17 +30,18 @@ const DEFAULT_PREFERENCES: AlertPreferences = {
   notifyAt1930: true,
   notifyAt2000: true,
   notifyAt2035: true,
-  daysOfWeek: [1, 2, 3, 4, 5, 6] // Segunda a Sábado
+  notifyAt2155: true,
+  daysOfWeek: [0, 1, 2, 3, 4, 5] // Segunda a Sexta + Domingo (Nova agenda Caixa)
 };
 
 const DAYS_MAP = [
-  { id: 0, label: 'Dom', full: 'Domingo', hasDraw: false },
+  { id: 0, label: 'Dom', full: 'Domingo', hasDraw: true },
   { id: 1, label: 'Seg', full: 'Segunda-feira', hasDraw: true },
   { id: 2, label: 'Ter', full: 'Terça-feira', hasDraw: true },
   { id: 3, label: 'Qua', full: 'Quarta-feira', hasDraw: true },
   { id: 4, label: 'Qui', full: 'Quinta-feira', hasDraw: true },
   { id: 5, label: 'Sex', full: 'Sexta-feira', hasDraw: true },
-  { id: 6, label: 'Sáb', full: 'Sábado', hasDraw: true }
+  { id: 6, label: 'Sáb', full: 'Sábado (Sem Sorteio)', hasDraw: false }
 ];
 
 export default function DrawAlertsConfig() {
@@ -52,7 +54,12 @@ export default function DrawAlertsConfig() {
   const [preferences, setPreferences] = useState<AlertPreferences>(() => {
     try {
       const saved = localStorage.getItem('bolao_draw_alerts_config');
-      return saved ? JSON.parse(saved) : DEFAULT_PREFERENCES;
+      if (!saved) return DEFAULT_PREFERENCES;
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed.daysOfWeek) && parsed.daysOfWeek.includes(6) && !parsed.daysOfWeek.includes(0)) {
+        parsed.daysOfWeek = [0, ...parsed.daysOfWeek.filter((d: number) => d !== 6)];
+      }
+      return { ...DEFAULT_PREFERENCES, ...parsed };
     } catch {
       return DEFAULT_PREFERENCES;
     }
@@ -260,7 +267,7 @@ export default function DrawAlertsConfig() {
       await runAutoPrizeCheck();
       await scheduleUpcomingDrawAlerts(isMegaSena ? 'megasena' : 'lotofacil');
       await refreshPendingAlarms();
-      addToast('✅ Conferência automática executada e alarmes nativos (20h35/21h05) sincronizados!', 'success');
+      addToast('✅ Conferência automática executada e alarmes nativos (incluindo 21h55) sincronizados!', 'success');
     } catch {
       addToast('Erro ao executar conferência automática.', 'error');
     } finally {
@@ -284,7 +291,7 @@ export default function DrawAlertsConfig() {
     const location = encodeURIComponent('Bolão Lotofácil Gestor');
     // 20:00 às 20:30 BRT
     const dates = `${year}${month}${day}T230000Z/${year}${month}${day}T233000Z`;
-    const recur = encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA');
+    const recur = encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR');
 
     const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}&recur=${recur}`;
 
@@ -305,7 +312,7 @@ export default function DrawAlertsConfig() {
       'SUMMARY:🍀 Sorteio Oficial Lotofácil - Conferir Bolão',
       'DESCRIPTION:Horário oficial do sorteio da Lotofácil (Caixa). Acesse o app do bolão para conferir os acertos e prêmios!',
       'LOCATION:Bolão Lotofácil Gestor',
-      'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA',
+      'RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR',
       'DTSTART:20260101T230000Z',
       'DTEND:20260101T233000Z',
       'BEGIN:VALARM',
@@ -361,7 +368,7 @@ export default function DrawAlertsConfig() {
               )}
               <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                {isMegaSena ? 'Terça, Quinta e Sábado às 20h00' : 'Segunda a Sábado às 20h00'}
+                {isMegaSena ? 'Terça, Quinta e Domingo' : 'Segunda a Sexta e Domingo'}
               </span>
             </div>
             <h2 className="text-base sm:text-lg font-black tracking-tight text-white mt-0.5 flex items-center gap-2 flex-wrap">
@@ -433,7 +440,7 @@ export default function DrawAlertsConfig() {
                 )}
               </div>
               <p className="text-[11px] text-blue-100/90 leading-relaxed">
-                Os alarmes das <strong>19h30, 20h00, 20h35 e 21h05</strong> ficam gravados no sistema Android (<code className="text-amber-300">allowWhileIdle</code>) e tocam mesmo com o app fechado, acionando a conferência automática do jogo do dia!
+                Os alarmes das <strong>19h30, 20h00, 20h35, 21h05 e 21h55</strong> ficam gravados no sistema Android (<code className="text-amber-300">setExactAndAllowWhileIdle</code>) e rodam mesmo com o app 100% fechado, conferindo os jogos do dia às <strong>21h55</strong> e parabenizando todos os membros se houver prêmio!
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
@@ -535,6 +542,21 @@ export default function DrawAlertsConfig() {
                   checked={preferences.notifyAt2035}
                   onChange={(e) => savePreferences({ ...preferences, notifyAt2035: e.target.checked })}
                   className="rounded text-indigo-500 w-4 h-4 cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/15 border border-emerald-400/30 hover:bg-emerald-500/25 transition cursor-pointer text-xs">
+                <span className="flex items-center gap-2">
+                  <span>🎉</span>
+                  <span>
+                    <strong>21h55</strong> — Conferência Automática Diária & Alerta de Prêmio (Funciona c/ App Fechado)
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={preferences.notifyAt2155 !== false}
+                  onChange={(e) => savePreferences({ ...preferences, notifyAt2155: e.target.checked })}
+                  className="rounded text-emerald-500 w-4 h-4 cursor-pointer"
                 />
               </label>
             </div>

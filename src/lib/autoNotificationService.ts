@@ -105,28 +105,46 @@ export async function triggerResultNotification(contestNum: number, winningCount
     let formattedMsg = resultPublishedTemplate.replace('{contest}', String(contestNum));
 
     if (winningCount > 0 && totalPrize > 0) {
-      title = `🏆 Jogo do Dia Premiado (#${contestNum})!`;
-      formattedMsg = `🎉 Tivemos ${winningCount} aposta(s) premiada(s) no Concurso #${contestNum}! Prêmio total: R$ ${totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
+      const formattedPrize = `R$ ${totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+      const hitsText = highestHits > 0 ? ` (${highestHits} pontos)` : '';
+      title = `🏆 Parabéns, {name}! Aposta Premiada (#${contestNum})!`;
+      formattedMsg =
+        winningCount > 1
+          ? `🎉 Parabéns, {name}! Tivemos ${winningCount} apostas premiadas no Concurso #${contestNum} somando ${formattedPrize}${hitsText}!`
+          : `🎉 Parabéns, {name}! Tivemos 1 aposta premiada no Concurso #${contestNum} no valor de ${formattedPrize}${hitsText}!`;
       
       // Native / Local Notification specifically for winning bets with prize details
       await notifyWinningPrize(contestNum, winningCount, totalPrize, highestHits);
       localStorage.setItem(prizeNotifiedKey, new Date().toISOString());
+
+      await setDoc(
+        doc(db, 'notifications', `prize_contest_${contestNum}`),
+        {
+          userId: 'all',
+          title,
+          message: formattedMsg,
+          type: 'prize',
+          read: false,
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
     } else if (!notifiedList.includes(contestNum)) {
       await sendAppNotification(title, {
         body: formattedMsg,
         id: contestNum + 500000,
         category: 'official_result'
       });
-    }
 
-    await addDoc(collection(db, 'notifications'), {
-      userId: 'all',
-      title,
-      message: formattedMsg,
-      type: 'prize',
-      read: false,
-      createdAt: serverTimestamp()
-    });
+      await addDoc(collection(db, 'notifications'), {
+        userId: 'all',
+        title,
+        message: formattedMsg,
+        type: 'prize',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }
 
     // 4. Update the notified results list
     if (!notifiedList.includes(contestNum)) {

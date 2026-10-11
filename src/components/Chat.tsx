@@ -693,8 +693,8 @@ export default function Chat() {
       const poolContext = {
         lotteryType: isMegaSena ? 'Mega-Sena' : 'Lotofácil',
         drawSchedule: isMegaSena 
-          ? 'Terças, Quintas e Sábados às 20:00h' 
-          : 'Segunda a Sábado às 20:00h (exceto domingos e feriados)',
+          ? 'Terças, Quintas e Domingos (sorteios de sábado agora são realizados aos domingos pela Caixa)' 
+          : 'Segunda a Sexta e Domingo (sorteios de sábado agora são realizados aos domingos pela Caixa, exceto feriados)',
         nextDrawDate: `${nextDraw.dateFormatted} (${getDayNameBR(nextDraw.date)}) às 20:00h`,
         currentContest: activePool?.currentContest || 'Vigente',
         quotaValue: 'R$ 5,00 por cota (ou R$ 10,00 para concursos especiais)',

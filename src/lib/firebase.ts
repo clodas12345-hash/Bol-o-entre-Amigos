@@ -28,22 +28,6 @@ try {
   dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
-// Desativa conexões de rede do Firestore na Web para evitar erros de conexão gRPC/stream no console
-const isWebPreview = typeof window !== 'undefined' && 
-  (window.location.hostname.includes('run.app') || 
-   window.location.hostname.includes('google.com') || 
-   window.location.href.includes('ais-dev') || 
-   window.location.href.includes('ais-pre'));
-
-if (isWebPreview && dbInstance) {
-  try {
-    setLogLevel('silent');
-  } catch (e) {}
-  disableNetwork(dbInstance).catch(err => {
-    console.warn('[Firebase] Não foi possível desativar a rede do Firestore no navegador:', err);
-  });
-}
-
 import { logSystemError } from './systemErrorLogger';
 
 export const isQuotaError = (err: any): boolean => {

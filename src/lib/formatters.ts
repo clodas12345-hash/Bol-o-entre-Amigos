@@ -155,10 +155,15 @@ export function formatAnyDateBR(dateVal: any): string {
 }
 
 export function getAppPublicUrl(): string {
+  const PUBLIC_SHARED_URL = 'https://ais-pre-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
   if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
+    // Nunca retorna ais-dev para links compartilhados no WhatsApp, pois o ais-dev exige "Cookie check" de autenticação do AI Studio
+    if (window.location.origin.includes('ais-dev-')) {
+      return window.location.origin.replace('ais-dev-', 'ais-pre-');
+    }
     return window.location.origin;
   }
-  return 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+  return PUBLIC_SHARED_URL;
 }
 
 export function getVisitorPortalUrl(): string {
@@ -170,7 +175,19 @@ export function getParticipantPortalUrl(): string {
 }
 
 /**
- * Gera o link wa.me com valor exato das cotas e chave PIX cadastrada.
+ * Monta URL oficial da API do WhatsApp preservando UTF-8 (evita que emojis virem losangos "" no Android)
+ */
+export function buildWhatsAppUrl(phone: string | null | undefined, message: string): string {
+  const fullNumber = normalizeBrazilianPhoneDigits(phone);
+  const encodedText = encodeURIComponent(message);
+  if (!fullNumber) {
+    return `https://api.whatsapp.com/send?text=${encodedText}`;
+  }
+  return `https://api.whatsapp.com/send?phone=${fullNumber}&text=${encodedText}`;
+}
+
+/**
+ * Gera o link do WhatsApp com valor exato das cotas e chave PIX cadastrada.
  */
 export function getWhatsAppCobrarUrl(
   phone: string | null | undefined,
@@ -183,19 +200,9 @@ export function getWhatsAppCobrarUrl(
   const totalAmount = (quotas * unitPrice).toFixed(2).replace('.', ',');
   const quotasText = quotas > 1 ? `${quotas} cotas (R$ ${totalAmount})` : `1 cota (R$ ${totalAmount})`;
 
-  const message = `Olá ${firstName}, tudo bem? Passando para lembrar da sua participação no Bolão da Lotofácil 🍀.
-Você possui *${quotasText}* em aberto.
+  const message = `🍀 *Bolão entre Amigos*\n\nOlá ${firstName}, tudo bem? Passando para lembrar da sua participação no *Bolão entre Amigos*.\nVocê possui *${quotasText}* em aberto.\n\n*Chave PIX (Celular):* ${pixKey}\n*Valor Total:* R$ ${totalAmount}\n\nApós realizar o PIX, envie o comprovante pelo link:\n${getAppPublicUrl()}/upload-receipt`;
 
-📱 *Chave PIX (Celular):* ${pixKey}
-💰 *Valor Total:* R$ ${totalAmount}
-
-Após realizar o PIX, favor enviar o comprovante no app: ${getAppPublicUrl()}/upload-receipt`;
-  
-  const fullNumber = normalizeBrazilianPhoneDigits(phone);
-  if (!fullNumber) {
-    return `https://wa.me/?text=${encodeURIComponent(message)}`;
-  }
-  return `https://wa.me/${fullNumber}?text=${encodeURIComponent(message)}`;
+  return buildWhatsAppUrl(phone, message);
 }
 
 export function useResponsiveLayout(breakpoint = 640) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, addDoc, getDocs, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, onSnapshot, query, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
 import { useToast } from './NotificationManager';
@@ -22,8 +22,22 @@ export default function VisitorPortal() {
   const [activeVisitorTab, setActiveVisitorTab] = useState<'overview' | 'games' | 'history'>('overview');
 
   // Resultados oficiais e jogos cadastrados
-  const [officialResults, setOfficialResults] = useState<any[]>([]);
-  const [games, setGames] = useState<any[]>([]);
+  const [officialResults, setOfficialResults] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_results');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [games, setGames] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_games');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedContestFilter, setSelectedContestFilter] = useState<string>('all');
   const [copiedPix, setCopiedPix] = useState(false);
 
@@ -41,26 +55,77 @@ export default function VisitorPortal() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
 
+  const extractContestNumber = (contestStr: any): string => {
+    if (!contestStr) return '';
+    const match = String(contestStr).match(/#?(\d{3,5})/);
+    if (match) return match[1];
+    return String(contestStr).replace(/\D/g, '');
+  };
+
   useEffect(() => {
-    const fetchVisitorData = async () => {
-      try {
-        const col = isMegaSena ? 'megasena_results' : 'lotofacil_results';
-        const [resSnap, gamesSnap] = await Promise.all([
-          getDocs(query(collection(db, col), orderBy('createdAt', 'desc'), limit(60))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(250))).catch(() => ({ docs: [] } as any))
-        ]);
+    const col = isMegaSena ? 'megasena_results' : 'lotofacil_results';
 
-        const resList = resSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        resList.sort((a: any, b: any) => Number(b.contest || b.concurso || 0) - Number(a.contest || a.concurso || 0));
-        setOfficialResults(resList);
-
-        const gamesList = gamesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        setGames(gamesList);
-      } catch (e) {
-        console.warn('Erro ao carregar jogos e resultados para visitantes:', e);
+    // Escuta em tempo real todos os jogos (sem orderBy('createdAt') pois os jogos usam o campo 'date' ou 'contest')
+    const unsubGames = onSnapshot(
+      query(collection(db, 'games'), limit(2000)),
+      (gamesSnap) => {
+        const allDocs = gamesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        allDocs.sort((a: any, b: any) => {
+          const cA = Number(extractContestNumber(a.contestNumber || a.contest)) || 0;
+          const cB = Number(extractContestNumber(b.contestNumber || b.contest)) || 0;
+          if (cA !== cB) return cB - cA;
+          const dA = a.date?.seconds || a.createdAt?.seconds || 0;
+          const dB = b.date?.seconds || b.createdAt?.seconds || 0;
+          return dB - dA;
+        });
+        setGames(allDocs);
+        try {
+          localStorage.setItem('bolao_cache_games', JSON.stringify(allDocs));
+        } catch {}
+      },
+      (err) => {
+        console.warn('Erro ao escutar jogos no modo visitante, usando cache:', err);
+        try {
+          const cached = localStorage.getItem('bolao_cache_games');
+          if (cached) setGames(JSON.parse(cached));
+        } catch {}
       }
+    );
+
+    // Escuta em tempo real todos os resultados oficiais
+    const unsubResults = onSnapshot(
+      query(collection(db, col), limit(250)),
+      (resSnap) => {
+        const rawList = resSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        // Deduplica por concurso e ordena do mais recente para o mais antigo
+        const uniqueMap = new Map<string, any>();
+        rawList.forEach((r: any) => {
+          const cKey = String(r.contest || r.concurso || '').replace(/\D/g, '');
+          if (cKey && !r.isSimulated && !uniqueMap.has(cKey)) {
+            uniqueMap.set(cKey, r);
+          }
+        });
+        const resList = Array.from(uniqueMap.values()).sort(
+          (a: any, b: any) => Number(b.contest || b.concurso || 0) - Number(a.contest || a.concurso || 0)
+        );
+        setOfficialResults(resList);
+        try {
+          localStorage.setItem('bolao_cache_results', JSON.stringify(resList));
+        } catch {}
+      },
+      (err) => {
+        console.warn('Erro ao escutar resultados no modo visitante, usando cache:', err);
+        try {
+          const cached = localStorage.getItem('bolao_cache_results');
+          if (cached) setOfficialResults(JSON.parse(cached));
+        } catch {}
+      }
+    );
+
+    return () => {
+      unsubGames();
+      unsubResults();
     };
-    fetchVisitorData();
   }, [isMegaSena]);
 
   const latestOfficialResult = officialResults[0] || null;
@@ -77,18 +142,11 @@ export default function VisitorPortal() {
     return map;
   }, [officialResults]);
 
-  const extractContestNumber = (contestStr: any): string => {
-    if (!contestStr) return '';
-    const match = String(contestStr).match(/#?(\d{4})/);
-    if (match) return match[1];
-    return String(contestStr).replace(/\D/g, '');
-  };
-
   // Lista única de concursos presentes nos jogos
   const availableContests = useMemo(() => {
     const set = new Set<string>();
     games.forEach(g => {
-      const c = extractContestNumber(g.contest);
+      const c = extractContestNumber(g.contestNumber || g.contest);
       if (c) set.add(c);
     });
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
@@ -96,7 +154,7 @@ export default function VisitorPortal() {
 
   const filteredGames = useMemo(() => {
     if (selectedContestFilter === 'all') return games;
-    return games.filter(g => extractContestNumber(g.contest) === selectedContestFilter);
+    return games.filter(g => extractContestNumber(g.contestNumber || g.contest) === selectedContestFilter);
   }, [games, selectedContestFilter]);
 
   const pixKey = (activePool as any)?.pixKey || DEFAULT_PIX_CONFIG.pixKey || '11953292570';
@@ -552,7 +610,7 @@ export default function VisitorPortal() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
                 {filteredGames.map((g, idx) => {
-                  const cNum = extractContestNumber(g.contest);
+                  const cNum = extractContestNumber(g.contestNumber || g.contest);
                   const drawn = (cNum && resultsMap[cNum]) || (Array.isArray(latestOfficialResult?.numbers) ? latestOfficialResult.numbers.map(Number) : []);
                   const gameNums: number[] = Array.isArray(g.numbers) ? g.numbers.map(Number).sort((a: number, b: number) => a - b) : [];
                   const hasOfficialForContest = Boolean(cNum && resultsMap[cNum]);
@@ -562,7 +620,7 @@ export default function VisitorPortal() {
                     <div key={g.id || idx} className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
                       <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
                         <span className="text-xs font-black text-indigo-300 truncate">
-                          {g.contest || `Jogo #${idx + 1}`}
+                          {g.contest || (cNum ? `Concurso #${cNum}` : `Jogo #${idx + 1}`)}
                         </span>
                         {prizeInfo ? (
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
@@ -625,7 +683,7 @@ export default function VisitorPortal() {
                 {officialResults.map((res, idx) => {
                   const cNum = String(res.contest || res.concurso || '');
                   const drawn: number[] = Array.isArray(res.numbers) ? res.numbers.map(Number) : [];
-                  const contestGames = games.filter(g => extractContestNumber(g.contest) === cNum);
+                  const contestGames = games.filter(g => extractContestNumber(g.contestNumber || g.contest) === cNum);
 
                   let totalPrizeContest = 0;
                   let bestHits = 0;

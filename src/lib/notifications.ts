@@ -248,6 +248,7 @@ export interface UserNotificationPreferences {
   notifyAt1930: boolean;
   notifyAt2000: boolean;
   notifyAt2035: boolean;
+  notifyAt2155: boolean;
   daysOfWeek: number[];
 }
 
@@ -263,7 +264,8 @@ export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences 
   notifyAt1930: true,
   notifyAt2000: true,
   notifyAt2035: true,
-  daysOfWeek: [1, 2, 3, 4, 5, 6]
+  notifyAt2155: true,
+  daysOfWeek: [0, 1, 2, 3, 4, 5]
 };
 
 export function getUserNotificationPreferences(uid?: string | null): UserNotificationPreferences {
@@ -273,11 +275,16 @@ export function getUserNotificationPreferences(uid?: string | null): UserNotific
     const savedLegacy = localStorage.getItem('bolao_draw_alerts_config');
     const parsedSpecific = savedSpecific ? JSON.parse(savedSpecific) : {};
     const parsedLegacy = savedLegacy ? JSON.parse(savedLegacy) : {};
-    return {
+    const merged: UserNotificationPreferences = {
       ...DEFAULT_USER_NOTIFICATION_PREFERENCES,
       ...parsedLegacy,
       ...parsedSpecific
     };
+    // Migração automática da agenda Caixa: garante que Domingo (0) esteja habilitado se tinha Sábado (6) salvo
+    if (Array.isArray(merged.daysOfWeek) && merged.daysOfWeek.includes(6) && !merged.daysOfWeek.includes(0)) {
+      merged.daysOfWeek = [0, ...merged.daysOfWeek.filter(d => d !== 6)];
+    }
+    return merged;
   } catch {
     return DEFAULT_USER_NOTIFICATION_PREFERENCES;
   }
@@ -340,6 +347,82 @@ export function isNotificationCategoryAllowed(category?: NotificationCategory, u
     default:
       return true;
   }
+}
+
+/**
+ * Obtém o nome (primeiro nome e segundo nome curto) do participante logado neste aparelho
+ * para personalizar as notificações (ex: "🏆 Parabéns, Carlos!").
+ */
+export function getActiveUserDisplayName(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const cachedName = localStorage.getItem('bolao_cached_user_name');
+    if (cachedName && cachedName.trim()) {
+      return formatShortPersonName(cachedName.trim());
+    }
+    const phoneSaved = localStorage.getItem('bolao_phone_user');
+    if (phoneSaved) {
+      const parsed = JSON.parse(phoneSaved);
+      const rawName =
+        parsed?.memberData?.name ||
+        parsed?.memberData?.displayName ||
+        parsed?.sessionUser?.displayName ||
+        '';
+      if (rawName && String(rawName).trim()) {
+        return formatShortPersonName(String(rawName).trim());
+      }
+    }
+  } catch {}
+  return '';
+}
+
+function formatShortPersonName(fullName: string): string {
+  const clean = fullName.replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const parts = clean.split(' ');
+  const first = parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase();
+  if (parts.length === 1) return first;
+  const connectors = ['de', 'da', 'do', 'dos', 'das', 'e'];
+  let secondIdx = 1;
+  if (connectors.includes(parts[1].toLowerCase()) && parts.length > 2) {
+    secondIdx = 2;
+  }
+  const second = parts[secondIdx].charAt(0).toUpperCase() + parts[secondIdx].slice(1).toLowerCase();
+  return `${first} ${second}`;
+}
+
+/**
+ * Sincroniza o nome do usuário logado no localStorage e na ponte nativa do Android (SharedPreferences)
+ * para que mesmo com o app fechado às 21:55 a notificação saia com o nome da pessoa.
+ */
+export function syncActiveUserDisplayName(rawName?: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const formatted = rawName ? formatShortPersonName(String(rawName)) : getActiveUserDisplayName();
+    if (!formatted) return;
+    localStorage.setItem('bolao_cached_user_name', formatted);
+    const winAny = window as any;
+    if (winAny.BolaoNativeUser && typeof winAny.BolaoNativeUser.setUserName === 'function') {
+      winAny.BolaoNativeUser.setUserName(formatted);
+    }
+  } catch {}
+}
+
+/**
+ * Substitui marcadores como {name} ou expressões genéricas ("Parabéns Grupo", "Parabéns a todos os membros")
+ * pelo nome real da pessoa logada no aparelho.
+ */
+export function personalizeNotificationText(text?: string | null, customUserName?: string | null): string {
+  if (!text) return '';
+  const name = (customUserName && customUserName.trim()) || getActiveUserDisplayName();
+  const display = name || 'Amigo(a)';
+
+  return String(text)
+    .replace(/\{name\}/gi, display)
+    .replace(/Parabéns\s+Grupo!/gi, `Parabéns, ${display}!`)
+    .replace(/Parabéns\s+Grupo/gi, `Parabéns, ${display}`)
+    .replace(/Parabéns\s+a\s+todos\s+os\s+membros!/gi, `Parabéns, ${display}!`)
+    .replace(/Parabéns\s+a\s+todos\s+os\s+membros/gi, `Parabéns, ${display}`);
 }
 
 export function resolveNotificationTargetPath(input?: {
@@ -407,11 +490,14 @@ export async function sendAppNotification(
     return { success: false, error: 'Categoria desabilitada nas preferências do usuário' };
   }
 
+  const personalizedTitle = personalizeNotificationText(title);
+  const personalizedBody = personalizeNotificationText(options?.body || '');
+
   const targetPath = resolveNotificationTargetPath({
     targetPath: options?.targetPath,
     category: options?.category,
-    title,
-    body: options?.body
+    title: personalizedTitle,
+    body: personalizedBody
   });
 
   // Emite banner in-app imediato
@@ -421,8 +507,8 @@ export async function sendAppNotification(
         new CustomEvent('bolao_in_app_push_banner', {
           detail: {
             id: options?.id || Date.now(),
-            title,
-            body: options?.body || '',
+            title: personalizedTitle,
+            body: personalizedBody,
             category: options?.category,
             targetPath
           }
@@ -440,8 +526,8 @@ export async function sendAppNotification(
       await LocalNotifications.schedule({
         notifications: [
           {
-            title,
-            body: options?.body || '',
+            title: personalizedTitle,
+            body: personalizedBody,
             id: notifId,
             channelId: 'padrao', // Exigência do Requisito 4
             smallIcon: 'ic_launcher',
@@ -472,8 +558,8 @@ export async function sendAppNotification(
         await Notification.requestPermission();
       }
       if (Notification.permission === 'granted') {
-        const webNotif = new Notification(title, {
-          body: options?.body || '',
+        const webNotif = new Notification(personalizedTitle, {
+          body: personalizedBody,
           icon: '/bolao_logo_app.png'
         });
         webNotif.onclick = () => {
@@ -760,6 +846,10 @@ export async function scheduleUpcomingDrawAlerts(
       const date2105 = new Date(drawDate);
       date2105.setHours(21, 5, 0, 0);
 
+      // Alerta 5: 21h55 (Conferência Automática Oficial dos Jogos do Dia e Premiações)
+      const date2155 = new Date(drawDate);
+      date2155.setHours(21, 55, 0, 0);
+
       const baseId = (i + 1) * 10000;
       const lotName = lotteryType === 'megasena' ? 'Mega-Sena' : 'Lotofácil';
 
@@ -807,6 +897,17 @@ export async function scheduleUpcomingDrawAlerts(
         if (res) scheduledCount++;
       }
 
+      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2155 !== false && date2155.getTime() > now.getTime()) {
+        const res = await scheduleNativeNotificationAt(
+          `🔍 Conferência Automática das 21h55 (${lotName})`,
+          `Conferindo todas as apostas do dia na Caixa! Caso haja aposta premiada, todos os membros receberão a parabenização do prêmio.`,
+          date2155,
+          baseId + 2155,
+          { autoCheckPrize: true, drawStage: '2155' }
+        );
+        if (res) scheduledCount++;
+      }
+
       currentCheckDate = new Date(drawDate);
       currentCheckDate.setDate(currentCheckDate.getDate() + 1);
     }
@@ -818,7 +919,7 @@ export async function scheduleUpcomingDrawAlerts(
 }
 
 /**
- * Notifica automaticamente quando houver aposta premiada com valor do prêmio
+ * Notifica automaticamente quando houver aposta premiada com valor do prêmio parabenizando todos os membros
  */
 export async function notifyWinningPrize(
   contestNum: number | string,
@@ -830,11 +931,12 @@ export async function notifyWinningPrize(
     ? `R$ ${totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
     : 'Prêmio a conferir';
 
+  const personName = getActiveUserDisplayName() || 'Amigo(a)';
   const hitsInfo = highestHits ? ` (Maior acerto: ${highestHits} pontos)` : '';
-  const title = `🏆 Aposta Premiada no Concurso #${contestNum}!`;
+  const title = `🏆 Parabéns, ${personName}! Aposta Premiada (#${contestNum})!`;
   const body = winningCount > 1
-    ? `🎉 ${winningCount} apostas premiadas somando ${formattedPrize}${hitsInfo}! Abra o app e confira os detalhes!`
-    : `🎉 1 aposta premiada no valor de ${formattedPrize}${hitsInfo}! Abra o app e confira os detalhes!`;
+    ? `🎉 Parabéns, ${personName}! Tivemos ${winningCount} apostas premiadas somando ${formattedPrize}${hitsInfo}! Abra o app e confira!`
+    : `🎉 Parabéns, ${personName}! Tivemos 1 aposta premiada no valor de ${formattedPrize}${hitsInfo}! Abra o app e confira!`;
 
   await sendAppNotification(title, {
     body,

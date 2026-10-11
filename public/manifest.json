@@ -1,7 +1,7 @@
 {
-  "name": "Bolão Amigos",
-  "short_name": "Bolão Amigos",
-  "description": "App para gestão de grupos de apostas (bolão), pagamentos, resultados e comunicação.",
+  "name": "Bolão entre Amigos",
+  "short_name": "Bolão entre Amigos",
+  "description": "Participe do Bolão entre Amigos! Confira jogos registrados, histórico de sorteios da Caixa, cotas e envie seu comprovante PIX com transparência.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

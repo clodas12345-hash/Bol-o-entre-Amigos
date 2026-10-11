@@ -530,6 +530,11 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             list.push({ id: d.id, ...data });
           }
         });
+        list.sort((a, b) => {
+          const nameA = (a.displayName || a.name || a.email || '').trim();
+          const nameB = (b.displayName || b.name || b.email || '').trim();
+          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+        });
         setMembers(list);
         try {
           localStorage.setItem('bolao_cache_members', JSON.stringify(list));

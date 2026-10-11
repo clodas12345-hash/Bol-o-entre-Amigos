@@ -20,9 +20,13 @@ export default function PrizeSplitModal({
   // Filtro de elegibilidade: apenas membros com cota ativa / pagamento "Pago" ou todos
   const [onlyPaid, setOnlyPaid] = useState(true);
 
-  const eligibleMembers = onlyPaid
+  const eligibleMembers = [...(onlyPaid
     ? members.filter(m => m.paymentStatus === 'Pago')
-    : members;
+    : members)].sort((a, b) => {
+      const nameA = (a.displayName || a.name || a.email || '').trim();
+      const nameB = (b.displayName || b.name || b.email || '').trim();
+      return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+    });
 
   // Soma de todas as cotas dos participantes elegíveis
   const totalEligibleQuotas = eligibleMembers.reduce((sum, m) => sum + (Number(m.quotas) > 0 ? Number(m.quotas) : 1), 0);

@@ -62,12 +62,12 @@
   ],
   "caixaSpecialRules": {
     "lotofacil": {
-      "drawDays": [1, 2, 3, 4, 5, 6],
-      "description": "Segunda a Sábado (exceto feriados nacionais e vésperas festivas)"
+      "drawDays": [0, 1, 2, 3, 4, 5],
+      "description": "Segunda a Sexta e Domingo (sorteios de sábado transferidos para domingo pela Caixa, exceto feriados nacionais)"
     },
     "megasena": {
-      "drawDays": [2, 4, 6],
-      "description": "Terça, Quinta e Sábado (exceto feriados nacionais)"
+      "drawDays": [0, 2, 4],
+      "description": "Terça, Quinta e Domingo (sorteios de sábado transferidos para domingo pela Caixa, exceto feriados nacionais)"
     }
   }
 }

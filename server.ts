@@ -407,11 +407,116 @@ async function fetchMegaSenaContest(contestNumber?: number | string): Promise<Me
   };
 }
 
-// Schedule daily task at 09:00
+// Helper no servidor para conferir automaticamente os jogos do dia às 21:55 e parabenizar todos os membros caso haja aposta premiada
+async function checkAndBroadcastWinningGamesServer(
+  lotteryType: 'lotofacil' | 'megasena',
+  result: LotofacilContestData | MegaSenaContestData | null
+) {
+  if (!result || !result.contest || !Array.isArray(result.numbers) || result.numbers.length === 0) {
+    return;
+  }
+
+  const contestNum = Number(result.contest);
+  if (!contestNum || contestNum <= 0) return;
+
+  try {
+    const qGames = query(collection(db, 'games'), where('contestNumber', '==', contestNum));
+    const snap = await getDocs(qGames);
+    if (snap.empty) return;
+
+    const drawnSet = new Set(result.numbers);
+    const isMega = lotteryType === 'megasena';
+    let winningCount = 0;
+    let totalPrize = 0;
+    let highestHits = 0;
+
+    const rAny = result as any;
+    const prize11 = 7.0;
+    const prize12 = 14.0;
+    const prize13 = 35.0;
+    const prize14 = Number(rAny.prize14Amount) || 1500.0;
+    const prize15 = Number(rAny.prize15Amount) || 1500000.0;
+
+    const prize4 = Number(rAny.prize4Amount) || 1000.0;
+    const prize5 = Number(rAny.prize5Amount) || 45000.0;
+    const prize6 = Number(rAny.prize6Amount) || 50000000.0;
+
+    snap.docs.forEach((docSnap) => {
+      const game = docSnap.data();
+      const nums: number[] = Array.isArray(game.numbers) ? game.numbers : [];
+      if (nums.length === 0) return;
+
+      const hits = nums.filter((n) => drawnSet.has(Number(n))).length;
+
+      if (game.customPrize && Number(game.customPrize) > 0) {
+        winningCount++;
+        totalPrize += Number(game.customPrize);
+        if (hits > highestHits) highestHits = hits;
+        return;
+      }
+
+      if (!isMega && hits >= 11) {
+        winningCount++;
+        if (hits > highestHits) highestHits = hits;
+        if (hits === 11) totalPrize += prize11;
+        else if (hits === 12) totalPrize += prize12;
+        else if (hits === 13) totalPrize += prize13;
+        else if (hits === 14) totalPrize += prize14;
+        else if (hits >= 15) totalPrize += prize15;
+      } else if (isMega && hits >= 4) {
+        winningCount++;
+        if (hits > highestHits) highestHits = hits;
+        if (hits === 4) totalPrize += prize4;
+        else if (hits === 5) totalPrize += prize5;
+        else if (hits >= 6) totalPrize += prize6;
+      }
+    });
+
+    if (winningCount > 0 && totalPrize > 0) {
+      const lotLabel = isMega ? 'Mega-Sena' : 'Lotofácil';
+      const formattedPrize = `R$ ${totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+      const title = `🏆 Parabéns, {name}! Aposta Premiada (#${contestNum})!`;
+      const message =
+        winningCount > 1
+          ? `🎉 Parabéns, {name}! Tivemos ${winningCount} apostas premiadas no Concurso #${contestNum} (${lotLabel}) somando ${formattedPrize} (Maior acerto: ${highestHits} pontos)!`
+          : `🎉 Parabéns, {name}! Tivemos 1 aposta premiada no Concurso #${contestNum} (${lotLabel}) no valor de ${formattedPrize} (${highestHits} pontos)!`;
+
+      await setDoc(
+        doc(db, 'notifications', `prize_contest_${contestNum}`),
+        {
+          userId: 'all',
+          title,
+          message,
+          type: 'prize',
+          read: false,
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+      console.log(`[Auto-Check 21:55] Prêmio detectado e notificado para todos os membros no Concurso #${contestNum}!`);
+    }
+  } catch (err) {
+    console.warn('[Auto-Check 21:55] Erro ao conferir jogos no servidor:', err);
+  }
+}
+
+async function runDaily2155ServerCheck() {
+  console.log('[Cron 21:55] Iniciando conferência automática diária dos jogos do dia...');
+  const loto = await fetchLotofacilContest();
+  await checkAndBroadcastWinningGamesServer('lotofacil', loto);
+  const mega = await fetchMegaSenaContest();
+  await checkAndBroadcastWinningGamesServer('megasena', mega);
+}
+
+// Schedule daily task at 09:00 and automatic prize check at 21:55 (America/Sao_Paulo)
 cron.schedule('0 9 * * *', () => {
   fetchLotofacilContest();
   fetchMegaSenaContest();
-});
+}, { timezone: 'America/Sao_Paulo' });
+
+cron.schedule('55 21 * * *', () => {
+  runDaily2155ServerCheck();
+}, { timezone: 'America/Sao_Paulo' });
 
 // Setup Nodemailer
 const transporter = nodemailer.createTransport({
@@ -650,7 +755,7 @@ Sua missão é responder automaticamente dúvidas dos participantes sobre o bol�
 
 DADOS OFICIAIS DO BOLÃO:
 - Modalidade: ${poolContext?.lotteryType || 'Lotofácil'}
-- Dias e Horários de Sorteio: ${poolContext?.drawSchedule || 'Lotofácil corre de segunda a sábado às 20:00h (exceto domingos e feriados). Mega-Sena corre às terças, quintas e sábados às 20:00h.'}
+- Dias e Horários de Sorteio: ${poolContext?.drawSchedule || 'Lotofácil corre de segunda a sexta e aos domingos (os sorteios de sábado passaram para domingo conforme nova agenda da Caixa, exceto feriados). Mega-Sena corre às terças, quintas e domingos.'}
 - Data do Próximo Sorteio: ${poolContext?.nextDrawDate || 'Consulte o calendário oficial'}
 - Concurso Vigente: ${poolContext?.currentContest || 'Em andamento'}
 - Valor da Cota: ${poolContext?.quotaValue || 'R$ 5,00 por cota'}
@@ -700,7 +805,7 @@ REGRAS OBRIGATÓRIAS PARA SUA RESPOSTA:
       qLower.includes('próximo')
     ) {
       const nextDateStr = poolContext?.nextDrawDate ? ` O próximo sorteio ocorre em ${poolContext.nextDrawDate}.` : '';
-      fallbackAnswer = `Os sorteios da Lotofácil acontecem de segunda a sábado por volta das 20:00h (exceto domingos e feriados).${nextDateStr} Boa sorte a todos!`;
+      fallbackAnswer = `Os sorteios da Lotofácil acontecem de segunda a sexta e aos domingos (os sorteios de sábado agora são realizados aos domingos pela Caixa, exceto feriados).${nextDateStr} Boa sorte a todos!`;
     } else if (
       qLower.includes('pix') || 
       qLower.includes('chave') || 

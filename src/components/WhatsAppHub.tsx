@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
-import { formatFirstAndLastName, normalizeBrazilianPhoneDigits, getAppPublicUrl, getVisitorPortalUrl } from '../lib/formatters';
+import { formatFirstAndLastName, normalizeBrazilianPhoneDigits, getAppPublicUrl, getVisitorPortalUrl, buildWhatsAppUrl } from '../lib/formatters';
 import { calculateGamePrize } from '../lib/prizes';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { useToast } from './NotificationManager';
@@ -102,20 +102,17 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
   const getGeneratedMessage = () => {
     switch (activeTemplate) {
       case 'visitor_invite':
-        return `🍀 *CONVITE: BOLÃO DA LOTOFÁCIL - VAGAS ABERTAS!* 🍀
-${latestResult?.concurso ? `📌 *Concurso Alvo:* #${latestResult.concurso + 1}` : ''}
-📅 *Referência:* ${currentMonth.toUpperCase()}
+        return `*CONVITE: BOLÃO ENTRE AMIGOS - VAGAS ABERTAS!*
+${latestResult?.concurso ? `*Concurso Alvo:* #${latestResult.concurso + 1}\n` : ''}*Referência:* ${currentMonth.toUpperCase()}
 
-Olá! Passando para convidar você para participar do nosso Bolão de Amigos da Lotofácil.
+Olá! Passando para convidar você para participar do nosso *Bolão entre Amigos* da Lotofácil.
 
-✅ *Cotas acessíveis:* A partir de R$ 5,00 por cota
-✅ *Conferência 100% automática:* O sistema confere as dezenas em tempo real a cada sorteio da Caixa
-✅ *Gestão transparente:* Relatórios e prestação de contas aos participantes
+- *Cotas acessíveis:* A partir de R$ 20,00 por cota
+- *Conferência 100% automática:* O sistema confere as dezenas em tempo real a cada sorteio da Caixa
+- *Transparência:* Jogos registrados e histórico de sorteios abertos para consulta
 
-📲 *Acesse o link restrito de visitantes para ver as regras e solicitar sua entrada:*
-${visitorUrl}
-
-Venha buscar os 15 pontos com a gente! 🍀💰✨`;
+*Acesse o link do Bolão entre Amigos (Visitantes):*
+${visitorUrl}`;
 
       case 'pix_reminder':
         return `🍀 *BOLÃO DA LOTOFÁCIL - LEMBRETE DE CONTRIBUIÇÃO* 🍀
@@ -202,7 +199,7 @@ Participe! 🤝🍀`;
   };
 
   const handleShareGeneralGroup = () => {
-    const url = `https://wa.me/?text=${encodeURIComponent(messageToSend)}`;
+    const url = buildWhatsAppUrl(null, messageToSend);
     window.open(url, '_blank');
   };
 
@@ -212,7 +209,7 @@ Participe! 🤝🍀`;
       addToast('Telefone inválido ou não cadastrado.', 'error');
       return;
     }
-    const url = `https://wa.me/${normalized}?text=${encodeURIComponent(messageToSend)}`;
+    const url = buildWhatsAppUrl(normalized, messageToSend);
     window.open(url, '_blank');
   };
 

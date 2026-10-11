@@ -89,7 +89,7 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
                 📅 Calendário de Sorteios & Feriados
               </h2>
               <p className="text-xs text-white/80 font-medium mt-0.5">
-                {isMegaSena ? 'Mega-Sena (Ter, Qui e Sáb)' : 'Lotofácil (Segunda a Sábado)'} • Feriados Nacionais Caixa
+                {isMegaSena ? 'Mega-Sena (Ter, Qui e Dom)' : 'Lotofácil (Segunda a Sexta e Domingo)'} • Nova Agenda Oficial Caixa
               </p>
             </div>
           </div>
@@ -142,14 +142,14 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
               <span className="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Feriado Nacional
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-gray-300 inline-block"></span> Domingo / Sem Sorteio
+              <span className="w-3 h-3 rounded-full bg-gray-300 inline-block"></span> Sábado / Sem Sorteio
             </span>
           </div>
 
           {/* Grid de Dias do Mês */}
           <div className="grid grid-cols-7 gap-1.5 text-center">
             {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d, i) => (
-              <div key={d} className={`text-[11px] font-black uppercase tracking-wider py-1 ${i === 0 ? 'text-red-500' : 'text-gray-500'}`}>
+              <div key={d} className={`text-[11px] font-black uppercase tracking-wider py-1 ${i === 6 ? 'text-red-500' : 'text-gray-500'}`}>
                 {d}
               </div>
             ))}
@@ -263,7 +263,7 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
         <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-xs text-gray-500">
           <div className="flex items-center gap-1.5">
             <Info className="w-4 h-4 text-blue-500" />
-            <span>Sorteios pulam domingos e feriados nacionais automaticamente.</span>
+            <span>Sorteios de Sábado agora ocorrem aos Domingos (pula sábados e feriados nacionais automaticamente).</span>
           </div>
           <button
             onClick={onClose}

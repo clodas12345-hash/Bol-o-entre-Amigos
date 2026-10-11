@@ -79,18 +79,18 @@ export default function CalendarAgenda() {
   const { activePool } = usePool();
   const isMegaSena = activePool?.lotteryType === 'megasena';
 
-  // Dias oficiais de sorteio da modalidade ativa
+  // Dias oficiais de sorteio da modalidade ativa (Sorteios de Sábado agora ocorrem aos Domingos pela Caixa)
   const drawDays = isMegaSena ? [
     { day: 'Terça-feira', time: '20:00', desc: 'Sorteio Oficial Mega-Sena Caixa' },
     { day: 'Quinta-feira', time: '20:00', desc: 'Sorteio Oficial Mega-Sena Caixa' },
-    { day: 'Sábado', time: '20:00', desc: 'Sorteio Oficial Mega-Sena Caixa' },
+    { day: 'Domingo', time: 'Sorteio de Fim de Semana', desc: 'Sorteio Oficial Mega-Sena Caixa (Antigo Sábado)' },
   ] : [
     { day: 'Segunda-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
     { day: 'Terça-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
     { day: 'Quarta-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
     { day: 'Quinta-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
     { day: 'Sexta-feira', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
-    { day: 'Sábado', time: '20:00', desc: 'Sorteio Oficial Lotofácil Caixa' },
+    { day: 'Domingo', time: 'Sorteio de Fim de Semana', desc: 'Sorteio Oficial Lotofácil Caixa (Antigo Sábado)' },
   ];
 
   return (
