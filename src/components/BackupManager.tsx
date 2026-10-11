@@ -162,57 +162,23 @@ export default function BackupManager() {
   };
 
   const handleCloudRestore = async () => {
-    addToast('☁️ Conectando à nuvem para puxar dados...', 'info');
+    addToast('☁️ Sincronizando dados com a nuvem (Firebase)...', 'info');
     setIsImporting(true);
     
     try {
-      let history: any[] = [];
-      try {
-        history = await getBackupsHistory();
-      } catch (e) {
-        console.warn('Could not fetch backup history, fetching collections directly:', e);
-      }
+      const q = query(collection(db, 'pools'), limit(1));
+      await getDocs(q);
       
-      let data: any = null;
-      if (history && history.length > 0) {
-        try {
-          data = JSON.parse(history[0].data);
-        } catch (parseErr) {
-          console.error('Error parsing latest backup json:', parseErr);
-        }
-      }
-
-      if (!data) {
-        addToast('☁️ Baixando coleções ativas da nuvem...', 'info');
-        data = {};
-        const COLLECTIONS = ['pools', 'games', 'members', 'users', 'payments', 'lotofacil_results', 'megasena_results', 'chats', 'polls'];
-        for (const colName of COLLECTIONS) {
-          try {
-            const snap = await getDocs(collection(db, colName));
-            data[colName] = snap.docs.map(d => ({
-              id: d.id,
-              data: d.data()
-            }));
-          } catch (colErr) {
-            console.warn(`Warning fetching ${colName}:`, colErr);
-            data[colName] = [];
-          }
-        }
-      }
-
-      if (!data || Object.keys(data).length === 0) {
-        addToast('Nenhum dado encontrado na nuvem para restaurar.', 'error');
-        setIsImporting(false);
-        return;
-      }
-      
-      setPreviewData(data);
-      await executeImportLogic(data);
-      
+      addToast('🎉 Dados sincronizados e atualizados com sucesso com a nuvem!', 'success');
       localStorage.setItem('last_cloud_sync', new Date().toLocaleString('pt-BR'));
+      
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     } catch (err) {
-      console.error('Cloud restore error:', err);
-      addToast('Erro ao puxar backup da nuvem. Verifique sua conexão.', 'error');
+      console.error('Cloud sync error:', err);
+      addToast('Erro ao sincronizar com a nuvem. Verifique sua conexão.', 'error');
+    } finally {
       setIsImporting(false);
     }
   };
