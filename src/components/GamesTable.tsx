@@ -1746,49 +1746,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         </div>
       )}
 
-      {/* Painel de Rateio Geral do Bolão quando houver prêmios */}
-      {totalBolaoPrize > 0 && (
-        <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 rounded-xl p-4 text-white shadow-md flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">🎉</span>
-              <div>
-                <h4 className="font-black text-base leading-tight">PREMIAÇÃO CONQUISTADA NO BOLÃO!</h4>
-                <p className="text-xs text-amber-100">
-                  {winningGamesCount} {winningGamesCount === 1 ? 'aposta premiada' : 'apostas premiadas'} neste concurso
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="bg-black/20 backdrop-blur-xs px-3.5 py-1.5 rounded-lg border border-white/20 text-right">
-              <span className="text-[10px] uppercase font-bold text-amber-100 block">Total a Ratear</span>
-              <span className="text-lg font-black">
-                R$ {totalBolaoPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-
-            <div className="bg-white text-amber-950 px-3.5 py-1.5 rounded-lg shadow-sm font-bold text-right">
-              <span className="text-[10px] uppercase font-extrabold text-amber-800 block">Por 1 Cota ({totalPaidQuotasCount} cotas)</span>
-              <span className="text-lg font-black text-emerald-700">
-                R$ {prizePerCota.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-
-            <button
-              onClick={() => setSplitModalData({
-                totalPrize: totalBolaoPrize,
-                contestName: latestResult?.contest ? `Concurso ${latestResult.contest}` : 'Último Concurso'
-              })}
-              className="bg-white hover:bg-amber-50 text-amber-900 text-xs font-black px-3.5 py-2.5 rounded-lg shadow-md transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>📊</span> Ver Divisão Completa
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 2. ORDEM SECUNDÁRIA: Tabela / Lista de Apostas do Bolão com Abas (Hoje vs Futuras vs Histórico) */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
         {/* Abas: Jogos de Hoje vs Apostas Futuras vs Histórico Arquivado */}

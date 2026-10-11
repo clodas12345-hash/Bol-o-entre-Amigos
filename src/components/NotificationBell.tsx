@@ -76,6 +76,14 @@ export default function NotificationBell() {
                     category: 'winning_prize',
                     uid: activeUid
                   }).catch(() => {});
+                } else if (nData.type === 'payment' && nData.userId === activeUid) {
+                  sendAppNotification(personalizeNotificationText(nData.title || '💳 Lembrete de Pagamento PIX'), {
+                    body: personalizeNotificationText(nData.message || ''),
+                    id: Math.floor(Math.random() * 800000) + 100000,
+                    category: 'payment_system',
+                    uid: activeUid,
+                    targetPath: nData.targetPath || '/'
+                  }).catch(() => {});
                 }
               }
             }

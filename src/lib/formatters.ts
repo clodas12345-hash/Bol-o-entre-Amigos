@@ -167,7 +167,16 @@ export function getAppPublicUrl(): string {
 }
 
 export function getVisitorPortalUrl(): string {
-  return `${getAppPublicUrl()}/visitante`;
+  return `${getAppPublicUrl()}/?view=true`;
+}
+
+export function getReceiptUploadUrl(name?: string, phone?: string): string {
+  const base = getAppPublicUrl();
+  const params = new URLSearchParams();
+  params.set('comprovante', '1');
+  if (name && name.trim()) params.set('nome', name.trim());
+  if (phone && phone.trim()) params.set('tel', phone.trim());
+  return `${base}/?${params.toString()}`;
 }
 
 export function getParticipantPortalUrl(): string {
@@ -199,8 +208,9 @@ export function getWhatsAppCobrarUrl(
   const firstName = name.trim().split(' ')[0] || 'Participante';
   const totalAmount = (quotas * unitPrice).toFixed(2).replace('.', ',');
   const quotasText = quotas > 1 ? `${quotas} cotas (R$ ${totalAmount})` : `1 cota (R$ ${totalAmount})`;
+  const uploadLink = getReceiptUploadUrl(name, phone || undefined);
 
-  const message = `🍀 *Bolão entre Amigos*\n\nOlá ${firstName}, tudo bem? Passando para lembrar da sua participação no *Bolão entre Amigos*.\nVocê possui *${quotasText}* em aberto.\n\n*Chave PIX (Celular):* ${pixKey}\n*Valor Total:* R$ ${totalAmount}\n\nApós realizar o PIX, envie o comprovante pelo link:\n${getAppPublicUrl()}/upload-receipt`;
+  const message = `🍀 *Bolão entre Amigos*\n\nOlá ${firstName}, tudo bem? Passando para lembrar da sua participação no *Bolão entre Amigos*.\nVocê possui *${quotasText}* em aberto.\n\n*Chave PIX (Celular):* ${pixKey}\n*Valor Total:* R$ ${totalAmount}\n\nApós realizar o PIX, envie o comprovante pelo link:\n${uploadLink}`;
 
   return buildWhatsAppUrl(phone, message);
 }

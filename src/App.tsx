@@ -20,6 +20,7 @@ import StatsThermometer from './components/StatsThermometer';
 import Chat from './components/Chat';
 import WhatsAppHub from './components/WhatsAppHub';
 import PublicReceiptUpload from './components/PublicReceiptUpload';
+import PixReceiptReminderBanner from './components/PixReceiptReminderBanner';
 import VisitorPortal from './components/VisitorPortal';
 import MonthlySnapshotManager from './components/MonthlySnapshotManager';
 import LotofacilDesdobramento from './components/LotofacilDesdobramento';
@@ -710,7 +711,17 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   const isSettingPassword = user && userData?.approved === true && !userData?.passwordSet && !isAdmin;
   const hideHeader = !user || isSettingPassword;
 
-  if (location.pathname === '/visitante' || location.pathname === '/convite') {
+  const searchParams = new URLSearchParams(location.search);
+  const isPublicReceiptMode =
+    location.pathname === '/upload-receipt' ||
+    searchParams.get('comprovante') === '1' ||
+    searchParams.get('upload') === 'receipt';
+  const isVisitorMode =
+    location.pathname === '/visitante' ||
+    location.pathname === '/convite' ||
+    searchParams.get('view') === 'true';
+
+  if (isVisitorMode || isPublicReceiptMode) {
     return <>{children}</>;
   }
 
@@ -1298,11 +1309,6 @@ export default function App() {
   const [phoneUser, setPhoneUser] = useState<any>(() => {
     const saved = localStorage.getItem('bolao_phone_user');
     if (saved) return JSON.parse(saved);
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('view') === 'true' && window.location.pathname !== '/visitante') {
-      window.location.replace('/visitante');
-    }
     return null;
   });
   const [showPhoneModal, setShowPhoneModal] = useState(false);
@@ -1613,7 +1619,15 @@ export default function App() {
               <Route path="/convite" element={<VisitorPortal />} />
               <Route path="/historico-boloes" element={<ProtectedRoute permission="members_edit"><MonthlySnapshotManager /></ProtectedRoute>} />
           <Route path="/" element={
-            activeUser ? (
+            (() => {
+              const rootParams = new URLSearchParams(window.location.search);
+              if (rootParams.get('comprovante') === '1' || rootParams.get('upload') === 'receipt') {
+                return <PublicReceiptUpload />;
+              }
+              if (rootParams.get('view') === 'true') {
+                return <VisitorPortal />;
+              }
+              return activeUser ? (
                 <div className="max-w-4xl mx-auto space-y-6">
                   {/* Cabeçalho do Usuário com Acesso Direto à Edição do Cadastro */}
                   <div 
@@ -1643,6 +1657,11 @@ export default function App() {
                       <span className="text-base group-hover:translate-x-1 transition-transform">→</span>
                     </div>
                   </div>
+
+                  {/* Lembrete Visual de Comprovante PIX do Concurso Vigente + Alertas a cada 3 dias */}
+                  {activeUser && (
+                    <PixReceiptReminderBanner user={activeUser} userData={activeUserData} />
+                  )}
 
                   {/* Componente para Membros enviarem suas apostas (apenas se houver liberação ativa) */}
                   {activeUser && (
@@ -1742,7 +1761,8 @@ export default function App() {
                   />
                 </div>
               </div>
-            )
+              );
+            })()
           } />
            <Route path="/contatos" element={activeUser ? <ProtectedRoute permission="members_view"><MembersList /></ProtectedRoute> : <Navigate to="/" />} />
           <Route path="/chat" element={activeUser ? <Chat /> : <Navigate to="/" />} />

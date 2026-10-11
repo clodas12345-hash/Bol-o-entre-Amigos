@@ -233,28 +233,39 @@ export default function VisitorPortal() {
     reader.readAsDataURL(receiptFile);
     reader.onloadend = async () => {
       try {
-        const apiUrl = getApiUrl('/api/public/upload-receipt');
-        const res = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: receiptName.trim(),
-            phone: receiptPhone.trim(),
-            imageBase64: reader.result,
-            mimeType: receiptFile.type
-          })
+        await addDoc(collection(db, 'pending_receipts'), {
+          name: receiptName.trim(),
+          phone: receiptPhone.trim(),
+          imageBase64: String(reader.result || ''),
+          mimeType: receiptFile.type || 'image/jpeg',
+          createdAt: serverTimestamp(),
+          status: 'pending'
         });
 
-        const data = await res.json();
-        if (data.success) {
-          addToast('Comprovante enviado com sucesso! O administrador fará a conferência.', 'success');
-          setReceiptName('');
-          setReceiptPhone('');
-          setReceiptFile(null);
-          setShowReceiptModal(false);
-        } else {
-          addToast(data.message || 'Erro ao enviar comprovante.', 'error');
-        }
+        try {
+          const qAdmin = query(collection(db, 'users'));
+          const userSnap = await getDocs(qAdmin);
+          for (const uDoc of userSnap.docs) {
+            const uData = uDoc.data();
+            if (uData.role === 'admin') {
+              await addDoc(collection(db, 'notifications'), {
+                userId: uData.uid || uDoc.id,
+                title: '💸 Novo Comprovante PIX Enviado',
+                message: `${receiptName.trim()} (${receiptPhone.trim()}) enviou um comprovante de pagamento pelo Portal!`,
+                type: 'payment',
+                targetPath: '/contatos',
+                read: false,
+                createdAt: serverTimestamp()
+              });
+            }
+          }
+        } catch {}
+
+        addToast('Comprovante enviado com sucesso! O administrador fará a conferência.', 'success');
+        setReceiptName('');
+        setReceiptPhone('');
+        setReceiptFile(null);
+        setShowReceiptModal(false);
       } catch (err) {
         console.error('Erro no upload de comprovante de visitante:', err);
         addToast('Erro de conexão ao enviar comprovante.', 'error');

@@ -508,10 +508,77 @@ async function runDaily2155ServerCheck() {
   await checkAndBroadcastWinningGamesServer('megasena', mega);
 }
 
+// Verifica membros com pagamento pendente e envia notificação a cada 3 dias para o membro
+async function checkAndNotifyPendingMemberPayments3Days() {
+  try {
+    const [membersSnap, usersSnap, pendingReceiptsSnap] = await Promise.all([
+      getDocs(collection(db, 'members')).catch(() => ({ docs: [] as any[] })),
+      getDocs(collection(db, 'users')).catch(() => ({ docs: [] as any[] })),
+      getDocs(collection(db, 'pending_receipts')).catch(() => ({ docs: [] as any[] }))
+    ]);
+
+    const pendingReceipts = pendingReceiptsSnap.docs.map((d: any) => d.data());
+    const combinedMembers: any[] = [];
+
+    usersSnap.docs.forEach((d: any) => {
+      combinedMembers.push({ id: d.id, ...d.data() });
+    });
+    membersSnap.docs.forEach((d: any) => {
+      const mData = d.data();
+      if (!combinedMembers.some((u) => u.id === d.id)) {
+        combinedMembers.push({ id: d.id, ...mData });
+      }
+    });
+
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+    const bucket3Day = Math.floor(Date.now() / threeDaysMs);
+    const nowDate = new Date();
+    const monthStr = `${String(nowDate.getMonth() + 1).padStart(2, '0')}/${nowDate.getFullYear()}`;
+
+    for (const member of combinedMembers) {
+      if (member.approved === false) continue;
+      if (member.paymentStatus === 'Pago') continue;
+
+      const memberId = member.uid || member.id;
+      if (!memberId) continue;
+
+      const memberName = (member.displayName || member.name || 'Participante').trim();
+      const hasSubmittedReceipt = pendingReceipts.some(
+        (r: any) =>
+          (r.userId && r.userId === memberId) ||
+          (r.name && String(r.name).trim().toLowerCase() === memberName.toLowerCase())
+      );
+      if (hasSubmittedReceipt) continue;
+
+      const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
+      const amount = quotas * 20;
+      const formattedAmount = `R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+      const docId = `pending_pix_${memberId}_${bucket3Day}`;
+
+      await setDoc(
+        doc(db, 'notifications', docId),
+        {
+          userId: memberId,
+          title: `💳 Lembrete de PIX Pendente, ${memberName}!`,
+          message: `Olá, ${memberName}! Identificamos que o seu comprovante PIX (${monthStr} • ${formattedAmount}) ainda está pendente. Envie seu comprovante na página inicial para atualizar seu status!`,
+          type: 'payment',
+          targetPath: '/',
+          read: false,
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+  } catch (err) {
+    console.warn('[Cron 3-Day Payment] Erro ao verificar pagamentos pendentes:', err);
+  }
+}
+
 // Schedule daily task at 09:00 and automatic prize check at 21:55 (America/Sao_Paulo)
 cron.schedule('0 9 * * *', () => {
   fetchLotofacilContest();
   fetchMegaSenaContest();
+  checkAndNotifyPendingMemberPayments3Days();
 }, { timezone: 'America/Sao_Paulo' });
 
 cron.schedule('55 21 * * *', () => {

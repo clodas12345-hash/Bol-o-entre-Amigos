@@ -1028,3 +1028,74 @@ export async function syncMissingGamesTwoHourReminders(
     console.warn('Erro ao sincronizar lembretes de 2h de jogos pendentes:', err);
   }
 }
+
+/**
+ * Agenda (ou cancela) notificações nativas a cada 3 dias (+3, +6, +9 e +12 dias às 10:00h)
+ * para lembrar o membro caso o pagamento/comprovante PIX continue pendente.
+ */
+export async function syncPendingPaymentThreeDayReminders(
+  isPending: boolean,
+  userName: string,
+  contestNum?: number | string | null,
+  amount?: number,
+  uid?: string | null
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+
+  try {
+    await ensureAndroidHighImportanceChannel();
+
+    // 1. Limpa agendamentos anteriores da faixa 770000..779999
+    try {
+      const pending = await LocalNotifications.getPending();
+      if (pending && pending.notifications.length > 0) {
+        const idsToCancel = pending.notifications
+          .filter((n) => n.id >= 770000 && n.id <= 779999)
+          .map((n) => ({ id: n.id }));
+        if (idsToCancel.length > 0) {
+          await LocalNotifications.cancel({ notifications: idsToCancel });
+        }
+      }
+    } catch (cancelErr) {
+      console.warn('Erro ao limpar lembretes de 3 dias de PIX pendente:', cancelErr);
+    }
+
+    if (!isPending) return;
+    if (!isNotificationCategoryAllowed('payment_system', uid)) return;
+
+    const displayName = (userName && userName.trim()) || getActiveUserDisplayName() || 'Amigo(a)';
+    const contestText = contestNum ? `Concurso #${contestNum}` : 'concurso vigente';
+    const amountText =
+      amount && amount > 0
+        ? ` (R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
+        : '';
+
+    const now = new Date();
+    for (let step = 1; step <= 4; step++) {
+      const dayOffset = step * 3; // 3, 6, 9, 12 dias
+      const alarmDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + dayOffset,
+        10,
+        0,
+        0,
+        0
+      );
+
+      if (alarmDate.getTime() > now.getTime() + 60000) {
+        const notifId = 770000 + step;
+        await scheduleNativeNotificationAt(
+          `💳 Lembrete de PIX Pendente, ${displayName}!`,
+          `Olá, ${displayName}! O comprovante PIX referente ao ${contestText}${amountText} ainda está pendente. Abra o app para enviar seu comprovante!`,
+          alarmDate,
+          notifId,
+          { category: 'payment_system', targetPath: '/' }
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao sincronizar lembretes de 3 dias de pagamento pendente:', err);
+  }
+}
+

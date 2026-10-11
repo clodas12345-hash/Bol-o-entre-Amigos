@@ -331,12 +331,23 @@ export default function PixPaymentArea({
                       reader.readAsDataURL(file);
                       reader.onloadend = async () => {
                         try {
+                          let senderName = localStorage.getItem('bolao_cached_user_name') || 'Participante do Bolão';
+                          let senderPhone = 'Via App';
+                          try {
+                            const savedPhone = localStorage.getItem('bolao_phone_user');
+                            if (savedPhone) {
+                              const parsed = JSON.parse(savedPhone);
+                              senderName = parsed?.memberData?.displayName || parsed?.memberData?.name || parsed?.sessionUser?.displayName || senderName;
+                              senderPhone = parsed?.memberData?.phone || senderPhone;
+                            }
+                          } catch {}
+
                           const res = await fetch('/api/public/upload-receipt', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                              name: 'Participante do Bolão',
-                              phone: 'Via App',
+                              name: senderName,
+                              phone: senderPhone,
                               imageBase64: reader.result,
                               mimeType: file.type
                             })
@@ -344,6 +355,7 @@ export default function PixPaymentArea({
                           const data = await res.json();
                           if (data.success) {
                             addToast('Comprovante enviado com sucesso para a administração!', 'success');
+                            if (onClose) onClose();
                           } else {
                             addToast(data.message || 'Erro ao enviar comprovante.', 'error');
                           }
