@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
-import { formatFirstAndLastName, normalizeBrazilianPhoneDigits, getAppPublicUrl } from '../lib/formatters';
+import { formatFirstAndLastName, normalizeBrazilianPhoneDigits, getAppPublicUrl, getVisitorPortalUrl } from '../lib/formatters';
 import { calculateGamePrize } from '../lib/prizes';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
+import { Contacts } from '@capacitor-community/contacts';
+import { UserSearch } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 
 interface WhatsAppHubProps {
   onClose?: () => void;
@@ -92,11 +95,28 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
 
   const currentMonth = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const appUrl = getAppPublicUrl();
-  const pixKey = DEFAULT_PIX_CONFIG.pixKey; // 11953292570
+  const visitorUrl = getVisitorPortalUrl();
+  const pixKey = DEFAULT_PIX_CONFIG.pixKey;
 
   // Gerador dinâmico de texto por template
   const getGeneratedMessage = () => {
     switch (activeTemplate) {
+      case 'visitor_invite':
+        return `🍀 *CONVITE: BOLÃO DA LOTOFÁCIL - VAGAS ABERTAS!* 🍀
+${latestResult?.concurso ? `📌 *Concurso Alvo:* #${latestResult.concurso + 1}` : ''}
+📅 *Referência:* ${currentMonth.toUpperCase()}
+
+Olá! Passando para convidar você para participar do nosso Bolão de Amigos da Lotofácil.
+
+✅ *Cotas acessíveis:* A partir de R$ 5,00 por cota
+✅ *Conferência 100% automática:* O sistema confere as dezenas em tempo real a cada sorteio da Caixa
+✅ *Gestão transparente:* Relatórios e prestação de contas aos participantes
+
+📲 *Acesse o link restrito de visitantes para ver as regras e solicitar sua entrada:*
+${visitorUrl}
+
+Venha buscar os 15 pontos com a gente! 🍀💰✨`;
+
       case 'pix_reminder':
         return `🍀 *BOLÃO DA LOTOFÁCIL - LEMBRETE DE CONTRIBUIÇÃO* 🍀
 📅 *Mês de Referência:* ${currentMonth.toUpperCase()}
@@ -224,12 +244,56 @@ Participe! 🤝🍀`;
       </div>
 
       <div className="p-4 sm:p-5 space-y-4">
+        {/* Barra de Links Rápidos: Participantes vs Visitantes */}
+        <div className="p-3 bg-slate-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <div className="text-left w-full sm:w-auto">
+            <span className="text-[10px] font-black uppercase text-gray-500 tracking-wider block">Links Oficiais</span>
+            <span className="text-xs font-bold text-gray-800">Escolha o link certo antes de enviar:</span>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(visitorUrl);
+                addToast('Link restrito para visitantes copiado!', 'success');
+              }}
+              className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+              title="Link seguro e restrito para convidar novos participantes"
+            >
+              <span>👁️</span> Link Visitantes (Restrito)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(appUrl);
+                addToast('Link de participantes copiado!', 'success');
+              }}
+              className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+              title="Link oficial para quem já é participante"
+            >
+              <span>👥</span> Link Participantes
+            </button>
+          </div>
+        </div>
+
         {/* Seletor de Modelos Prontos */}
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">
             Escolha o Tipo de Comunicado:
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTemplate('visitor_invite')}
+              className={`p-2.5 rounded-xl text-left border text-xs font-bold transition cursor-pointer flex items-center gap-2 ${
+                activeTemplate === 'visitor_invite'
+                  ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs'
+                  : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+              }`}
+            >
+              <span className="text-base">🍀</span>
+              <span>Convite Visitantes</span>
+            </button>
             <button
               type="button"
               onClick={() => setActiveTemplate('pix_reminder')}
@@ -362,8 +426,52 @@ Participe! 🤝🍀`;
             </button>
           </div>
 
-          {/* Envio Individual Rápido */}
-          <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          {/* Envio Individual Rápido (Membros ou Agenda Nativa do Celular) */}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (Capacitor.isNativePlatform()) {
+                    const permissions = await Contacts.requestPermissions();
+                    if (permissions.contacts !== 'granted') {
+                      addToast('Permissão de acesso à agenda negada.', 'error');
+                      return;
+                    }
+                    const result: any = await Contacts.pickContact({ projection: { name: true, phones: true } });
+                    const contact = result?.contact;
+                    if (contact && contact.phones && contact.phones.length > 0) {
+                      handleSendToSpecificMember(contact.phones[0].number || '');
+                    }
+                    return;
+                  }
+
+                  const nav = navigator as any;
+                  if (nav.contacts && typeof nav.contacts.select === 'function') {
+                    const contacts = await nav.contacts.select(['name', 'tel'], { multiple: false });
+                    if (contacts && contacts.length > 0 && contacts[0].tel && contacts[0].tel.length > 0) {
+                      handleSendToSpecificMember(contacts[0].tel[0]);
+                      return;
+                    }
+                  }
+
+                  const result: any = await Contacts.pickContact({ projection: { name: true, phones: true } });
+                  const contact = result?.contact;
+                  if (contact && contact.phones && contact.phones.length > 0) {
+                    handleSendToSpecificMember(contact.phones[0].number || '');
+                  }
+                } catch (err) {
+                  console.warn('Erro ao abrir agenda:', err);
+                  addToast('Não foi possível abrir a agenda nativa do celular.', 'error');
+                }
+              }}
+              className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Procurar pessoa na agenda nativa do celular e enviar via WhatsApp"
+            >
+              <UserSearch className="w-4 h-4" />
+              <span>Buscar na Agenda do Celular</span>
+            </button>
+
             <select
               value={selectedMemberPhone}
               onChange={e => {
@@ -372,9 +480,9 @@ Participe! 🤝🍀`;
                   handleSendToSpecificMember(e.target.value);
                 }
               }}
-              className="border border-gray-300 rounded-lg p-1.5 text-xs bg-white text-gray-700 font-medium focus:outline-emerald-600 flex-1 sm:w-48"
+              className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 font-medium focus:outline-emerald-600 flex-1 sm:w-48"
             >
-              <option value="">👤 Enviar para membro específico...</option>
+              <option value="">👤 Enviar para membro cadastrado...</option>
               {members.filter(m => m.phone).map(m => (
                 <option key={m.id} value={m.phone}>
                   {formatFirstAndLastName(m.displayName || m.email)} ({m.phone})

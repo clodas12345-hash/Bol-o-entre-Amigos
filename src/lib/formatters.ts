@@ -155,7 +155,18 @@ export function formatAnyDateBR(dateVal: any): string {
 }
 
 export function getAppPublicUrl(): string {
+  if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
+    return window.location.origin;
+  }
   return 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+}
+
+export function getVisitorPortalUrl(): string {
+  return `${getAppPublicUrl()}/visitante`;
+}
+
+export function getParticipantPortalUrl(): string {
+  return getAppPublicUrl();
 }
 
 /**

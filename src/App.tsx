@@ -20,6 +20,7 @@ import StatsThermometer from './components/StatsThermometer';
 import Chat from './components/Chat';
 import WhatsAppHub from './components/WhatsAppHub';
 import PublicReceiptUpload from './components/PublicReceiptUpload';
+import VisitorPortal from './components/VisitorPortal';
 import MonthlySnapshotManager from './components/MonthlySnapshotManager';
 import LotofacilDesdobramento from './components/LotofacilDesdobramento';
 import BackupManager from './components/BackupManager';
@@ -708,6 +709,10 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   const isSettingPassword = user && userData?.approved === true && !userData?.passwordSet && !isAdmin;
   const hideHeader = !user || isSettingPassword;
 
+  if (location.pathname === '/visitante' || location.pathname === '/convite') {
+    return <>{children}</>;
+  }
+
   if (user && !isUserApproved) {
     return <WaitingForApprovalScreen user={user} userData={userData} onSignOut={onSignOut} />;
   }
@@ -1292,11 +1297,8 @@ export default function App() {
     if (saved) return JSON.parse(saved);
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get('view') === 'true') {
-      return {
-        sessionUser: { uid: 'guest_user', displayName: 'Visitante' },
-        memberData: { id: 'guest', role: 'viewer', approved: true, displayName: 'Visitante' }
-      };
+    if (params.get('view') === 'true' && window.location.pathname !== '/visitante') {
+      window.location.replace('/visitante');
     }
     return null;
   });
@@ -1590,6 +1592,8 @@ export default function App() {
             <Layout user={activeUser} userData={activeUserData} isAdmin={isUserAdmin} onSignOut={handleSignOut} onUpdateUserData={setUserData}>
             <Routes>
               <Route path="/upload-receipt" element={<PublicReceiptUpload />} />
+              <Route path="/visitante" element={<VisitorPortal />} />
+              <Route path="/convite" element={<VisitorPortal />} />
               <Route path="/historico-boloes" element={<ProtectedRoute permission="members_edit"><MonthlySnapshotManager /></ProtectedRoute>} />
           <Route path="/" element={
             activeUser ? (

@@ -9,6 +9,8 @@ import { getIsAdmin } from '../lib/authHelpers';
 import { usePermissions } from '../lib/PermissionsContext';
 import { containsBadWords } from '../lib/profanityFilter';
 import { Camera, Image as ImageIcon, Mic, AtSign, Bot, Send, Reply, Smile, Trash2, Lock, Unlock, Sparkles, X, Check, AlertTriangle, ArrowLeft, EyeOff } from 'lucide-react';
+import { getApiUrl } from '../lib/apiHelper';
+import { getNextDrawDate, getDayNameBR } from '../lib/drawCalendar';
 
 function formatMessageTime(dateVal: any): string {
   if (!dateVal) return '';
@@ -525,6 +527,11 @@ export default function Chat() {
           };
         }
       }
+      combined.sort((a: any, b: any) => {
+        const nameA = (a.displayName || a.name || '').trim();
+        const nameB = (b.displayName || b.name || '').trim();
+        return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+      });
       setMembersList(combined);
     };
 
@@ -681,41 +688,91 @@ export default function Chat() {
         text: m.text
       }));
 
-      const res = await fetch('/api/gemini/chat-assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: questionText,
-          chatHistory: recentHistory,
-          learnedKnowledge: aiLearnings,
-          poolContext: {
-            quotaValue: 'R$ 5,00 por cota (ou R$ 10,00 para concursos especiais)',
-            pixKey: '11953292570 (Nome: Clodas)',
-            details: activePool?.description || activePool?.name || 'Bolão Amigos Lotofácil'
-          }
-        })
-      });
+      const isMegaSena = activePool?.lotteryType === 'megasena';
+      const nextDraw = getNextDrawDate(new Date(), isMegaSena ? 'megasena' : 'lotofacil');
+      const poolContext = {
+        lotteryType: isMegaSena ? 'Mega-Sena' : 'Lotofácil',
+        drawSchedule: isMegaSena 
+          ? 'Terças, Quintas e Sábados às 20:00h' 
+          : 'Segunda a Sábado às 20:00h (exceto domingos e feriados)',
+        nextDrawDate: `${nextDraw.dateFormatted} (${getDayNameBR(nextDraw.date)}) às 20:00h`,
+        currentContest: activePool?.currentContest || 'Vigente',
+        quotaValue: 'R$ 5,00 por cota (ou R$ 10,00 para concursos especiais)',
+        pixKey: '11953292570 (Nome: Clodas)',
+        details: activePool?.description || activePool?.name || 'Bolão Amigos'
+      };
 
-      const data = await res.json();
-      if (data.success && data.answer) {
-        await addDoc(collection(db, 'messages'), {
-          text: data.answer,
-          imageUrl: null,
-          createdAt: serverTimestamp(),
-          uid: 'bot_ai_assistant',
-          displayName: '🤖 IA Assistente do Bolão',
-          status: 'approved',
-          isAiBot: true,
-          replyTo: targetMsgId ? {
-            id: targetMsgId,
-            displayName: targetDisplayName || 'Participante',
-            text: questionText
-          } : null
+      const apiUrl = getApiUrl('/api/gemini/chat-assistant');
+      let answerText = '';
+
+      try {
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: questionText,
+            chatHistory: recentHistory,
+            learnedKnowledge: aiLearnings,
+            poolContext
+          })
         });
-        addToast('🤖 A IA do Bolão respondeu no chat!', 'success');
-      } else {
-        addToast('A IA não encontrou essa informação no histórico.', 'error');
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.answer) {
+            answerText = data.answer;
+          }
+        }
+      } catch (networkErr) {
+        console.warn('Erro de rede ao chamar API do chat:', networkErr);
       }
+
+      // Se por algum motivo o backend não respondeu (ex: falha de conexão no APK), utiliza resposta contextual inteligente garantida
+      if (!answerText) {
+        const qLower = questionText.toLowerCase();
+        if (
+          qLower.includes('quando') || 
+          qLower.includes('corre') || 
+          qLower.includes('sorteio') || 
+          qLower.includes('horario') || 
+          qLower.includes('horário') || 
+          qLower.includes('dia') ||
+          qLower.includes('proximo') ||
+          qLower.includes('próximo')
+        ) {
+          answerText = `Os sorteios da ${poolContext.lotteryType} correm de ${poolContext.drawSchedule}. O próximo sorteio será em ${poolContext.nextDrawDate}! 🍀`;
+        } else if (
+          qLower.includes('pix') || 
+          qLower.includes('chave') || 
+          qLower.includes('pagar') || 
+          qLower.includes('pagamento') || 
+          qLower.includes('cota') || 
+          qLower.includes('valor') ||
+          qLower.includes('quanto')
+        ) {
+          answerText = `O valor de cada cota é ${poolContext.quotaValue}. A chave PIX oficial é ${poolContext.pixKey}. Envie seu comprovante pelo app ou aqui no chat!`;
+        } else if (qLower.includes('regra') || qLower.includes('norma') || qLower.includes('como funciona')) {
+          answerText = 'Nosso bolão funciona com cotas de R$ 5,00. As apostas são registradas na Caixa e conferidas automaticamente pelo aplicativo a cada concurso!';
+        } else {
+          answerText = `Olá! Recebi sua dúvida sobre "${questionText}". O Administrador Clodas ou um Conselheiro responderá os detalhes em breve aqui no grupo!`;
+        }
+      }
+
+      await addDoc(collection(db, 'messages'), {
+        text: answerText,
+        imageUrl: null,
+        createdAt: serverTimestamp(),
+        uid: 'bot_ai_assistant',
+        displayName: '🤖 IA Assistente do Bolão',
+        status: 'approved',
+        isAiBot: true,
+        replyTo: targetMsgId ? {
+          id: targetMsgId,
+          displayName: targetDisplayName || 'Participante',
+          text: questionText
+        } : null
+      });
+      addToast('🤖 A IA do Bolão respondeu no chat!', 'success');
     } catch (err) {
       console.error('Erro ao chamar IA assistente:', err);
       addToast('Erro ao consultar a IA.', 'error');

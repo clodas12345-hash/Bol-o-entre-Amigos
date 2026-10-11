@@ -97,8 +97,8 @@ async function generateWithFallback(params: {
   const { 
     contents, 
     config, 
-    primaryModel = "gemini-2.5-flash-lite", 
-    fallbackModels = ["gemini-2.5-flash"] 
+    primaryModel = "gemini-3.5-flash-lite", 
+    fallbackModels = ["gemini-3.8-flash", "gemini-flash-latest"] 
   } = params;
   
   // Deduplicate and ensure priority order
@@ -649,9 +649,12 @@ app.post('/api/gemini/chat-assistant', async (req, res) => {
 Sua missão é responder automaticamente dúvidas dos participantes sobre o bolão com base nas informações oficiais, comunicados e respostas prévias que você APRENDEU com o Administrador Clodas e Conselheiros.
 
 DADOS OFICIAIS DO BOLÃO:
+- Modalidade: ${poolContext?.lotteryType || 'Lotofácil'}
+- Dias e Horários de Sorteio: ${poolContext?.drawSchedule || 'Lotofácil corre de segunda a sábado às 20:00h (exceto domingos e feriados). Mega-Sena corre às terças, quintas e sábados às 20:00h.'}
+- Data do Próximo Sorteio: ${poolContext?.nextDrawDate || 'Consulte o calendário oficial'}
+- Concurso Vigente: ${poolContext?.currentContest || 'Em andamento'}
 - Valor da Cota: ${poolContext?.quotaValue || 'R$ 5,00 por cota'}
 - Chave PIX oficial para pagamento: ${poolContext?.pixKey || '11953292570 (Nome: Clodas / Bolão)'}
-- Tipo de Jogo: Lotofácil / Mega-Sena
 - Administrador do Grupo: Clodas
 
 CONHECIMENTOS E RESPOSTAS QUE VOCÊ APRENDEU COM O ADMINISTRADOR CLODAS / CONSELHEIROS:
@@ -663,10 +666,10 @@ ${formattedHistory}
 PERGUNTA FEITA PELO PARTICIPANTE: "${question}"
 
 REGRAS OBRIGATÓRIAS PARA SUA RESPOSTA:
-1. Priorize as respostas APRENDIDAS com o Administrador/Conselheiro e os DADOS OFICIAIS. Se houver uma resposta aprendida sobre o tema, use-a com precisão!
-2. Seja objetivo, direto, amigável e educado.
-3. Se a informação não constar nos dados, nos aprendizados ou no histórico, forneça uma orientação inicial genérica do bolão e informe amigavelmente: "Caso necessite de detalhes específicos, o Administrador Clodas ou um Conselheiro responderá em breve!".
-4. Mantenha a resposta em português e curta (no máximo 3 a 4 frases).`;
+1. Responda de forma direta, clara e precisa à pergunta do participante. Se for sobre "quando corre" ou "próximo jogo", informe claramente a data, o dia e horário (20:00h).
+2. Priorize as respostas APRENDIDAS com o Administrador/Conselheiro e os DADOS OFICIAIS. Se houver uma resposta aprendida sobre o tema, use-a com precisão!
+3. Seja objetivo, direto, amigável e educado.
+4. Mantenha a resposta em português e curta (máximo 2 a 3 frases).`;
 
   try {
     const response = await generateWithFallback({
@@ -677,11 +680,41 @@ REGRAS OBRIGATÓRIAS PARA SUA RESPOSTA:
       }
     });
 
-    const answer = response.text?.trim() || 'Não consegui processar a resposta no momento.';
-    res.json({ success: true, answer });
+    const answer = response.text?.trim();
+    if (answer) {
+      return res.json({ success: true, answer });
+    }
+    throw new Error('Resposta vazia da IA');
   } catch (err: any) {
-    console.error('Chat Assistant AI error:', err);
-    res.status(500).json({ success: false, message: 'Não foi possível consultar a IA no momento.' });
+    console.error('Chat Assistant AI error, providing contextual smart fallback:', err);
+    const qLower = question.toLowerCase();
+    let fallbackAnswer = 'Olá! O Administrador Clodas ou um Conselheiro responderá sua dúvida em breve aqui no grupo.';
+    if (
+      qLower.includes('quando') || 
+      qLower.includes('corre') || 
+      qLower.includes('sorteio') || 
+      qLower.includes('horario') || 
+      qLower.includes('horário') || 
+      qLower.includes('dia') ||
+      qLower.includes('proximo') ||
+      qLower.includes('próximo')
+    ) {
+      const nextDateStr = poolContext?.nextDrawDate ? ` O próximo sorteio ocorre em ${poolContext.nextDrawDate}.` : '';
+      fallbackAnswer = `Os sorteios da Lotofácil acontecem de segunda a sábado por volta das 20:00h (exceto domingos e feriados).${nextDateStr} Boa sorte a todos!`;
+    } else if (
+      qLower.includes('pix') || 
+      qLower.includes('chave') || 
+      qLower.includes('pagar') || 
+      qLower.includes('pagamento') || 
+      qLower.includes('cota') || 
+      qLower.includes('valor') ||
+      qLower.includes('quanto')
+    ) {
+      fallbackAnswer = `O valor de cada cota é ${poolContext?.quotaValue || 'R$ 5,00'}. A chave PIX oficial é ${poolContext?.pixKey || '11953292570 (Nome: Clodas)'}. Você pode enviar o comprovante diretamente pelo app!`;
+    } else if (qLower.includes('regra') || qLower.includes('norma') || qLower.includes('como funciona')) {
+      fallbackAnswer = 'Nosso bolão funciona com cotas de R$ 5,00. As apostas são registradas na Caixa e conferidas automaticamente pelo aplicativo a cada concurso!';
+    }
+    res.json({ success: true, answer: fallbackAnswer });
   }
 });
 

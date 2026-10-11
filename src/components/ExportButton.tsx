@@ -23,12 +23,17 @@ export default function ExportButton() {
       });
 
       const payments = paymentsSnap.docs.map(doc => doc.data());
+      payments.sort((a: any, b: any) => {
+        const nameA = (memberMap[a.userId] || a.memberName || a.userId || '').trim();
+        const nameB = (memberMap[b.userId] || b.memberName || b.userId || '').trim();
+        return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+      });
 
       let csvContent = '\uFEFF'; // BOM para o Excel abrir com acentuação correta em PT-BR
       csvContent += 'Mês de Referência,Participante,Valor (R$),Data do Registro\n';
 
       payments.forEach(p => {
-        const memberName = memberMap[p.userId] || p.userId || 'Não identificado';
+        const memberName = memberMap[p.userId] || p.memberName || p.userId || 'Não identificado';
         const val = Number(p.amount || 0).toFixed(2).replace('.', ',');
         const mes = `"${p.month || '-'}"`;
         let dataStr = '-';

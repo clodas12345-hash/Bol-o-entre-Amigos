@@ -14,17 +14,24 @@ export default function MonthlySnapshotManager() {
     loadData();
   }, [selectedMonth]);
 
+  const sortMembersAsc = (list: any[]) =>
+    [...list].sort((a, b) => {
+      const nameA = (a.displayName || a.name || '').trim();
+      const nameB = (b.displayName || b.name || '').trim();
+      return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+    });
+
   const loadData = async () => {
     setLoading(true);
     // Carregar Master List de membros
     const membersSnap = await getDocs(collection(db, 'members'));
-    setAllMembers(membersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    setAllMembers(sortMembersAsc(membersSnap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
     // Carregar Snapshot do mês
     const snapRef = doc(db, 'monthly_snapshots', selectedMonth);
     const snap = await getDoc(snapRef);
     if (snap.exists()) {
-      setSnapshotMembers(snap.data().members || []);
+      setSnapshotMembers(sortMembersAsc(snap.data().members || []));
     } else {
       setSnapshotMembers([]);
     }
@@ -32,15 +39,17 @@ export default function MonthlySnapshotManager() {
   };
 
   const generateFromCurrent = () => {
-    setSnapshotMembers(allMembers);
+    setSnapshotMembers(sortMembersAsc(allMembers));
     addToast('Snapshot gerado a partir da lista atual!', 'info');
   };
 
   const toggleMember = (member: any) => {
-    setSnapshotMembers(prev => 
-      prev.some(m => m.id === member.id) 
-        ? prev.filter(m => m.id !== member.id)
-        : [...prev, member]
+    setSnapshotMembers(prev =>
+      sortMembersAsc(
+        prev.some(m => m.id === member.id)
+          ? prev.filter(m => m.id !== member.id)
+          : [...prev, member]
+      )
     );
   };
 

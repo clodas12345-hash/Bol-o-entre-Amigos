@@ -71,7 +71,7 @@ const formatDateToMonthRef = (date: Date): string => {
 
 const performClientSideOcr = async (base64Image: string, apiKey: string): Promise<any> => {
   const cleanBase64 = base64Image.replace(/^data:[^;]+;base64,/, '').trim();
-  const modelsToTry = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+  const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
   let lastError: any = null;
 
   const prompt = `Extraia dados deste bilhete da Caixa (Lotofácil/Mega-Sena) em JSON:

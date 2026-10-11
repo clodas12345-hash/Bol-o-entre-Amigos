@@ -51,6 +51,12 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
           }
         }
 
+        combined.sort((a, b) => {
+          const nameA = (a.displayName || a.name || a.email || '').trim();
+          const nameB = (b.displayName || b.name || b.email || '').trim();
+          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+        });
+
         setUsers(combined);
       } catch (err) {
         console.error('Error fetching users for payment modal:', err);

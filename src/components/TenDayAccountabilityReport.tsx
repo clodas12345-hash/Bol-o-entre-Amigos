@@ -66,6 +66,11 @@ export default function TenDayAccountabilityReport() {
             combined.push(m);
           }
         }
+        combined.sort((a: any, b: any) => {
+          const nameA = (a.displayName || a.name || a.email || '').trim();
+          const nameB = (b.displayName || b.name || b.email || '').trim();
+          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+        });
         setMembers(combined);
 
         // Cache local

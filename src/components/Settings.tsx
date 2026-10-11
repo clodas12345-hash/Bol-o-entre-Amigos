@@ -2,13 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db, auth, isQuotaError } from '../lib/firebase';
 import BetReleaseManager from './BetReleaseManager';
-import TeimosinhaManager from './TeimosinhaManager';
 import BackupManager from './BackupManager';
 import HowToUseModal from './HowToUseModal';
 import PoolSelector from './PoolSelector';
 import { usePermissions } from '../lib/PermissionsContext';
 import { usePool } from '../lib/PoolContext';
 import { useToast } from './NotificationManager';
+import { Contacts } from '@capacitor-community/contacts';
+import { UserSearch } from 'lucide-react';
+import { getAppPublicUrl, getVisitorPortalUrl, normalizeBrazilianPhoneDigits } from '../lib/formatters';
 import {
   UserNotificationPreferences,
   getUserNotificationPreferences,
@@ -628,48 +630,150 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Seção de Link de Visualização Pública */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-indigo-200 shadow-2xs space-y-3">
+      {/* Seção de Links Compartilháveis: Participantes vs Visitantes */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-indigo-200 shadow-2xs space-y-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shrink-0">
             🔗
           </div>
           <div>
-            <h3 className="font-extrabold text-sm text-gray-800">Link de Visualização Pública</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Compartilhe este link para visualização sem necessidade de login.</p>
+            <h3 className="font-extrabold text-sm text-gray-800">Links de Compartilhamento do Bolão</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Links separados e seguros para visitantes e participantes.</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            readOnly
-            value={window.location.origin + '/?view=true'}
-            className="flex-1 text-xs p-2.5 rounded-lg border bg-gray-50 text-gray-700 font-mono"
-          />
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(window.location.origin + '/?view=true');
-              addToast('Link copiado para a área de transferência!', 'success');
-            }}
-            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition"
-          >
-            Copiar
-          </button>
+
+        {/* Link Restrito para Visitantes */}
+        <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+              <span>👁️</span> Link para Visitantes (Restrito e Seguro)
+            </span>
+            <span className="text-[9px] font-black uppercase bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full">
+              Público Restrito
+            </span>
+          </div>
+          <p className="text-[11px] text-emerald-800 leading-relaxed">
+            Compartilhe com pessoas que ainda não participam do grupo. Mostra apenas regras, chave PIX, próximo concurso e botão para solicitar entrada, <strong>sem exibir lista de membros, chat ou finanças</strong>.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <input
+              type="text"
+              readOnly
+              value={getVisitorPortalUrl()}
+              className="flex-1 text-xs p-2.5 rounded-lg border border-emerald-300 bg-white text-emerald-950 font-mono select-all"
+            />
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(getVisitorPortalUrl());
+                addToast('Link de visitante (restrito) copiado!', 'success');
+              }}
+              className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition shadow-xs flex items-center gap-1 shrink-0"
+            >
+              <span>📋</span> Copiar Link Visitante
+            </button>
+          </div>
+        </div>
+
+        {/* Link para Participantes Oficiais */}
+        <div className="p-3.5 bg-slate-50 rounded-xl border border-gray-200 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-gray-800 flex items-center gap-1.5">
+              <span>👥</span> Link para Participantes (Acesso Completo)
+            </span>
+            <span className="text-[9px] font-black uppercase bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+              Requer Login
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-600 leading-relaxed">
+            Link oficial do aplicativo completo para membros cadastrados e aprovados acessarem seus jogos, chat e demonstrativos.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <input
+              type="text"
+              readOnly
+              value={getAppPublicUrl()}
+              className="flex-1 text-xs p-2.5 rounded-lg border bg-white text-gray-700 font-mono select-all"
+            />
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(getAppPublicUrl());
+                addToast('Link de participantes copiado!', 'success');
+              }}
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition shadow-xs flex items-center gap-1 shrink-0"
+            >
+              <span>📋</span> Copiar Link Membros
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Seção de Envio via WhatsApp */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-green-200 shadow-2xs space-y-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center text-lg shrink-0">
-            💬
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center text-lg shrink-0">
+              💬
+            </div>
+            <div>
+              <h3 className="font-extrabold text-sm text-gray-800">Enviar via WhatsApp</h3>
+              <p className="text-[11px] text-gray-500 mt-0.5">Digite o número (DDD + Telefone) ou busque na agenda do celular.</p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-extrabold text-sm text-gray-800">Enviar via WhatsApp</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Digite o número (DDD + Telefone) para abrir uma conversa.</p>
-          </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                if (Capacitor.isNativePlatform()) {
+                  const permissions = await Contacts.requestPermissions();
+                  if (permissions.contacts !== 'granted') {
+                    addToast('Permissão de acesso à agenda negada.', 'error');
+                    return;
+                  }
+                  const result: any = await Contacts.pickContact({ projection: { name: true, phones: true } });
+                  const contact = result?.contact;
+                  if (contact && contact.phones && contact.phones.length > 0) {
+                    const rawPhone = contact.phones[0].number || '';
+                    const cleaned = normalizeBrazilianPhoneDigits(rawPhone).replace(/^55/, '');
+                    setWhatsappPhone(cleaned);
+                    addToast(`Contato selecionado: ${contact.name?.display || cleaned}`, 'success');
+                  }
+                  return;
+                }
+
+                const nav = navigator as any;
+                if (nav.contacts && typeof nav.contacts.select === 'function') {
+                  const contacts = await nav.contacts.select(['name', 'tel'], { multiple: false });
+                  if (contacts && contacts.length > 0 && contacts[0].tel && contacts[0].tel.length > 0) {
+                    const rawPhone = contacts[0].tel[0];
+                    const cleaned = normalizeBrazilianPhoneDigits(rawPhone).replace(/^55/, '');
+                    setWhatsappPhone(cleaned);
+                    addToast(`Contato selecionado: ${contacts[0].name?.[0] || cleaned}`, 'success');
+                    return;
+                  }
+                }
+
+                const result: any = await Contacts.pickContact({ projection: { name: true, phones: true } });
+                const contact = result?.contact;
+                if (contact && contact.phones && contact.phones.length > 0) {
+                  const rawPhone = contact.phones[0].number || '';
+                  const cleaned = normalizeBrazilianPhoneDigits(rawPhone).replace(/^55/, '');
+                  setWhatsappPhone(cleaned);
+                  addToast(`Contato selecionado: ${contact.name?.display || cleaned}`, 'success');
+                }
+              } catch (err) {
+                console.warn('Erro ao abrir agenda nativa:', err);
+                addToast('Não foi possível acessar a agenda nativa do aparelho.', 'error');
+              }
+            }}
+            className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold px-3 py-2 rounded-xl cursor-pointer transition flex items-center gap-1.5 shadow-2xs"
+          >
+            <UserSearch className="w-4 h-4" />
+            <span>Buscar na Agenda</span>
+          </button>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="tel"
             placeholder="Ex: 11999999999"
@@ -677,18 +781,38 @@ export default function Settings() {
             onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
             className="flex-1 text-xs p-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
           />
-          <button
-            onClick={() => {
-              if (whatsappPhone.length < 10) {
-                addToast('Número inválido. Use DDD + Telefone (ex: 11999999999).', 'error');
-                return;
-              }
-              window.open(`https://wa.me/55${whatsappPhone}?text=${encodeURIComponent(`Olá! Acesse o Bolão Amigos aqui (visualização pública): ${window.location.origin}/?view=true`)}`, '_blank');
-            }}
-            className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition"
-          >
-            Enviar
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const digits = normalizeBrazilianPhoneDigits(whatsappPhone);
+                if (digits.length < 12) {
+                  addToast('Número inválido. Use DDD + Telefone (ex: 11999999999).', 'error');
+                  return;
+                }
+                window.open(`https://wa.me/${digits}?text=${encodeURIComponent(`🍀 Olá! Conheça o Bolão Amigos (acesso restrito para visitantes): ${getVisitorPortalUrl()}`)}`, '_blank');
+              }}
+              className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition flex items-center justify-center gap-1"
+              title="Enviar link restrito de Visitante no WhatsApp"
+            >
+              <span>👁️</span> Enviar Link Visitante
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const digits = normalizeBrazilianPhoneDigits(whatsappPhone);
+                if (digits.length < 12) {
+                  addToast('Número inválido. Use DDD + Telefone (ex: 11999999999).', 'error');
+                  return;
+                }
+                window.open(`https://wa.me/${digits}?text=${encodeURIComponent(`👥 Olá! Acesse o aplicativo oficial do Bolão Amigos (Participantes): ${getAppPublicUrl()}`)}`, '_blank');
+              }}
+              className="flex-1 sm:flex-none text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition flex items-center justify-center gap-1"
+              title="Enviar link de Participante no WhatsApp"
+            >
+              <span>📲</span> Enviar Link Membro
+            </button>
+          </div>
         </div>
       </div>
 
@@ -708,8 +832,6 @@ export default function Settings() {
       {can('games_create') && <BetReleaseManager />}
 
       {can('system_backup_restore') && <BackupManager />}
-
-      {can('games_create') && <TeimosinhaManager />}
     </div>
   );
 }

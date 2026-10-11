@@ -51,6 +51,12 @@ export default function DetailedFinancialReport() {
             combined.push(m);
           }
         }
+        // Ordena participantes e contatos em ordem crescente (A-Z)
+        combined.sort((a, b) => {
+          const nameA = (a.displayName || a.name || a.email || '').trim();
+          const nameB = (b.displayName || b.name || b.email || '').trim();
+          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+        });
         setMembers(combined);
         try { localStorage.setItem('bolao_cache_members', JSON.stringify(combined)); } catch {}
 
@@ -64,7 +70,15 @@ export default function DetailedFinancialReport() {
           const cPix = localStorage.getItem('bolao_cache_pix_config');
           if (cPix) setPixConfig(JSON.parse(cPix));
           const cMem = localStorage.getItem('bolao_cache_members');
-          if (cMem) setMembers(JSON.parse(cMem));
+          if (cMem) {
+            const parsedMem = JSON.parse(cMem);
+            parsedMem.sort((a: any, b: any) => {
+              const nameA = (a.displayName || a.name || a.email || '').trim();
+              const nameB = (b.displayName || b.name || b.email || '').trim();
+              return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+            });
+            setMembers(parsedMem);
+          }
         } catch {}
       }
     };
@@ -81,6 +95,7 @@ export default function DetailedFinancialReport() {
       await updateDoc(doc(db, colName, member.id), {
         paymentStatus: newStatus
       });
+      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, paymentStatus: newStatus } : m));
       addToast(`Status de ${formatFirstAndLastName(member.displayName || member.email)} alterado para ${newStatus}!`, 'info');
     } catch (err) {
       console.error('Erro ao atualizar status:', err);
@@ -95,18 +110,24 @@ export default function DetailedFinancialReport() {
     }
   };
 
-  const report = members.map(member => {
-    const memberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
-    const totalInvested = memberPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-    const lastPayment = memberPayments.sort((a, b) => {
-      const timeA = a.createdAt?.seconds || 0;
-      const timeB = b.createdAt?.seconds || 0;
-      return timeB - timeA;
-    })[0];
+  const report = members
+    .map(member => {
+      const memberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
+      const totalInvested = memberPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const lastPayment = memberPayments.sort((a, b) => {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA;
+      })[0];
 
-    const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
-    return { ...member, quotas, totalInvested, lastPayment, paymentsCount: memberPayments.length };
-  });
+      const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
+      return { ...member, quotas, totalInvested, lastPayment, paymentsCount: memberPayments.length };
+    })
+    .sort((a, b) => {
+      const nameA = (a.displayName || a.name || a.email || '').trim();
+      const nameB = (b.displayName || b.name || b.email || '').trim();
+      return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+    });
 
   return (
     <div className="p-4 sm:p-5 bg-white">

@@ -56,7 +56,9 @@ export default function BetReleaseManager() {
     // Listen to submissions
     const subQ = query(collection(db, 'bet_submissions'), orderBy('submittedAt', 'desc'));
     const unsubSub = onSnapshot(subQ, (snap) => {
-      setSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const subs = snap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      subs.sort((a, b) => (a.memberName || '').trim().localeCompare((b.memberName || '').trim(), 'pt-BR', { sensitivity: 'base' }));
+      setSubmissions(subs);
     }, (err) => {
       console.warn('BetReleaseManager submissions listener error:', err);
     });
@@ -65,7 +67,9 @@ export default function BetReleaseManager() {
     const fetchMembers = async () => {
       try {
         const uSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
-        setMembers(uSnap.docs.map(d => ({ id: d.id, ...d.data() as any })));
+        const list = uSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+        list.sort((a, b) => (a.displayName || a.name || '').trim().localeCompare((b.displayName || b.name || '').trim(), 'pt-BR', { sensitivity: 'base' }));
+        setMembers(list);
       } catch (err) {
         console.warn('Error fetching members in BetReleaseManager:', err);
       }

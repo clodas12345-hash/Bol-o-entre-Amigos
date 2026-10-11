@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, getDoc, setDoc, doc, updateDoc, deleteDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits } from '../lib/formatters';
@@ -50,6 +50,12 @@ export default function MembersList() {
   const navigate = useNavigate();
   const [members, setMembers] = useState<any[]>([]);
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
+  const [latePaymentModal, setLatePaymentModal] = useState<{
+    member: any;
+    currentMonthStr: string;
+    prevMonthStr: string;
+    prevMonthKey: string;
+  } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts'>('all');
@@ -348,15 +354,16 @@ export default function MembersList() {
     }
   };
 
-  const togglePaymentStatus = async (member: any) => {
-    const newStatus = member.paymentStatus === 'Pago' ? 'Pendente' : 'Pago';
+  const executePaymentStatusChange = async (member: any, newStatus: 'Pago' | 'Pendente', targetMonth?: 'current' | 'previous', monthRefStr?: string, prevMonthKey?: string) => {
+    const isLatePreviousMonth = targetMonth === 'previous';
+    const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
 
     if (member.isLocalOnly) {
       try {
         const local = getLocalMembers();
         const updated = local.map(m => {
           if (m.id === member.id) {
-            return { ...m, paymentStatus: newStatus };
+            return { ...m, paymentStatus: newStatus, lastPaidMonth: monthRefStr || m.lastPaidMonth };
           }
           return m;
         });
@@ -371,13 +378,65 @@ export default function MembersList() {
 
     try {
       const colName = member.collectionName || 'members';
-      await updateDoc(doc(db, colName, member.id), { paymentStatus: newStatus });
-      addToast(`Status de pagamento alterado para "${newStatus}"`, 'info');
+      const updatePayload: any = { paymentStatus: newStatus };
+      if (newStatus === 'Pago' && monthRefStr) {
+        updatePayload.lastPaidMonth = monthRefStr;
+        updatePayload.lastHomologatedAt = serverTimestamp();
+      }
+      await updateDoc(doc(db, colName, member.id), updatePayload);
+
+      if (newStatus === 'Pago' && monthRefStr) {
+        await addDoc(collection(db, 'payments'), {
+          userId: member.uid || member.id,
+          memberName: member.displayName || member.name || 'Participante',
+          amount: quotas * 20.0,
+          month: monthRefStr,
+          isLatePayment: isLatePreviousMonth,
+          createdAt: serverTimestamp(),
+          homologatedBy: auth.currentUser?.email || 'Administrador'
+        }).catch(() => {});
+
+        if (isLatePreviousMonth && prevMonthKey) {
+          try {
+            const snapRef = doc(db, 'monthly_snapshots', prevMonthKey);
+            const snapDoc = await getDoc(snapRef);
+            const memberEntry = {
+              id: member.id,
+              displayName: member.displayName || member.name || 'Participante',
+              phone: member.phone || '',
+              quotas,
+              paymentStatus: 'Pago',
+              paidInArrearsAt: new Date().toISOString(),
+              monthRef: monthRefStr
+            };
+            if (snapDoc.exists()) {
+              const existingMembers: any[] = snapDoc.data().members || [];
+              const idx = existingMembers.findIndex((em: any) => em.id === member.id);
+              const updatedSnapshot = [...existingMembers];
+              if (idx !== -1) {
+                updatedSnapshot[idx] = { ...updatedSnapshot[idx], paymentStatus: 'Pago', paidInArrearsAt: new Date().toISOString() };
+              } else {
+                updatedSnapshot.push(memberEntry);
+              }
+              updatedSnapshot.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'pt-BR', { sensitivity: 'base' }));
+              await setDoc(snapRef, { members: updatedSnapshot, updatedAt: serverTimestamp() }, { merge: true });
+            } else {
+              await setDoc(snapRef, { members: [memberEntry], updatedAt: serverTimestamp() });
+            }
+          } catch {}
+        }
+      }
+
+      addToast(
+        isLatePreviousMonth
+          ? `Pagamento atrasado salvo no mês anterior (${monthRefStr}) e status alterado para "Pago"!`
+          : `Status de pagamento alterado para "${newStatus}"!`,
+        'success'
+      );
       fetchMembers();
     } catch (err) {
       if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
-        // Salva alteração localmente
         const local = getLocalMembers();
         const updated = local.map(m => {
           if (m.id === member.id) {
@@ -390,6 +449,25 @@ export default function MembersList() {
         fetchMembers();
       }
     }
+  };
+
+  const togglePaymentStatus = async (member: any) => {
+    const newStatus = member.paymentStatus === 'Pago' ? 'Pendente' : 'Pago';
+    if (newStatus === 'Pago') {
+      const now = new Date();
+      const currentMonthStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonthStr = `${String(prevDate.getMonth() + 1).padStart(2, '0')}/${prevDate.getFullYear()}`;
+      const prevMonthKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+      setLatePaymentModal({
+        member,
+        currentMonthStr,
+        prevMonthStr,
+        prevMonthKey
+      });
+      return;
+    }
+    await executePaymentStatusChange(member, 'Pendente');
   };
 
   const sendWhatsApp = (member: any) => {
@@ -681,6 +759,86 @@ export default function MembersList() {
                 className="px-4 py-1.5 rounded text-sm text-white bg-red-600 hover:bg-red-700 transition"
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {latePaymentModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-amber-200 space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-xl shrink-0">
+                  ⏰
+                </div>
+                <div>
+                  <h4 className="font-black text-gray-900 text-sm sm:text-base">
+                    Pagamento Pendente / Atrasado?
+                  </h4>
+                  <p className="text-[11px] text-amber-700 font-bold">
+                    Participante: {latePaymentModal.member.displayName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLatePaymentModal(null)}
+                className="text-gray-400 hover:text-gray-700 font-bold text-base p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-950 space-y-1.5 leading-relaxed">
+              <p className="font-bold">
+                O participante estava com pagamento <span className="underline text-red-700">Pendente</span>.
+              </p>
+              <p>
+                Deseja registrar este pagamento como <strong>atrasado referente ao mês anterior ({latePaymentModal.prevMonthStr})</strong> ou no <strong>mês atual ({latePaymentModal.currentMonthStr})</strong>?
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  const m = latePaymentModal;
+                  setLatePaymentModal(null);
+                  await executePaymentStatusChange(m.member, 'Pago', 'previous', m.prevMonthStr, m.prevMonthKey);
+                }}
+                className="w-full py-3 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs transition cursor-pointer shadow-sm flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <span>📅</span>
+                  <span>Pagamento Atrasado — Salvar no Mês Anterior ({latePaymentModal.prevMonthStr})</span>
+                </span>
+                <span>➔</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const m = latePaymentModal;
+                  setLatePaymentModal(null);
+                  await executePaymentStatusChange(m.member, 'Pago', 'current', m.currentMonthStr, m.prevMonthKey);
+                }}
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition cursor-pointer shadow-sm flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <span>✓</span>
+                  <span>Pagamento Regular — Salvar no Mês Atual ({latePaymentModal.currentMonthStr})</span>
+                </span>
+                <span>➔</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLatePaymentModal(null)}
+                className="w-full py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs transition cursor-pointer"
+              >
+                Cancelar
               </button>
             </div>
           </div>
@@ -1046,27 +1204,24 @@ export default function MembersList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {displayedMembers.length === 0 ? (
+            {memberFilterTab === 'receipts' ? (
+              <tr>
+                <td colSpan={isAdmin ? 7 : 3}>
+                  <ReceiptsList onMemberUpdated={fetchMembers} />
+                </td>
+              </tr>
+            ) : displayedMembers.length === 0 ? (
               <tr>
                 <td colSpan={isAdmin ? 7 : 3} className="p-8 text-center text-gray-400 italic font-medium">
                   {memberFilterTab === 'pending'
                     ? 'Nenhum participante na listagem regular (veja os quadros de pedidos pendentes acima).'
-                    : memberFilterTab === 'receipts'
-                      ? 'Nenhum comprovante pendente.'
-                      : memberFilterTab === 'unpaid'
-                        ? 'Nenhum participante com pagamento pendente.'
-                        : 'Nenhum contato encontrado nesta categoria.'}
+                    : memberFilterTab === 'unpaid'
+                      ? 'Nenhum participante com pagamento pendente.'
+                      : 'Nenhum contato encontrado nesta categoria.'}
                 </td>
               </tr>
             ) : (
-              memberFilterTab === 'receipts' ? (
-                <tr>
-                  <td colSpan={isAdmin ? 7 : 3}>
-                    <ReceiptsList />
-                  </td>
-                </tr>
-              ) : (
-                displayedMembers.map((member) => {
+              displayedMembers.map((member) => {
                 const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
                 const isPaid = member.paymentStatus === 'Pago';
                 const monthlyValue = quotas * 20.00;
@@ -1217,8 +1372,7 @@ export default function MembersList() {
                   </tr>
                 );
               })
-            )
-          )}
+            )}
           </tbody>
         </table>
       </div>

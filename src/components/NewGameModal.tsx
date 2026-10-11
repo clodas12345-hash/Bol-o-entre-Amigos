@@ -555,40 +555,8 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
             </div>
           )}
 
-          {/* Configuração de Concurso e Teimosinha */}
+          {/* Configuração de Concurso */}
           <div className="space-y-3 pt-1 border-t">
-            <div className="flex items-center justify-between bg-purple-50 p-2.5 rounded-xl border border-purple-200">
-              <div>
-                <label className="text-xs font-bold text-purple-950 block">Modo Teimosinha</label>
-                <span className="text-[10px] text-gray-500">Repetir aposta em concursos consecutivos</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={isTeimosinha}
-                onChange={(e) => setIsTeimosinha(e.target.checked)}
-                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer"
-              />
-            </div>
-
-            {isTeimosinha && (
-              <div>
-                <label className="block text-xs font-bold text-purple-950 mb-1">
-                  Quantidade de Concursos (Teimosinha)
-                </label>
-                <select
-                  value={teimosinhaCount}
-                  onChange={(e) => setTeimosinhaCount(Number(e.target.value))}
-                  className="w-full border border-purple-300 bg-white rounded-lg p-2 text-xs font-bold text-purple-900"
-                >
-                  <option value={3}>3 Concursos</option>
-                  <option value={6}>6 Concursos (Padrão)</option>
-                  <option value={12}>12 Concursos</option>
-                  <option value={18}>18 Concursos</option>
-                  <option value={24}>24 Concursos</option>
-                </select>
-              </div>
-            )}
-
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs font-bold text-purple-950 mb-1">

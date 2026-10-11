@@ -445,6 +445,8 @@ export async function sendAppNotification(
             id: notifId,
             channelId: 'padrao', // Exigência do Requisito 4
             smallIcon: 'ic_stat_icon_config_sample',
+            largeIcon: 'ic_launcher',
+            iconColor: '#10b981',
             sound: 'default',
             extra: {
               autoCheckPrize: true,
@@ -473,7 +475,8 @@ export async function sendAppNotification(
       if (Notification.permission === 'granted') {
         const webNotif = new Notification(title, {
           body: options?.body || '',
-          icon: '/bolao_logo_app.png'
+          icon: '/bolao_logo_app.png',
+          badge: '/bolao_logo_app.png'
         });
         webNotif.onclick = () => {
           try {
@@ -633,6 +636,8 @@ export async function scheduleNativeNotificationAt(
               allowWhileIdle: true // Essencial para Android / Samsung One UI disparar com o app fechado
             },
             smallIcon: 'ic_stat_icon_config_sample',
+            largeIcon: 'ic_launcher',
+            iconColor: '#10b981',
             sound: 'default',
             extra: extraData || { autoCheckPrize: true }
           }
