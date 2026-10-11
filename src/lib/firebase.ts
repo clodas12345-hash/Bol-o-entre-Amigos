@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache, getFirestore, disableNetwork, setLogLevel } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from './firebaseConfig';
 
@@ -28,29 +28,6 @@ try {
   dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
-// Desativa conexões de rede do Firestore apenas no Preview do AI Studio (mantém ligado no APK, no Link do Visitante e no Link de Comprovante)
-const isExternalVisitorOrReceiptLink =
-  typeof window !== 'undefined' &&
-  (window.location.pathname === '/visitante' ||
-    window.location.pathname === '/convite' ||
-    window.location.pathname === '/upload-receipt' ||
-    window.location.search.includes('view=true') ||
-    window.location.search.includes('comprovante=1') ||
-    window.location.search.includes('upload=receipt'));
-
-const isWebPreview =
-  typeof window !== 'undefined' &&
-  !isExternalVisitorOrReceiptLink &&
-  (window.location.hostname.includes('run.app') ||
-    window.location.hostname.includes('googleusercontent.com') ||
-    window.location.hostname.includes('localhost'));
-
-if (isWebPreview) {
-  try {
-    setLogLevel('silent');
-    disableNetwork(dbInstance).catch(() => {});
-  } catch {}
-}
 
 import { logSystemError } from './systemErrorLogger';
 

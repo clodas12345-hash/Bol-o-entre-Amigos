@@ -166,17 +166,6 @@ export default function BackupManager() {
     setIsImporting(true);
     
     try {
-      const isPreview = window.location.hostname.includes('run.app') || window.location.hostname.includes('googleusercontent.com') || window.location.hostname.includes('localhost');
-      if (isPreview) {
-        await new Promise(r => setTimeout(r, 800));
-        addToast('✨ Sincronização simulada com sucesso! (No APK instalado no celular, os dados da nuvem serão baixados para o app).', 'success');
-        localStorage.setItem('last_cloud_sync', new Date().toLocaleString('pt-BR'));
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
-        return;
-      }
-
       let history: any[] = [];
       try {
         history = await getBackupsHistory();
