@@ -360,9 +360,9 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
           </div>
         </div>
 
-        {/* Campo Concurso & Botão Gerar */}
+            {/* Campo Concurso & Botão Gerar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-100">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
             <label className="text-xs font-semibold text-gray-700 whitespace-nowrap">Concurso (Opcional):</label>
             <input
               type="number"
@@ -377,7 +377,7 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
             type="button"
             onClick={handleGenerate}
             disabled={selectedNumbers.length !== selectedScheme.totalNumbers}
-            className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            className="w-full sm:w-auto justify-center bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
           >
             <span>⚡</span> Gerar {selectedScheme.totalGames} Apostas Desdobradas
           </button>
@@ -394,11 +394,11 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
                 <p className="text-xs text-gray-500">Cada aposta possui exatamente 15 números oficiais</p>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={handleCopyGamesText}
-                  className="px-3 py-1.5 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                  className="flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg transition flex items-center gap-1 cursor-pointer"
                 >
                   <span>{copied ? '✓' : '📋'}</span> {copied ? 'Copiado!' : 'Copiar para WhatsApp'}
                 </button>
@@ -406,7 +406,7 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
                   type="button"
                   onClick={handleSaveToBolao}
                   disabled={isSaving}
-                  className="px-4 py-1.5 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                  className="flex-1 sm:flex-initial justify-center px-4 py-1.5 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition disabled:opacity-50 flex items-center gap-1 cursor-pointer"
                 >
                   <span>💾</span> {isSaving ? 'Salvando...' : 'Salvar no Bolão'}
                 </button>

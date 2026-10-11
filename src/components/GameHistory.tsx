@@ -630,10 +630,10 @@ export default function GameHistory({
       </div>
 
       {/* Barra de Busca e Filtros Avançados */}
-      <div className="p-4 bg-gray-50/80 border-b space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+      <div className="p-3 sm:p-4 bg-gray-50/80 border-b space-y-3 w-full overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
           {/* Campo de Busca Rápida por Concurso / Data */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-[200px]">
             <span className="absolute left-3 top-2.5 text-gray-400 text-xs">🔎</span>
             <input
               type="text"
@@ -652,67 +652,69 @@ export default function GameHistory({
             )}
           </div>
 
-          {/* Filtro por Ano */}
-          {availableYears.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-3 py-1.5 shadow-2xs">
-              <span className="text-xs font-bold text-gray-600">Ano:</span>
+          <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+            {/* Filtro por Ano */}
+            {availableYears.length > 0 && (
+              <div className="flex-1 sm:flex-initial flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-2.5 py-1.5 shadow-2xs min-w-0">
+                <span className="text-xs font-bold text-gray-600 shrink-0">Ano:</span>
+                <select
+                  value={selectedYearFilter}
+                  onChange={(e) => setSelectedYearFilter(e.target.value)}
+                  className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer w-full min-w-0"
+                >
+                  <option value="all">Todos os Anos</option>
+                  {availableYears.map(y => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Filtro por Mês */}
+            {availableMonths.length > 0 && (
+              <div className="flex-1 sm:flex-initial flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-2.5 py-1.5 shadow-2xs min-w-0">
+                <span className="text-xs font-bold text-gray-600 shrink-0">Mês:</span>
+                <select
+                  value={selectedMonthFilter}
+                  onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                  className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer w-full min-w-0"
+                >
+                  {availableMonths.map(m => (
+                    <option key={m} value={m}>
+                      {m === currentMonthStr ? `${m} (Mês Vigente)` : m}
+                    </option>
+                  ))}
+                  <option value="all">Todos os Meses</option>
+                </select>
+              </div>
+            )}
+
+            {/* Filtro por Faixa de Premiação */}
+            <div className="flex-1 sm:flex-initial flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-2.5 py-1.5 shadow-2xs min-w-0">
+              <span className="text-xs font-bold text-gray-600 shrink-0">Status:</span>
               <select
-                value={selectedYearFilter}
-                onChange={(e) => setSelectedYearFilter(e.target.value)}
-                className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer"
+                value={selectedPrizeFilter}
+                onChange={(e: any) => setSelectedPrizeFilter(e.target.value)}
+                className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer w-full min-w-0"
               >
-                <option value="all">Todos os Anos</option>
-                {availableYears.map(y => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
+                <option value="all">Todas as Apostas</option>
+                <option value="winning">🎉 Apenas Premiadas</option>
+                <option value="non_winning">Apenas Sem Prêmio</option>
+                <option value="15_hits">⭐ 15 Acertos</option>
+                <option value="14_hits">🏆 14 Acertos</option>
+                <option value="13_hits">🎯 13 Acertos</option>
               </select>
             </div>
-          )}
-
-          {/* Filtro por Mês */}
-          {availableMonths.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-3 py-1.5 shadow-2xs">
-              <span className="text-xs font-bold text-gray-600">Mês:</span>
-              <select
-                value={selectedMonthFilter}
-                onChange={(e) => setSelectedMonthFilter(e.target.value)}
-                className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer"
-              >
-                {availableMonths.map(m => (
-                  <option key={m} value={m}>
-                    {m === currentMonthStr ? `${m} (Mês Vigente)` : m}
-                  </option>
-                ))}
-                <option value="all">Todos os Meses</option>
-              </select>
-            </div>
-          )}
-
-          {/* Filtro por Faixa de Premiação */}
-          <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-xl px-3 py-1.5 shadow-2xs">
-            <span className="text-xs font-bold text-gray-600">Status:</span>
-            <select
-              value={selectedPrizeFilter}
-              onChange={(e: any) => setSelectedPrizeFilter(e.target.value)}
-              className="text-xs font-bold text-purple-900 bg-transparent focus:outline-none cursor-pointer"
-            >
-              <option value="all">Todas as Apostas</option>
-              <option value="winning">🎉 Apenas Premiadas</option>
-              <option value="non_winning">Apenas Sem Prêmio</option>
-              <option value="15_hits">⭐ 15 Acertos</option>
-              <option value="14_hits">🏆 14 Acertos</option>
-              <option value="13_hits">🎯 13 Acertos</option>
-            </select>
           </div>
 
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
             {duplicatedContestsCluster.length > 1 && (
               <button
                 type="button"
                 onClick={() => setShowSweepModal(true)}
-                className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-gray-950 font-black text-xs rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5 animate-pulse"
+                className="flex-1 sm:flex-initial justify-center px-3 py-2 bg-amber-400 hover:bg-amber-500 text-gray-950 font-black text-xs rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5 animate-pulse"
                 title="Detectou concursos com apostas replicadas. Clique para manter apenas 1 concurso e remover as duplicatas."
               >
                 <span>🧹</span> Varredura de Replicados ({duplicatedContestsCluster.length})
@@ -721,14 +723,14 @@ export default function GameHistory({
 
             <button
               onClick={expandAll}
-              className="px-2.5 py-2 bg-white hover:bg-gray-100 text-purple-900 border border-gray-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+              className="flex-1 sm:flex-initial justify-center px-2.5 py-2 bg-white hover:bg-gray-100 text-purple-900 border border-gray-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
               title="Expandir todos os concursos arquivados"
             >
               🔓 Expandir
             </button>
             <button
               onClick={collapseAll}
-              className="px-2.5 py-2 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+              className="flex-1 sm:flex-initial justify-center px-2.5 py-2 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
               title="Recolher todos os concursos"
             >
               🔒 Recolher
@@ -738,7 +740,7 @@ export default function GameHistory({
 
         {/* Mini Filtro Tático de Dezenas */}
         <div className="pt-2 border-t border-gray-200/70">
-          <div className="flex justify-between items-center mb-1.5">
+          <div className="flex flex-wrap justify-between items-center gap-1 mb-1.5">
             <span className="text-[11px] font-black text-purple-900 uppercase tracking-wide flex items-center gap-1">
               <span>🎯</span> Filtrar Jogos do Histórico que Contenham Dezenas Específicas:
             </span>
@@ -836,12 +838,12 @@ export default function GameHistory({
                 {/* Pasta do Mês */}
                 <div
                   onClick={() => setExpandedMonths(prev => ({ ...prev, [monthName]: !prev[monthName] }))}
-                  className="flex items-center justify-between p-3 bg-white hover:bg-purple-50/40 border border-purple-100 rounded-xl cursor-pointer select-none transition shadow-2xs"
+                  className="flex flex-wrap items-center justify-between gap-2 p-3 bg-white hover:bg-purple-50/40 border border-purple-100 rounded-xl cursor-pointer select-none transition shadow-2xs"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xl sm:text-2xl animate-pulse">📁</span>
-                    <div>
-                      <h4 className="font-extrabold text-sm sm:text-base text-purple-950 uppercase tracking-wide">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-xl sm:text-2xl animate-pulse shrink-0">📁</span>
+                    <div className="min-w-0">
+                      <h4 className="font-extrabold text-sm sm:text-base text-purple-950 uppercase tracking-wide truncate">
                         {monthName}
                       </h4>
                       <p className="text-[10px] sm:text-xs text-gray-500 font-semibold mt-0.5">
@@ -850,13 +852,13 @@ export default function GameHistory({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                     {totalPrizeInMonth > 0 && (
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-lg border border-emerald-200 shadow-3xs">
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-lg border border-emerald-200 shadow-3xs whitespace-nowrap">
                         🏆 R$ {totalPrizeInMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
                     )}
-                    <span className="text-purple-700 font-bold text-xs sm:text-sm">
+                    <span className="text-purple-700 font-bold text-xs sm:text-sm whitespace-nowrap">
                       {isMonthExpanded ? '▲ Recolher' : '▼ Abrir'}
                     </span>
                   </div>
@@ -914,7 +916,7 @@ export default function GameHistory({
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap ml-auto" onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto justify-end" onClick={e => e.stopPropagation()}>
                                 {isAdminOrCounselor && (
                                   <button
                                     type="button"
@@ -931,7 +933,7 @@ export default function GameHistory({
                                       );
                                       window.open(`https://wa.me/?text=${text}`, '_blank');
                                     }}
-                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                    className="flex-1 sm:flex-initial justify-center bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
                                     title="Enviar balanço deste concurso arquivado no WhatsApp"
                                   >
                                     <span>📲</span> WhatsApp
@@ -944,7 +946,7 @@ export default function GameHistory({
                                     e.stopPropagation();
                                     setGroupToDelete(group);
                                   }}
-                                  className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                  className="flex-1 sm:flex-initial justify-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
                                   title="Excluir todas as apostas deste concurso do histórico"
                                 >
                                   <span>🗑️</span> Excluir
@@ -956,7 +958,7 @@ export default function GameHistory({
                                     e.stopPropagation();
                                     toggleContestExpand(group.key);
                                   }}
-                                  className="text-xs font-black px-3 py-1.5 rounded-lg transition cursor-pointer shadow-xs bg-purple-900 hover:bg-purple-800 text-white whitespace-nowrap"
+                                  className="flex-1 sm:flex-initial justify-center text-xs font-black px-3 py-1.5 rounded-lg transition cursor-pointer shadow-xs bg-purple-900 hover:bg-purple-800 text-white whitespace-nowrap"
                                 >
                                   <span>{isExpanded ? '▲ Recolher' : `▼ Ver Apostas (${group.games.length})`}</span>
                                 </button>
@@ -996,8 +998,8 @@ export default function GameHistory({
                                     }`}
                                   >
                                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                      <div className="flex items-center gap-2">
-                                        <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-900 text-xs font-black flex items-center justify-center">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-900 text-xs font-black flex items-center justify-center shrink-0">
                                           #{gameIndex + 1}
                                         </span>
                                         <span className="font-bold text-sm text-gray-800">
@@ -1015,8 +1017,8 @@ export default function GameHistory({
                                         )}
                                       </div>
 
-                                      <div className="flex items-center gap-2">
-                                        <span className={`text-xs px-3 py-1 rounded-md shadow-xs ${hitsInfo.badgeColor}`}>
+                                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                        <span className={`text-xs px-2.5 sm:px-3 py-1 rounded-md shadow-xs whitespace-nowrap ${hitsInfo.badgeColor}`}>
                                           {hitsInfo.statusText}
                                         </span>
 
@@ -1026,7 +1028,7 @@ export default function GameHistory({
                                               totalPrize: hitsInfo.prizeAmount,
                                               contestName: `Jogo Arquivado #${gameIndex + 1} (${group.contestTitle})`
                                             })}
-                                            className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-black px-2.5 py-1 rounded shadow transition cursor-pointer flex items-center gap-1"
+                                            className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-black px-2.5 py-1 rounded shadow transition cursor-pointer flex items-center gap-1 whitespace-nowrap"
                                           >
                                             <span>💰</span> Dividir Cota
                                           </button>
@@ -1035,7 +1037,7 @@ export default function GameHistory({
                                         {game.receiptURL && (
                                           <button
                                             onClick={() => setSelectedReceiptUrl(game.receiptURL)}
-                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer whitespace-nowrap"
                                           >
                                             Ver Bilhete
                                           </button>
@@ -1044,7 +1046,7 @@ export default function GameHistory({
                                         {onDeleteGame && can('games_delete') && (
                                           <button
                                             onClick={() => setDeletingId(game.id)}
-                                            className="text-xs text-red-600 hover:text-red-800 font-bold underline cursor-pointer"
+                                            className="text-xs text-red-600 hover:text-red-800 font-bold underline cursor-pointer whitespace-nowrap"
                                           >
                                             Excluir
                                           </button>

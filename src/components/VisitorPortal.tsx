@@ -309,11 +309,11 @@ export default function VisitorPortal() {
       <main className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain w-full">
         <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5">
         {/* Navegação de Abas para Visitantes: Convite, Jogos Registrados e Histórico */}
-        <div className="bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 flex gap-1.5 overflow-x-auto">
+        <div className="bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 flex flex-wrap gap-1.5 w-full">
           <button
             type="button"
             onClick={() => setActiveVisitorTab('overview')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 min-w-[120px] py-2.5 px-2.5 sm:px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeVisitorTab === 'overview'
                 ? 'bg-emerald-600 text-white shadow-md'
                 : 'text-slate-300 hover:bg-slate-800'
@@ -325,7 +325,7 @@ export default function VisitorPortal() {
           <button
             type="button"
             onClick={() => setActiveVisitorTab('games')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 min-w-[140px] py-2.5 px-2.5 sm:px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeVisitorTab === 'games'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-slate-300 hover:bg-slate-800'
@@ -337,7 +337,7 @@ export default function VisitorPortal() {
           <button
             type="button"
             onClick={() => setActiveVisitorTab('history')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 min-w-[150px] py-2.5 px-2.5 sm:px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeVisitorTab === 'history'
                 ? 'bg-purple-600 text-white shadow-md'
                 : 'text-slate-300 hover:bg-slate-800'

@@ -815,14 +815,14 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
               </div>
 
               {/* Links Desktop */}
-              <nav className="hidden md:flex items-center gap-1.5">
+              <nav className="hidden md:flex items-center gap-1 flex-wrap justify-end max-w-full">
               {navLinks.map(link => {
                 const active = location.pathname === link.to;
                 return (
                   <Link
                     key={link.to}
                     to={link.to}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 relative ${
+                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 relative whitespace-nowrap ${
                       active ? 'bg-white/20 text-white shadow-inner' : 'text-blue-100 hover:bg-white/10'
                     }`}
                   >
@@ -839,7 +839,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
               <button
                 onClick={onSignOut}
-                className="ml-2 text-xs bg-red-500/80 hover:bg-red-600 text-white px-2.5 py-1.5 rounded-lg font-semibold transition shadow-2xs cursor-pointer"
+                className="ml-1 text-xs bg-red-500/80 hover:bg-red-600 text-white px-2.5 py-1.5 rounded-lg font-semibold transition shadow-2xs cursor-pointer whitespace-nowrap"
                 title="Encerrar sessão"
               >
                 Sair
@@ -889,16 +889,16 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
       {/* Banner de Simulação Ativa para o Administrador */}
       {isSimulating && (
-        <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-950 px-4 py-2 text-xs font-black flex items-center justify-between shadow-sm border-b border-amber-600 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-base animate-bounce">👁️</span>
-            <span>
+        <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-950 px-3 sm:px-4 py-2 text-xs font-black flex flex-wrap items-center justify-between gap-2 shadow-sm border-b border-amber-600 shrink-0 w-full">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base animate-bounce shrink-0">👁️</span>
+            <span className="leading-snug">
               MODO SIMULAÇÃO ATIVO: Você está navegando com os acessos de <strong>{simulatedRole === 'counselor' ? '🛡️ Conselheiro' : '👥 Participante'}</strong>.
             </span>
           </div>
           <button
             onClick={() => setSimulatedRole(null)}
-            className="bg-black hover:bg-gray-800 text-white px-3 py-1 rounded-lg text-[11px] font-black transition cursor-pointer shadow-xs"
+            className="bg-black hover:bg-gray-800 text-white px-3 py-1 rounded-lg text-[11px] font-black transition cursor-pointer shadow-xs shrink-0"
           >
             Sair da Simulação ✕
           </button>
@@ -919,7 +919,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
               </span>
               
               {isEditingContest ? (
-                <div className="flex items-center gap-1 animate-in fade-in zoom-in-95">
+                <div className="flex items-center gap-1 animate-in fade-in zoom-in-95 flex-wrap">
                   <input
                     type="number"
                     placeholder="Ex: 3251"
@@ -1001,15 +1001,15 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
             : 'overflow-y-auto overscroll-y-contain'
         }`}
       >
-        <div className={isChatPage ? 'flex-1 flex flex-col min-h-0 w-full' : 'max-w-4xl w-full mx-auto px-2.5 py-3 sm:p-5'}>
+        <div className={isChatPage ? 'flex-1 flex flex-col min-h-0 w-full' : 'max-w-4xl w-full mx-auto px-2.5 py-3 sm:p-5 overflow-x-hidden'}>
         {/* Banner de Permissão de Notificação (Android 13+ / Samsung One UI) */}
         {showPermissionBanner && !isChatPage && (
           <div className="mb-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-amber-400/40">
-            <div className="flex items-start sm:items-center gap-3">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-xl shrink-0 shadow-xs animate-bounce">
                 🔔
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h4 className="text-xs sm:text-sm font-black uppercase tracking-wide">
                     Notificações Desativadas no Celular
@@ -1024,7 +1024,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center flex-wrap">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
               <button
                 type="button"
                 onClick={async () => {
@@ -1037,7 +1037,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                     setShowPermissionGuide(true);
                   }
                 }}
-                className="bg-white hover:bg-amber-50 text-amber-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                className="flex-1 sm:flex-initial bg-white hover:bg-amber-50 text-amber-950 font-black text-xs px-3 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <span>✨</span>
                 <span>Permitir Notificações</span>
@@ -1046,7 +1046,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
               <button
                 type="button"
                 onClick={() => setShowPermissionGuide(true)}
-                className="bg-amber-950/60 hover:bg-amber-950 text-white font-bold text-xs px-3 py-2 rounded-xl transition cursor-pointer border border-white/20"
+                className="flex-1 sm:flex-initial bg-amber-950/60 hover:bg-amber-950 text-white font-bold text-xs px-3 py-2 rounded-xl transition cursor-pointer border border-white/20 text-center"
               >
                 ⚙️ Como Ativar
               </button>
@@ -1069,16 +1069,16 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         {/* Modal de Guia de Configuração de Notificações */}
         {showPermissionGuide && (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
                   <span>⚙️</span>
                   <span>Como Ativar Notificações no Celular</span>
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowPermissionGuide(false)}
-                  className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-bold flex items-center justify-center cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-bold flex items-center justify-center cursor-pointer shrink-0"
                 >
                   ✕
                 </button>
@@ -1098,7 +1098,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                 </ol>
               </div>
 
-              <div className="flex justify-between items-center pt-2">
+              <div className="flex flex-wrap justify-between items-center gap-2 pt-2">
                 <button
                   type="button"
                   onClick={async () => {
@@ -1110,14 +1110,14 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                       addToast('Permissão concedida com sucesso!', 'success');
                     }
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer shadow-xs"
+                  className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer shadow-xs"
                 >
                   🔄 Verificar se Ativou
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowPermissionGuide(false)}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold text-xs px-4 py-2 rounded-xl cursor-pointer"
+                  className="flex-1 sm:flex-initial bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold text-xs px-4 py-2 rounded-xl cursor-pointer"
                 >
                   Fechar
                 </button>
@@ -1128,11 +1128,11 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         {/* Banner de Pedidos Pendentes (Entradas e Cotas) */}
         {totalPendingCount > 0 && canManageMembers && (
           <div className="mb-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
-            <div className="flex items-start sm:items-center gap-3">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-xl shrink-0 shadow-xs animate-bounce">
                 📢
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h4 className="text-xs sm:text-sm font-black uppercase tracking-wide">
                     {totalPendingCount} Pedido(s) Pendente(s) de Aprovação
@@ -1151,7 +1151,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
             <button
               onClick={() => navigate('/contatos')}
-              className="bg-white hover:bg-red-50 text-red-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 shrink-0"
+              className="w-full sm:w-auto bg-white hover:bg-red-50 text-red-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 shrink-0"
             >
               <span>Ver e Aprovar na Lista</span>
               <span>➔</span>
@@ -1209,7 +1209,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
                   navigate('/');
                 }
               }}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white font-extrabold text-xs shadow-md hover:scale-102 hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 border border-white/10"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white font-extrabold text-xs shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 border border-white/10"
               title="Voltar à página inicial"
             >
               <span>←</span> Voltar para o Início
@@ -1674,14 +1674,14 @@ export default function App() {
                   {/* 2. Dashboard Financeiro Principal (Apenas Admin) */}
                   {isUserAdmin && (
                     <div className="bg-white rounded-xl shadow-xs border overflow-hidden">
-                      <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                      <div className="p-3 sm:p-4 border-b bg-gray-50 flex flex-wrap justify-between items-center gap-2">
                         <h2 className="font-bold text-sm text-gray-800">📊 Painel Financeiro e Caixa</h2>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                           {(activeUserData?.role === 'admin' || activeUserData?.role === 'counselor' || activeUser?.email === 'clodas12345@gmail.com' || (activeUserData?.phone && normalizeBrazilianPhoneDigits(activeUserData.phone).includes('11953292570'))) && (
                             <>
                               <button
                                 onClick={() => window.print()}
-                                className="bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                                className="flex-1 sm:flex-initial justify-center bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap"
                               >
                                 <span>🖨️</span> Imprimir Relatório
                               </button>

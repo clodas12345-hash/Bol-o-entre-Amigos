@@ -57,7 +57,7 @@ export default function ExportButton() {
     <button
       onClick={exportToCSV}
       title="Baixar planilha para Excel / Google Planilhas"
-      className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs px-3 py-1.5 rounded font-medium shadow-sm transition flex items-center gap-1"
+      className="flex-1 sm:flex-initial justify-center bg-emerald-700 hover:bg-emerald-800 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
     >
       <span>📊</span> Exportar CSV
     </button>

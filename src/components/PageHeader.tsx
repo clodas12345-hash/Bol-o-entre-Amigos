@@ -29,22 +29,22 @@ export default function PageHeader({ title, subtitle, icon, backTo }: PageHeader
   const isHome = location.pathname === '/';
 
   return (
-    <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-3 sm:p-4 mb-4 shadow-xs">
-      <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 bg-white border border-gray-200 rounded-xl p-3 sm:p-4 mb-4 shadow-xs w-full overflow-hidden">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         {!isHome && (
           <button
             onClick={handleBack}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition shadow-2xs"
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition shadow-2xs shrink-0 cursor-pointer"
             title="Voltar à página anterior"
           >
-            <span>←</span> Voltar
+            <span>←</span> <span className="hidden xs:inline">Voltar</span>
           </button>
         )}
-        <div className="flex items-center gap-2">
-          {icon && <span className="text-xl">{icon}</span>}
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-gray-800 leading-tight">{title}</h1>
-            {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+        <div className="flex items-center gap-2 min-w-0">
+          {icon && <span className="text-lg sm:text-xl shrink-0">{icon}</span>}
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-lg font-bold text-gray-800 leading-tight truncate">{title}</h1>
+            {subtitle && <p className="text-[11px] sm:text-xs text-gray-500 line-clamp-1">{subtitle}</p>}
           </div>
         </div>
       </div>
@@ -52,10 +52,10 @@ export default function PageHeader({ title, subtitle, icon, backTo }: PageHeader
       {!isHome && (
         <button
           onClick={handleClose}
-          className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-700 border border-gray-200 hover:border-red-200 rounded-lg text-xs font-semibold transition"
+          className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-700 border border-gray-200 hover:border-red-200 rounded-lg text-xs font-semibold transition shrink-0 cursor-pointer"
           title="Fechar e ir para o Início"
         >
-          <span>✕</span> Fechar
+          <span>✕</span> <span className="hidden xs:inline">Fechar</span>
         </button>
       )}
     </div>

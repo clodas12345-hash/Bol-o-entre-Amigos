@@ -204,13 +204,13 @@ export default function Settings() {
         <button
           type="button"
           onClick={() => setShowNotifPanel(!showNotifPanel)}
-          className="w-full p-4 sm:p-5 bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white flex items-center justify-between gap-3 text-left cursor-pointer hover:opacity-95 transition"
+          className="w-full p-3.5 sm:p-5 bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-left cursor-pointer hover:opacity-95 transition"
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-xl sm:text-2xl shrink-0 shadow-inner">
               🔔
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-black tracking-tight text-white">
                   Notificações do Aplicativo
@@ -229,8 +229,8 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="bg-amber-400 text-indigo-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1">
+          <div className="flex items-center justify-end gap-2 w-full sm:w-auto shrink-0">
+            <span className="w-full sm:w-auto justify-center bg-amber-400 text-indigo-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1">
               <span>🔔 Notificação</span>
               <span className={`text-[9px] transition-transform duration-200 ${showNotifPanel ? 'rotate-180' : ''}`}>▼</span>
             </span>
@@ -253,13 +253,13 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
+              <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto flex-wrap">
                 {/* Botão Testar Notificação Obrigatório */}
                 <button
                   type="button"
                   onClick={handleTestNotification}
                   disabled={isTestingNotif}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial justify-center bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
                 >
                   <span>{isTestingNotif ? '⏳' : '🚀'}</span>
                   <span>Testar agora</span>
@@ -269,7 +269,7 @@ export default function Settings() {
                   type="button"
                   onClick={handleTestDelayedNotification}
                   disabled={isTestingNotif}
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial justify-center bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-3 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
                 >
                   <span>{isTestingNotif ? '⏳' : '⏰'}</span>
                   <span>Testar 5s</span>
@@ -278,7 +278,7 @@ export default function Settings() {
                 <button
                   type="button"
                   onClick={() => handleUpdatePreference({ pushEnabled: !prefs.pushEnabled })}
-                  className={`px-3.5 py-2 rounded-xl font-black text-xs transition cursor-pointer shadow-xs ${
+                  className={`flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl font-black text-xs transition cursor-pointer shadow-xs whitespace-nowrap ${
                     prefs.pushEnabled
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                       : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
@@ -287,87 +287,6 @@ export default function Settings() {
                   {prefs.pushEnabled ? 'Ativado ✓' : 'Desativado'}
                 </button>
               </div>
-            </div>
-
-            {/* Painel de Depuração / Status da Permissão (Requisito 6) */}
-            <div className="p-3.5 rounded-xl bg-gray-900 text-gray-100 border border-gray-800 space-y-2.5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                  <span>🛠️</span>
-                  <span>Diagnóstico & Status das Notificações (Android / Samsung One UI)</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={refreshPermissionStatus}
-                  className="text-[10px] text-gray-400 hover:text-white underline cursor-pointer"
-                >
-                  🔄 Atualizar Status
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                <div className="bg-gray-800/80 p-2.5 rounded-lg border border-gray-700">
-                  <span className="text-[10px] uppercase text-gray-400 block font-bold">Status da Permissão</span>
-                  <div className="mt-1 flex items-center gap-1.5 font-black">
-                    {notifDetails?.granted ? (
-                      <span className="text-emerald-400 flex items-center gap-1">
-                        <span>🟢</span> Concedida ({notifDetails.display})
-                      </span>
-                    ) : (
-                      <span className="text-red-400 flex items-center gap-1">
-                        <span>🔴</span> {notifDetails?.display === 'denied' ? 'Negada (denied)' : 'Pendente / Bloqueada'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="bg-gray-800/80 p-2.5 rounded-lg border border-gray-700">
-                  <span className="text-[10px] uppercase text-gray-400 block font-bold">Notification Channel</span>
-                  <div className="mt-1 flex items-center gap-1.5 font-bold text-blue-300">
-                    <span>📢</span> ID: &quot;default&quot; (Importância Alta / 5)
-                  </div>
-                </div>
-
-                <div className="bg-gray-800/80 p-2.5 rounded-lg border border-gray-700">
-                  <span className="text-[10px] uppercase text-gray-400 block font-bold">Alarmes Exatos / One UI</span>
-                  <div className="mt-1 flex items-center gap-1.5 font-bold text-purple-300">
-                    <span>⏰</span> {Capacitor.isNativePlatform() ? 'SCHEDULE_EXACT_ALARM Ativo' : 'Navegador Web'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Exibição de Erros em Tela para Depuração */}
-              <div className="bg-gray-950 p-2.5 rounded-lg border border-gray-800 text-[11px] font-mono">
-                <span className="text-gray-400 font-bold block mb-1">Log de Erros / Diagnóstico:</span>
-                {getLastNotificationError() || notifDetails?.error ? (
-                  <span className="text-red-400 font-semibold break-all">
-                    ⚠️ {getLastNotificationError() || notifDetails?.error}
-                  </span>
-                ) : (
-                  <span className="text-emerald-400 font-medium">
-                    ✓ Nenhum erro registrado. Notificações locais configuradas e operacionais.
-                  </span>
-                )}
-              </div>
-
-              {!notifDetails?.granted && (
-                <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={handleRequestPermissionClick}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
-                  >
-                    🔔 Solicitar Permissão em Tempo Real
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowSamsungGuide(true)}
-                    className="bg-gray-800 hover:bg-gray-700 text-indigo-300 font-bold text-xs px-3 py-1.5 rounded-lg border border-gray-700 transition cursor-pointer"
-                  >
-                    📖 Como Liberar no Samsung One UI
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Lista de Opções para o Participante Escolher */}

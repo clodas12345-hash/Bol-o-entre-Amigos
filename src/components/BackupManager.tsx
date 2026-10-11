@@ -648,11 +648,11 @@ export default function BackupManager() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
             <button
               onClick={handleRunDailyCloudBackup}
               disabled={isAutoBackingUp || isExporting || isImporting}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+              className="flex-1 sm:flex-initial bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {isAutoBackingUp ? (
                 <>
@@ -667,7 +667,7 @@ export default function BackupManager() {
             <button
               onClick={handleCloudRestore}
               disabled={isAutoBackingUp || isExporting || isImporting}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+              className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {isImporting ? (
                 <>
@@ -682,7 +682,7 @@ export default function BackupManager() {
           </div>
         </div>
 
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs text-emerald-900">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900">
           <div className="flex items-center gap-2 font-bold">
             <span className="text-base">🟢</span>
             <span>Status: Cópia Diária na Nuvem Ativa e Sincronizada</span>

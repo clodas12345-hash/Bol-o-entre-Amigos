@@ -846,11 +846,11 @@ export default function MembersList() {
       )}
 
       {/* Abas Rápidas de Filtragem */}
-      <div className="flex border-b border-gray-200 bg-gray-100/90 p-1 gap-1 text-xs rounded-xl overflow-x-auto scrollbar-none">
+      <div className="flex flex-wrap border-b border-gray-200 bg-gray-100/90 p-1.5 gap-1.5 text-xs rounded-xl w-full">
         <button
           type="button"
           onClick={() => setMemberFilterTab('all')}
-          className={`flex-1 py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
+          className={`flex-1 sm:flex-initial py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
             memberFilterTab === 'all'
               ? 'bg-blue-700 text-white shadow-xs font-black'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -864,7 +864,7 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setMemberFilterTab('pending')}
-            className={`flex-1 py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative whitespace-nowrap ${
+            className={`flex-1 sm:flex-initial py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold relative whitespace-nowrap ${
               memberFilterTab === 'pending'
                 ? 'bg-red-600 text-white shadow-xs font-black'
                 : (pendingJoinRequests.length + pendingQuotaRequests.length > 0)
@@ -880,7 +880,7 @@ export default function MembersList() {
         <button
           type="button"
           onClick={() => setMemberFilterTab('approved')}
-          className={`flex-1 py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
+          className={`flex-1 sm:flex-initial py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
             memberFilterTab === 'approved'
               ? 'bg-emerald-700 text-white shadow-xs font-black'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -894,7 +894,7 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setMemberFilterTab('unpaid')}
-            className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            className={`flex-1 sm:flex-initial py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
               memberFilterTab === 'unpaid'
                 ? 'bg-amber-600 text-white shadow-xs font-black'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -908,7 +908,7 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setMemberFilterTab('receipts')}
-            className={`flex-1 min-w-[140px] py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold ${
+            className={`flex-1 sm:flex-initial py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
               memberFilterTab === 'receipts'
                 ? 'bg-purple-700 text-white shadow-xs font-black'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -1055,11 +1055,11 @@ export default function MembersList() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           {canCreateMember && (
             <button
               onClick={() => setShowAddForm(!showAddForm)}
-              className="px-3.5 py-2 text-xs font-black rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
+              className="w-full sm:w-auto justify-center px-3.5 py-2 text-xs font-black rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
             >
               {showAddForm ? '✕ Cancelar' : '+ Cadastrar Novo Contato'}
             </button>
@@ -1070,16 +1070,18 @@ export default function MembersList() {
       {/* Formulário Completo de Cadastro de Membro */}
       {showAddForm && (
         <form onSubmit={handleAddMember} className="bg-gradient-to-br from-gray-50 to-emerald-50/20 p-4 rounded-xl border border-emerald-200 mb-4 transition-all space-y-3 animate-in slide-in-from-top-2 duration-200">
-          <div className="flex justify-between items-center border-b pb-2 border-emerald-100">
+          <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-2 border-emerald-100">
             <h3 className="font-bold text-sm text-emerald-950">📋 Cadastro de Novo Contato no Bolão</h3>
-            <button 
-              type="button"
-              onClick={handlePickContact}
-              className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
-            >
-              <UserSearch size={12} /> Buscar na Agenda
-            </button>
-            <span className="text-[10px] text-emerald-700 font-medium">Chave PIX: <strong>11953292570</strong></span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button 
+                type="button"
+                onClick={handlePickContact}
+                className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer bg-blue-50 px-2 py-1 rounded-md border border-blue-200"
+              >
+                <UserSearch size={12} /> Buscar na Agenda
+              </button>
+              <span className="text-[10px] text-emerald-700 font-medium">Chave PIX: <strong>11953292570</strong></span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">

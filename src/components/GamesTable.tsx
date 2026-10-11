@@ -1550,22 +1550,22 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         </div>
 
         {/* Barra de Navegação Rápida entre Concursos */}
-        <div className="bg-black/30 backdrop-blur-xs p-2 sm:p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 border border-white/10 text-xs">
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-1 sm:flex-initial">
+        <div className="bg-black/30 backdrop-blur-xs p-2 sm:p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 border border-white/10 text-xs w-full overflow-hidden">
+          <div className="flex items-center gap-1 sm:gap-2 flex-1 sm:flex-initial min-w-0 justify-between sm:justify-start">
             <button
               type="button"
               onClick={() => handleNavigateContest('prev')}
               disabled={isUpdatingResult || !latestResult?.contest}
-              className="flex-1 sm:flex-initial bg-white/20 hover:bg-white/30 active:scale-95 text-white font-black px-3.5 py-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 shadow-sm border border-white/15"
+              className="flex-1 sm:flex-initial bg-white/20 hover:bg-white/30 active:scale-95 text-white font-black px-2 sm:px-3.5 py-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 shadow-sm border border-white/15 min-w-0"
               title="Voltar para o concurso anterior"
             >
-              <span className="text-base">◀</span>
-              <span>Anterior</span>
+              <span className="text-sm sm:text-base">◀</span>
+              <span className="truncate">Anterior</span>
             </button>
 
-            <div className="px-3 py-1.5 bg-purple-950/90 rounded-xl border border-purple-400/40 text-center">
-              <span className="text-[10px] text-purple-300 block uppercase font-bold tracking-wider">Concurso</span>
-              <span className="text-sm font-black text-amber-300">
+            <div className="px-2 sm:px-3 py-1.5 bg-purple-950/90 rounded-xl border border-purple-400/40 text-center shrink-0">
+              <span className="text-[9px] sm:text-[10px] text-purple-300 block uppercase font-bold tracking-wider">Concurso</span>
+              <span className="text-xs sm:text-sm font-black text-amber-300">
                 #{latestResult?.contest || '---'}
               </span>
             </div>
@@ -1574,11 +1574,11 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
               type="button"
               onClick={() => handleNavigateContest('next')}
               disabled={isUpdatingResult || !latestResult?.contest}
-              className="flex-1 sm:flex-initial bg-white/20 hover:bg-white/30 active:scale-95 text-white font-black px-3.5 py-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 shadow-sm border border-white/15"
+              className="flex-1 sm:flex-initial bg-white/20 hover:bg-white/30 active:scale-95 text-white font-black px-2 sm:px-3.5 py-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 shadow-sm border border-white/15 min-w-0"
               title="Avançar para o próximo concurso"
             >
-              <span>Próximo</span>
-              <span className="text-base">▶</span>
+              <span className="truncate">Próximo</span>
+              <span className="text-sm sm:text-base">▶</span>
             </button>
           </div>
 
@@ -1591,19 +1591,19 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 setJumpContestInput('');
               }
             }}
-            className="flex items-center gap-1.5 w-full sm:w-auto justify-end"
+            className="flex items-center gap-1.5 w-full sm:w-auto justify-end min-w-0"
           >
             <input
               type="number"
               placeholder="Ir p/ Concurso..."
               value={jumpContestInput}
               onChange={(e) => setJumpContestInput(e.target.value)}
-              className="bg-black/40 text-white placeholder-purple-300/60 text-xs px-3 py-1.5 rounded-lg border border-white/20 focus:outline-none focus:border-amber-400 w-32"
+              className="flex-1 sm:flex-initial bg-black/40 text-white placeholder-purple-300/60 text-xs px-3 py-1.5 rounded-lg border border-white/20 focus:outline-none focus:border-amber-400 min-w-0 sm:w-32"
             />
             <button
               type="submit"
               disabled={!jumpContestInput.trim() || isUpdatingResult}
-              className="bg-amber-400 hover:bg-amber-300 text-gray-950 font-black px-3 py-1.5 rounded-lg transition cursor-pointer disabled:opacity-40 shadow-sm"
+              className="bg-amber-400 hover:bg-amber-300 text-gray-950 font-black px-3 py-1.5 rounded-lg transition cursor-pointer disabled:opacity-40 shadow-sm shrink-0"
             >
               Ir
             </button>
@@ -1803,8 +1803,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         ) : (
           <>
 
-            <div className="p-3 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="p-3 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 w-full overflow-hidden">
+              <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap">
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                   {gamesTab === 'today' ? `Jogos de Hoje (${filteredGames.length})` : `Apostas Futuras (${filteredGames.length})`}
                 </span>
@@ -1828,41 +1828,41 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+              <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
                 {onOpenNewGame && canCreateGames && (
                   <button
                     onClick={onOpenNewGame}
-                    className="text-xs font-black text-white bg-purple-700 hover:bg-purple-800 border border-purple-600 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-2xs active:scale-95"
+                    className="text-xs font-black text-white bg-purple-700 hover:bg-purple-800 border border-purple-600 px-2.5 py-1.5 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs active:scale-95"
                     title="Adicionar uma nova aposta de forma manual ou lendo foto do bilhete"
                   >
-                    <span>➕</span> Adicionar Aposta
+                    <span>➕</span> <span className="truncate">Adicionar Aposta</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={handleToggleExpandAll}
-                  className="text-xs font-bold text-gray-700 hover:text-gray-950 bg-white hover:bg-gray-100 border border-gray-300 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-2xs active:scale-95"
+                  className="text-xs font-bold text-gray-700 hover:text-gray-950 bg-white hover:bg-gray-100 border border-gray-300 px-2.5 py-1.5 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs active:scale-95"
                   title={areAllExpanded ? "Recolher concursos e focar apenas no sorteio do dia" : "Expandir todos os concursos para ver as apostas completas"}
                 >
-                  <span>{areAllExpanded ? '🔒 Recolher' : '🔓 Expandir Todos'}</span>
+                  <span className="truncate">{areAllExpanded ? '🔒 Recolher' : '🔓 Expandir Todos'}</span>
                 </button>
                 {isAdmin && (
                   <button
                     type="button"
                     onClick={() => setShowVolantesComparator(true)}
-                    className="text-xs font-black text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/50 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-xs active:scale-95"
+                    className="text-xs font-black text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/50 px-2.5 py-1.5 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition shadow-xs active:scale-95"
                     title="Auditar, varrer e conferir todos os volantes contra os concursos oficiais da Caixa"
                   >
-                    <span>🎯</span> Auditor de Apostas
+                    <span>🎯</span> <span className="truncate">Auditor de Apostas</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setShowFlyerModal(true)}
-                  className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer transition shadow-2xs active:scale-95"
+                  className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs active:scale-95"
                   title="Gerar PDF para imprimir volantes oficiais"
                 >
-                  <span>🖨️</span> Imprimir Volantes
+                  <span>🖨️</span> <span className="truncate">Imprimir Volantes</span>
                 </button>
               </div>
             </div>
@@ -2038,7 +2038,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap ml-auto" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto justify-end" onClick={e => e.stopPropagation()}>
                         {!isDayGroup && !group.isFuture && group.contestNumber && (
                           <button
                             type="button"
@@ -2047,7 +2047,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                               handleNavigateContest(group.contestNumber!);
                             }}
                             disabled={isUpdatingResult}
-                            className={`text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-40 shadow-xs whitespace-nowrap ${
+                            className={`flex-1 sm:flex-initial justify-center text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-40 shadow-xs whitespace-nowrap ${
                               isGroupOfCurrentResult
                                 ? 'bg-amber-400 text-gray-950 ring-2 ring-amber-300'
                                 : 'bg-purple-900 hover:bg-purple-800 text-white'
@@ -2074,7 +2074,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                               );
                               window.open(`https://wa.me/?text=${text}`, '_blank');
                             }}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                            className="flex-1 sm:flex-initial justify-center bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
                             title="Enviar balanço deste concurso no WhatsApp"
                           >
                             <span>📲</span> WhatsApp
@@ -2088,7 +2088,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                               e.stopPropagation();
                               setGroupToDelete(group);
                             }}
-                            className={`text-xs font-black px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs border whitespace-nowrap ${
+                            className={`flex-1 sm:flex-initial justify-center text-xs font-black px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs border whitespace-nowrap ${
                               isDayGroup || group.isFuture
                                 ? 'bg-red-600/90 hover:bg-red-500 text-white border-red-400/50'
                                 : 'bg-red-100 hover:bg-red-200 text-red-800 border-red-300'
@@ -2105,7 +2105,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                             e.stopPropagation();
                             toggleGroup(group.key, !!group.isToday, isFirstGroup);
                           }}
-                          className={`text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap ${
+                          className={`flex-1 sm:flex-initial justify-center text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap ${
                             isDayGroup || group.isFuture
                               ? 'bg-white text-slate-900 hover:bg-slate-100'
                               : 'bg-purple-900 hover:bg-purple-800 text-white'
@@ -2154,8 +2154,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                             )}
 
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-900 text-xs font-black flex items-center justify-center">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-900 text-xs font-black flex items-center justify-center shrink-0">
                                   #{gameIndex + 1}
                                 </span>
                                 <span className="font-bold text-sm text-gray-800">
@@ -2173,8 +2173,8 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-2">
-                                <span className={`text-xs px-3 py-1 rounded-md shadow-xs ${hitsInfo.badgeColor}`}>
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                <span className={`text-xs px-2.5 sm:px-3 py-1 rounded-md shadow-xs whitespace-nowrap ${hitsInfo.badgeColor}`}>
                                   {hitsInfo.statusText}
                                 </span>
 
@@ -2184,7 +2184,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                                       totalPrize: hitsInfo.prizeAmount,
                                       contestName: `Jogo #${gameIndex + 1} (${group.contestTitle})`
                                     })}
-                                    className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-black px-2.5 py-1 rounded shadow transition cursor-pointer flex items-center gap-1"
+                                    className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-black px-2.5 py-1 rounded shadow transition cursor-pointer flex items-center gap-1 whitespace-nowrap"
                                     title="Ratear este prêmio entre as cotas"
                                   >
                                     <span>💰</span> Dividir Cota
@@ -2194,7 +2194,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                                 {game.receiptURL && (
                                   <button
                                     onClick={() => setSelectedReceipt(game.receiptURL)}
-                                    className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                                    className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer whitespace-nowrap"
                                   >
                                     Ver Bilhete
                                   </button>
