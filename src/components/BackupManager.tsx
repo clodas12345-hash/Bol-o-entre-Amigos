@@ -175,10 +175,18 @@ export default function BackupManager() {
       
       let data: any = null;
       if (history && history.length > 0) {
-        try {
-          data = JSON.parse(history[0].data);
-        } catch (parseErr) {
-          console.error('Error parsing latest backup json:', parseErr);
+        // Ordena para pegar o backup com o maior número de registros (1400+ jogos)
+        history.sort((a: any, b: any) => (b.totalRecords || 0) - (a.totalRecords || 0));
+        for (const item of history) {
+          try {
+            const parsed = JSON.parse(item.data);
+            if (parsed && Object.keys(parsed).length > 0) {
+              data = parsed;
+              break;
+            }
+          } catch (parseErr) {
+            console.error('Error parsing backup json:', parseErr);
+          }
         }
       }
 

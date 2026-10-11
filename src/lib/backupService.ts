@@ -186,25 +186,6 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
 export async function saveDailyCloudBackupToFirestore(): Promise<{ id: string; totalRecords: number; isNew: boolean }> {
   const todayStr = new Date().toLocaleDateString('pt-BR');
   
-  // Verifica se já existe backup gerado na nuvem na data de hoje
-  try {
-    const qToday = query(
-      collection(db, 'backups_history'), 
-      where('dateRef', '==', todayStr), 
-      limit(1)
-    );
-    const existingSnap = await getDocs(qToday);
-    if (!existingSnap.empty) {
-      const docData = existingSnap.docs[0].data();
-      return { 
-        id: existingSnap.docs[0].id, 
-        totalRecords: docData.totalRecords || 0,
-        isNew: false 
-      };
-    }
-  } catch (e) {
-    console.warn('Verificação de backup diário anterior:', e);
-  }
 
   // Gera novo backup na nuvem
   const backupData: Record<string, any[]> = {
