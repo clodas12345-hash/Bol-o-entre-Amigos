@@ -162,34 +162,64 @@ export default function BackupManager() {
   };
 
   const handleCloudRestore = async () => {
-    addToast('☁️ Verificando backup mais recente na nuvem...', 'info');
+    addToast('☁️ Conectando à nuvem para puxar dados...', 'info');
     setIsImporting(true);
     
     try {
-      const history = await getBackupsHistory();
-      if (!history || history.length === 0) {
-        addToast('Nenhum backup encontrado na nuvem.', 'error');
+      let history: any[] = [];
+      try {
+        history = await getBackupsHistory();
+      } catch (e) {
+        console.warn('Could not fetch backup history, fetching collections directly:', e);
+      }
+      
+      let data: any = null;
+      if (history && history.length > 0) {
+        try {
+          data = JSON.parse(history[0].data);
+        } catch (parseErr) {
+          console.error('Error parsing latest backup json:', parseErr);
+        }
+      }
+
+      if (!data) {
+        addToast('☁️ Baixando coleções ativas da nuvem...', 'info');
+        data = {};
+        const COLLECTIONS = ['pools', 'games', 'members', 'users', 'payments', 'lotofacil_results', 'megasena_results', 'chats', 'polls'];
+        for (const colName of COLLECTIONS) {
+          try {
+            const snap = await getDocs(collection(db, colName));
+            data[colName] = snap.docs.map(d => ({
+              id: d.id,
+              data: d.data()
+            }));
+          } catch (colErr) {
+            console.warn(`Warning fetching ${colName}:`, colErr);
+            data[colName] = [];
+          }
+        }
+      }
+
+      if (!data || Object.keys(data).length === 0) {
+        addToast('Nenhum dado encontrado na nuvem para restaurar.', 'error');
         setIsImporting(false);
         return;
       }
-      
-      const latestBackup = history[0];
-      const data = JSON.parse(latestBackup.data);
       
       setPreviewData(data);
       await executeImportLogic(data);
       
       localStorage.setItem('last_cloud_sync', new Date().toLocaleString('pt-BR'));
     } catch (err) {
-      console.error(err);
-      addToast('Erro ao restaurar da nuvem.', 'error');
+      console.error('Cloud restore error:', err);
+      addToast('Erro ao puxar backup da nuvem. Verifique sua conexão.', 'error');
       setIsImporting(false);
     }
   };
 
   const executeImportLogic = async (data: any) => {
     setImportProgress(0);
-    addToast('📤 Restaurando e mesclando registros do backup na nuvem...', 'info');
+    addToast('📤 Restaurando e sincronizando registros...', 'info');
 
     try {
       const collections = Object.keys(data).filter(c => c !== '_metadata');
@@ -200,15 +230,23 @@ export default function BackupManager() {
         }
       });
 
+      if (totalDocs === 0) {
+        addToast('Nenhum registro para importar.', 'info');
+        setIsImporting(false);
+        return;
+      }
+
       let importedCount = 0;
       for (const colName of collections) {
         const docsList = data[colName];
         if (!Array.isArray(docsList)) continue;
 
         for (const docItem of docsList) {
-          if (!docItem.id || !docItem.data) continue;
+          if (!docItem.id) continue;
 
-          const restoredData = { ...docItem.data };
+          const restoredData = docItem.data ? { ...docItem.data } : { ...docItem };
+          delete restoredData.id;
+
           for (const key in restoredData) {
             if (restoredData[key] && restoredData[key].__type === 'timestamp') {
               const { seconds, nanoseconds } = restoredData[key];
@@ -218,20 +256,24 @@ export default function BackupManager() {
             }
           }
 
-          await setDoc(doc(db, colName, docItem.id), restoredData, { merge: true });
+          try {
+            await setDoc(doc(db, colName, docItem.id), restoredData, { merge: true });
+          } catch (docErr) {
+            console.warn(`Error setting doc ${colName}/${docItem.id}:`, docErr);
+          }
           importedCount++;
           setImportProgress(Math.round((importedCount / totalDocs) * 100));
         }
       }
 
-      addToast(`🎉 Backup restaurado com sucesso! ${importedCount} registros foram importados.`, 'success');
+      addToast(`🎉 Backup puxado e restaurado com sucesso! ${importedCount} registros sincronizados.`, 'success');
       
       setTimeout(() => {
         window.location.reload();
       }, 1500);
     } catch (err) {
       console.error(err);
-      addToast('Erro ao importar o backup para o Firestore.', 'error');
+      addToast('Erro ao importar o backup para o banco de dados.', 'error');
       setIsImporting(false);
     }
   };

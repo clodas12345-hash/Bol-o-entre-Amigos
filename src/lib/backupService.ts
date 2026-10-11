@@ -280,13 +280,33 @@ export async function saveBackupToFirestore(): Promise<{ id: string; totalRecord
   return { id: result.id, totalRecords: result.totalRecords };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number = 7000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Timeout de requisição')), ms))
+  ]);
+}
+
 export async function getBackupsHistory(): Promise<any[]> {
   try {
     const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(30));
-    const snap = await getDocs(q);
+    const snap = await withTimeout(getDocs(q), 7000);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
-    console.error('Error fetching backup history:', err);
-    return [];
+    console.warn('Error fetching backup history with orderBy, falling back without orderBy:', err);
+    try {
+      const snap = await withTimeout(getDocs(collection(db, 'backups_history')), 5000);
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => {
+        const tA = a.createdAt?.seconds || 0;
+        const tB = b.createdAt?.seconds || 0;
+        return tB - tA;
+      });
+      return list.slice(0, 30);
+    } catch (fallbackErr) {
+      console.error('Error in fallback backup history:', fallbackErr);
+      return [];
+    }
   }
 }
+
