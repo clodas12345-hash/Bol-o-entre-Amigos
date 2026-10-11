@@ -736,12 +736,12 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
   return (
     <div
-      className={`${isChatPage ? 'h-dvh overflow-hidden' : 'min-h-dvh'} flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white`}
+      className="h-dvh overflow-hidden flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white"
     >
       {!hideHeader && (
         <header
           style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.25rem)' }}
-          className="bg-black text-white pb-1.5 px-3 sm:px-4 shadow-md border-b border-white/10 shrink-0 sticky top-0 z-50 w-full"
+          className="bg-black text-white pb-1.5 px-3 sm:px-4 shadow-md border-b border-white/10 shrink-0 z-50 w-full"
         >
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
               {/* Logo */}
@@ -877,7 +877,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
       {/* Banner de Simulação Ativa para o Administrador */}
       {isSimulating && (
-        <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-950 px-4 py-2 text-xs font-black flex items-center justify-between shadow-sm border-b border-amber-600">
+        <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-950 px-4 py-2 text-xs font-black flex items-center justify-between shadow-sm border-b border-amber-600 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-base animate-bounce">👁️</span>
             <span>
@@ -895,7 +895,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
       {/* Sub-header com Concurso Vigente Sincronizado (oculto no Chat) */}
       {!hideHeader && !isChatPage && (
-        <div className="bg-emerald-50 border-b border-emerald-100 py-1.5 px-2.5 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs w-full">
+        <div className="bg-emerald-50 border-b border-emerald-100 py-1.5 px-2.5 sm:px-4 text-xs font-semibold text-emerald-900 shadow-2xs w-full shrink-0 z-40">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap">
             <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
               <span className="flex h-2 w-2 relative shrink-0">
@@ -981,14 +981,15 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         <DrawCalendarModal onClose={() => setShowDrawCalendarModal(false)} />
       )}
 
-      {/* Conteúdo Principal */}
+      {/* Conteúdo Principal (Única área que rola; cabeçalho e rodapé ficam fixos) */}
       <main
-        className={`flex-1 max-w-4xl w-full mx-auto overflow-x-hidden ${
+        className={`flex-1 min-h-0 w-full overflow-x-hidden ${
           isChatPage
-            ? 'flex flex-col min-h-0 p-0 sm:px-4 sm:py-2 pb-[var(--safe-bottom,0px)] overflow-hidden'
-            : 'px-2.5 py-3 sm:p-5'
+            ? 'max-w-4xl mx-auto flex flex-col p-0 sm:px-4 sm:py-2 pb-[var(--safe-bottom,0px)] overflow-hidden'
+            : 'overflow-y-auto overscroll-y-contain'
         }`}
       >
+        <div className={isChatPage ? 'flex-1 flex flex-col min-h-0 w-full' : 'max-w-4xl w-full mx-auto px-2.5 py-3 sm:p-5'}>
         {/* Banner de Permissão de Notificação (Android 13+ / Samsung One UI) */}
         {showPermissionBanner && !isChatPage && (
           <div className="mb-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-amber-400/40">
@@ -1205,6 +1206,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         )}
 
         <BackgroundUploadStatus />
+        </div>
       </main>
 
       {/* Modal de Descrição do Logo */}
@@ -1264,8 +1266,8 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
       {!isChatPage && (
         <footer 
-          style={{ paddingBottom: 'calc(1rem + var(--safe-bottom, 0px))', paddingTop: '1rem' }} 
-          className="text-center text-[11px] text-gray-300 border-t border-white/10 bg-black mt-auto"
+          style={{ paddingBottom: 'calc(0.65rem + var(--safe-bottom, 0px))', paddingTop: '0.65rem' }} 
+          className="text-center text-[11px] text-gray-300 border-t border-white/10 bg-black shrink-0 z-40 w-full"
         >
           Bolão Amigos &copy; {new Date().getFullYear()} — Todos os direitos reservados.
         </footer>

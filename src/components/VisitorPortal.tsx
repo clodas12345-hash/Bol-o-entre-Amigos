@@ -207,9 +207,9 @@ export default function VisitorPortal() {
   };
 
   return (
-    <div className="min-h-dvh bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-white">
-      {/* Topo / Header Restrito */}
-      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 px-4 py-3">
+    <div className="h-dvh overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-white">
+      {/* Topo / Header Restrito Fixo */}
+      <header className="border-b border-white/10 bg-slate-950/90 backdrop-blur-md shrink-0 z-40 px-4 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <img src={logoImg} alt="Logotipo" className="w-9 h-9 rounded-xl object-cover border border-emerald-500/40 shadow-sm" />
@@ -236,8 +236,9 @@ export default function VisitorPortal() {
         </div>
       </header>
 
-      {/* Conteúdo Principal do Visitante */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5">
+      {/* Conteúdo Principal do Visitante (Rolável) */}
+      <main className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain w-full">
+        <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-5">
         {/* Navegação de Abas para Visitantes: Convite, Jogos Registrados e Histórico */}
         <div className="bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 flex gap-1.5 overflow-x-auto">
           <button
@@ -708,6 +709,7 @@ export default function VisitorPortal() {
             </Link>
           </div>
         </div>
+        </div>
       </main>
 
       {/* Modal de Envio de Comprovante para Visitante */}
@@ -781,8 +783,11 @@ export default function VisitorPortal() {
         </div>
       )}
 
-      {/* Footer Restrito */}
-      <footer className="border-t border-white/5 py-4 text-center text-[10px] text-slate-500">
+      {/* Footer Restrito Fixo */}
+      <footer
+        style={{ paddingBottom: 'calc(0.65rem + var(--safe-bottom, 0px))', paddingTop: '0.65rem' }}
+        className="border-t border-white/10 bg-slate-950 shrink-0 z-40 text-center text-[10px] text-slate-400 w-full"
+      >
         Bolão Amigos • Gestão Segura & Transparente • Todos os direitos reservados
       </footer>
     </div>
