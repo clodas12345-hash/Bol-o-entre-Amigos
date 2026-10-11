@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { getNextDrawDate, isDrawDay, formatDateBR } from './drawCalendar';
 
 let lastNotificationError: string | null = null;
@@ -1097,5 +1098,28 @@ export async function syncPendingPaymentThreeDayReminders(
   } catch (err) {
     console.warn('Erro ao sincronizar lembretes de 3 dias de pagamento pendente:', err);
   }
+}
+
+export async function registerPushNotificationsSafe(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const perm = await PushNotifications.checkPermissions();
+    let status = perm.receive;
+    if (status !== 'granted') {
+      const req = await PushNotifications.requestPermissions();
+      status = req.receive;
+    }
+    if (status === 'granted') {
+      try {
+        await PushNotifications.register();
+      } catch (regErr) {
+        console.warn('PushNotifications.register threw exception safely caught:', regErr);
+      }
+      return true;
+    }
+  } catch (err) {
+    console.warn('registerPushNotificationsSafe error caught safely:', err);
+  }
+  return false;
 }
 

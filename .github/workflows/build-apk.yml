@@ -34,6 +34,18 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync
 
+      - name: Verificar / Criar google-services.json
+        run: |
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
+            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > android/app/google-services.json
+            echo "✅ google-services.json criado a partir do secret GOOGLE_SERVICES_JSON_BASE64"
+          elif [ -f "android/app/google-services.json" ]; then
+            echo "✅ google-services.json encontrado no repositório versionado"
+          else
+            echo "❌ ERRO: google-services.json não encontrado nem no repositório nem em secret!"
+            exit 1
+          fi
+
       - name: Apply Android Icons
         run: npm run apply-android-icons
 
