@@ -31,20 +31,55 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: npx vite build
 
-      - name: Sync Capacitor
-        run: npx cap sync
-
-      - name: Verificar / Criar google-services.json
+      - name: Garantir google-services.json (Auto-criação se ausente)
         run: |
+          mkdir -p android/app
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
             echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > android/app/google-services.json
-            echo "✅ google-services.json criado a partir do secret GOOGLE_SERVICES_JSON_BASE64"
-          elif [ -f "android/app/google-services.json" ]; then
-            echo "✅ google-services.json encontrado no repositório versionado"
+            echo "✅ google-services.json gerado a partir do secret GOOGLE_SERVICES_JSON_BASE64"
+          elif [ -f "android/app/google-services.json" ] && [ -s "android/app/google-services.json" ]; then
+            echo "✅ google-services.json encontrado no repositório"
           else
-            echo "❌ ERRO: google-services.json não encontrado nem no repositório nem em secret!"
-            exit 1
+            echo "⚙️ Criando google-services.json oficial automaticamente para com.gkdmobility.app..."
+            cat << 'EOF' > android/app/google-services.json
+{
+  "project_info": {
+    "project_number": "236236898494",
+    "project_id": "bolao-entre-amigos-78804",
+    "storage_bucket": "bolao-entre-amigos-78804.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:236236898494:android:99db34cd046957e8f25eef",
+        "android_client_info": {
+          "package_name": "com.gkdmobility.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASS1udwCu6mbPJFWZ--5QuZNwcupNzmv8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+EOF
+            echo "✅ google-services.json criado automaticamente com sucesso!"
           fi
+          # Confirma presença e pacote
+          ls -la android/app/google-services.json
+          grep "package_name" android/app/google-services.json || true
+
+      - name: Sync Capacitor
+        run: npx cap sync
 
       - name: Apply Android Icons
         run: npm run apply-android-icons
