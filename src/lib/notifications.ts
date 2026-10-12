@@ -88,6 +88,10 @@ export async function requestNotificationPermissionWithDetails(): Promise<Notifi
         lastNotificationError = `Permissão negada pelo usuário ou bloqueada pelo sistema (${check.display})`;
       } else {
         lastNotificationError = null;
+        // Tenta registrar push notifications de forma segura sem travar o app
+        registerPushNotificationsSafe().catch((err) => {
+          console.warn('registerPushNotificationsSafe warning:', err);
+        });
       }
 
       let exactAlarm = 'unknown';

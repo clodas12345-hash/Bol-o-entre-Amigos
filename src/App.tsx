@@ -387,8 +387,22 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       return null;
     });
 
+    const appStatePromise = CapApp.addListener('appStateChange', (state) => {
+      if (state.isActive) {
+        window.dispatchEvent(new Event('bolao_app_resumed'));
+      }
+    }).catch((err) => {
+      console.debug('Capacitor appStateChange listener indisponível:', err);
+      return null;
+    });
+
     return () => {
       handlePromise.then((handler) => {
+        if (handler && typeof handler.remove === 'function') {
+          handler.remove();
+        }
+      }).catch(() => {});
+      appStatePromise.then((handler) => {
         if (handler && typeof handler.remove === 'function') {
           handler.remove();
         }

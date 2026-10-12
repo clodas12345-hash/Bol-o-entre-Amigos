@@ -560,6 +560,46 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     };
   }, [activePool]);
 
+  // Atualiza instantaneamente a lista de jogos e membros caso ocorra uma restauração de backup ou o app retorne do 2º plano
+  useEffect(() => {
+    const handleSyncFromCache = () => {
+      try {
+        const cachedGames = localStorage.getItem('bolao_cache_games');
+        if (cachedGames) {
+          const parsed = JSON.parse(cachedGames);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setGames(parsed);
+            setGamesReady(true);
+          }
+        }
+        const cachedMembers = localStorage.getItem('bolao_cache_members');
+        if (cachedMembers) {
+          const parsedM = JSON.parse(cachedMembers);
+          if (Array.isArray(parsedM) && parsedM.length > 0) {
+            setMembers(parsedM);
+          }
+        }
+        const cachedResults = localStorage.getItem('bolao_cache_results');
+        if (cachedResults) {
+          const parsedR = JSON.parse(cachedResults);
+          if (Array.isArray(parsedR) && parsedR.length > 0) {
+            setSavedResultsList(parsedR);
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar do cache local:', err);
+      }
+    };
+
+    window.addEventListener('bolao_data_restored', handleSyncFromCache);
+    window.addEventListener('bolao_app_resumed', handleSyncFromCache);
+
+    return () => {
+      window.removeEventListener('bolao_data_restored', handleSyncFromCache);
+      window.removeEventListener('bolao_app_resumed', handleSyncFromCache);
+    };
+  }, []);
+
   const drawnNumbers: number[] = Array.isArray(latestResult?.numbers)
     ? latestResult.numbers.map((n: any) => Number(n))
     : [];

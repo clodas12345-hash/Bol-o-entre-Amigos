@@ -271,29 +271,107 @@ export async function saveBackupToFirestore(): Promise<{ id: string; totalRecord
   return { id: result.id, totalRecords: result.totalRecords };
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number = 7000): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number = 10000): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Timeout de requisição')), ms))
   ]);
 }
 
+/**
+ * Busca de forma ultra-rápida e eficiente o backup mais rico (com mais registros, ex: 1400+ jogos)
+ * ou mais recente da nuvem, sem sobrecarregar a rede ou travar o celular.
+ */
+export async function getLatestAndRichestBackup(): Promise<any | null> {
+  // 1. Tenta buscar direto pelo maior número de registros (1400+ jogos)
+  try {
+    const qRecords = query(collection(db, 'backups_history'), orderBy('totalRecords', 'desc'), limit(3));
+    const snap = await withTimeout(getDocs(qRecords), 10000);
+    if (!snap.empty) {
+      for (const d of snap.docs) {
+        const item = d.data();
+        if (item?.data) {
+          try {
+            const parsed = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            if (parsed && ((Array.isArray(parsed.games) && parsed.games.length > 0) || Object.keys(parsed).length > 0)) {
+              return parsed;
+            }
+          } catch (pErr) {
+            console.warn('Erro ao parsear dados do backup por totalRecords:', pErr);
+          }
+        }
+      }
+    }
+  } catch (errRec) {
+    console.warn('Busca por totalRecords falhou ou index não disponível, tentando por data:', errRec);
+  }
+
+  // 2. Busca pelos backups mais recentes (limit 5) e escolhe o mais completo em memória
+  try {
+    const qRecent = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(5));
+    const snap = await withTimeout(getDocs(qRecent), 10000);
+    if (!snap.empty) {
+      const list = snap.docs.map(d => d.data());
+      list.sort((a: any, b: any) => (b.totalRecords || 0) - (a.totalRecords || 0));
+      for (const item of list) {
+        if (item?.data) {
+          try {
+            const parsed = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            if (parsed && ((Array.isArray(parsed.games) && parsed.games.length > 0) || Object.keys(parsed).length > 0)) {
+              return parsed;
+            }
+          } catch (pErr) {
+            console.warn('Erro ao parsear backup recente:', pErr);
+          }
+        }
+      }
+    }
+  } catch (errRecent) {
+    console.warn('Busca por createdAt falhou, tentando fallback direto:', errRecent);
+  }
+
+  // 3. Fallback seguro sem orderBy com limit(5)
+  try {
+    const qSafe = query(collection(db, 'backups_history'), limit(5));
+    const snap = await withTimeout(getDocs(qSafe), 8000);
+    if (!snap.empty) {
+      const list = snap.docs.map(d => d.data());
+      list.sort((a: any, b: any) => (b.totalRecords || 0) - (a.totalRecords || 0));
+      for (const item of list) {
+        if (item?.data) {
+          try {
+            const parsed = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            if (parsed && Object.keys(parsed).length > 0) {
+              return parsed;
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (errSafe) {
+    console.error('Fallback simples de backups falhou:', errSafe);
+  }
+
+  return null;
+}
+
 export async function getBackupsHistory(): Promise<any[]> {
   try {
-    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(30));
-    const snap = await withTimeout(getDocs(q), 7000);
+    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(8));
+    const snap = await withTimeout(getDocs(q), 10000);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
     console.warn('Error fetching backup history with orderBy, falling back without orderBy:', err);
     try {
-      const snap = await withTimeout(getDocs(collection(db, 'backups_history')), 5000);
+      const qFallback = query(collection(db, 'backups_history'), limit(8));
+      const snap = await withTimeout(getDocs(qFallback), 8000);
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       list.sort((a: any, b: any) => {
         const tA = a.createdAt?.seconds || 0;
         const tB = b.createdAt?.seconds || 0;
         return tB - tA;
       });
-      return list.slice(0, 30);
+      return list;
     } catch (fallbackErr) {
       console.error('Error in fallback backup history:', fallbackErr);
       return [];
