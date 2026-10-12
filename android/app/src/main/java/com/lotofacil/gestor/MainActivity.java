@@ -4,10 +4,30 @@ import android.content.Context;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.FirebaseOptions;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        try {
+            if (FirebaseApp.getApps(this).isEmpty()) {
+                FirebaseApp.initializeApp(this);
+            }
+        } catch (Exception e) {
+            try {
+                FirebaseOptions options = new FirebaseOptions.Builder()
+                        .setApplicationId("1:236236898494:android:99db34cd046957e8f25eef")
+                        .setApiKey("AIzaSyASS1udwCu6mbPJFWZ--5QuZNwcupNzmv8")
+                        .setProjectId("bolao-entre-amigos-78804")
+                        .setGcmSenderId("236236898494")
+                        .setStorageBucket("bolao-entre-amigos-78804.firebasestorage.app")
+                        .build();
+                FirebaseApp.initializeApp(this, options);
+            } catch (Exception ignored) {
+            }
+        }
+
         super.onCreate(savedInstanceState);
         DailyPrizeCheckReceiver.scheduleDaily2155Alarm(this);
         try {
@@ -35,5 +55,3 @@ public class MainActivity extends BridgeActivity {
         }
     }
 }
-
-

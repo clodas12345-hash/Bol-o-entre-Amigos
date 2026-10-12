@@ -40,7 +40,7 @@ jobs:
           elif [ -f "android/app/google-services.json" ] && [ -s "android/app/google-services.json" ]; then
             echo "✅ google-services.json encontrado no repositório"
           else
-            echo "⚙️ Criando google-services.json oficial automaticamente para com.gkdmobility.app..."
+            echo "⚙️ Criando google-services.json oficial automaticamente..."
             cat << 'EOF' > android/app/google-services.json
 {
   "project_info": {
@@ -67,6 +67,25 @@ jobs:
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:236236898494:android:99db34cd046957e8f25eef",
+        "android_client_info": {
+          "package_name": "com.lotofacil.gestor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASS1udwCu6mbPJFWZ--5QuZNwcupNzmv8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"
@@ -78,8 +97,8 @@ EOF
           ls -la android/app/google-services.json
           grep "package_name" android/app/google-services.json || true
 
-      - name: Sync Capacitor
-        run: npx cap sync
+      - name: Sync Capacitor Android
+        run: npx cap sync android
 
       - name: Apply Android Icons
         run: npm run apply-android-icons
@@ -104,21 +123,21 @@ EOF
             echo "✅ Keystore fixo configurado em ~/.android/debug.keystore (garante mesma assinatura em todos os builds)"
           fi
 
-      - name: Forçar signingConfig do App para Usar o Keystore Fixo
+      - name: Verificar signingConfig do App
         run: |
           if grep -q "android.signingConfigs.debug.storeFile" android/app/build.gradle; then
-            echo "ℹ️ signingConfig já estava forçado (pasta android versionada) — nada a fazer"
-            exit 0
-          fi
-          cat >> android/app/build.gradle << 'EOF'
+            echo "ℹ️ signingConfig já configurado no android/app/build.gradle"
+          else
+            echo "ℹ️ signingConfig não detectado, adicionando..."
+            cat >> android/app/build.gradle << 'EOF'
 
-          android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
-          android.signingConfigs.debug.storePassword = "android"
-          android.signingConfigs.debug.keyAlias = "androiddebugkey"
-          android.signingConfigs.debug.keyPassword = "android"
-          android.buildTypes.debug.signingConfig = android.signingConfigs.debug
-          EOF
-          echo "✅ signingConfig do buildType debug forçado a usar ~/.android/debug.keystore"
+android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
+android.signingConfigs.debug.storePassword = "android"
+android.signingConfigs.debug.keyAlias = "androiddebugkey"
+android.signingConfigs.debug.keyPassword = "android"
+android.buildTypes.debug.signingConfig = android.signingConfigs.debug
+EOF
+          fi
 
       - name: Build Android APK
         run: |

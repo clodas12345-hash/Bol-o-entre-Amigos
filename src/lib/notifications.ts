@@ -1107,22 +1107,43 @@ export async function syncPendingPaymentThreeDayReminders(
 export async function registerPushNotificationsSafe(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
   try {
-    const perm = await PushNotifications.checkPermissions();
-    let status = perm.receive;
-    if (status !== 'granted') {
-      const req = await PushNotifications.requestPermissions();
-      status = req.receive;
+    if (typeof PushNotifications === 'undefined' || !PushNotifications) {
+      console.warn('PushNotifications plugin não disponível no ambiente nativo atual');
+      return false;
     }
+
+    // Registra listener de erro para garantir que nenhuma exceção assíncrona seja disparada
+    try {
+      PushNotifications.addListener('registrationError', (error) => {
+        console.warn('Push registrationError capturado com segurança:', error);
+      }).catch?.(() => {});
+    } catch {}
+
+    const perm = await PushNotifications.checkPermissions().catch((e) => {
+      console.warn('Erro ao verificar permissão de push:', e);
+      return null;
+    });
+
+    let status = perm?.receive;
+    if (status !== 'granted') {
+      const req = await PushNotifications.requestPermissions().catch((e) => {
+        console.warn('Erro ao solicitar permissão de push:', e);
+        return null;
+      });
+      status = req?.receive;
+    }
+
     if (status === 'granted') {
       try {
         await PushNotifications.register();
       } catch (regErr) {
-        console.warn('PushNotifications.register threw exception safely caught:', regErr);
+        console.warn('PushNotifications.register disparou erro devidamente contido em try/catch:', regErr);
+        return false;
       }
       return true;
     }
   } catch (err) {
-    console.warn('registerPushNotificationsSafe error caught safely:', err);
+    console.warn('registerPushNotificationsSafe erro global capturado com segurança:', err);
   }
   return false;
 }
