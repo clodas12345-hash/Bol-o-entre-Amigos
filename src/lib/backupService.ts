@@ -133,36 +133,41 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
 
   let totalRecords = 0;
 
-  for (const colName of COLLECTIONS_TO_BACKUP) {
-    try {
-      const snap = await getDocs(collection(db, colName));
-      backupData[colName] = snap.docs.map(docSnap => {
-        const data = docSnap.data();
-        const serializedData = { ...data };
-        for (const key in serializedData) {
-          if (serializedData[key]?.toDate && typeof serializedData[key].toDate === 'function') {
-            serializedData[key] = {
-              __type: 'timestamp',
-              seconds: serializedData[key].seconds,
-              nanoseconds: serializedData[key].nanoseconds
-            };
-          } else if (serializedData[key] instanceof Date) {
-            serializedData[key] = {
-              __type: 'date',
-              value: serializedData[key].toISOString()
-            };
+  await Promise.all(
+    COLLECTIONS_TO_BACKUP.map(async (colName) => {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        backupData[colName] = snap.docs.map(docSnap => {
+          const data = docSnap.data();
+          const serializedData = { ...data };
+          for (const key in serializedData) {
+            if (serializedData[key]?.toDate && typeof serializedData[key].toDate === 'function') {
+              serializedData[key] = {
+                __type: 'timestamp',
+                seconds: serializedData[key].seconds,
+                nanoseconds: serializedData[key].nanoseconds
+              };
+            } else if (serializedData[key] instanceof Date) {
+              serializedData[key] = {
+                __type: 'date',
+                value: serializedData[key].toISOString()
+              };
+            }
           }
-        }
-        return {
-          id: docSnap.id,
-          data: serializedData
-        };
-      });
-      totalRecords += backupData[colName].length;
-    } catch (e) {
-      console.warn(`Aviso ao exportar coleção ${colName}:`, e);
-      backupData[colName] = [];
-    }
+          return {
+            id: docSnap.id,
+            data: serializedData
+          };
+        });
+      } catch (e) {
+        console.warn(`Aviso ao exportar coleção ${colName}:`, e);
+        backupData[colName] = [];
+      }
+    })
+  );
+
+  for (const colName of COLLECTIONS_TO_BACKUP) {
+    totalRecords += (backupData[colName] || []).length;
   }
 
   const jsonString = JSON.stringify(backupData, null, 2);
@@ -204,42 +209,47 @@ export async function saveDailyCloudBackupToFirestore(): Promise<{ id: string; t
 
   let totalRecords = 0;
 
-  for (const colName of COLLECTIONS_TO_BACKUP) {
-    try {
-      const snap = await getDocs(collection(db, colName));
-      backupData[colName] = snap.docs.map(docSnap => {
-        const data = docSnap.data();
-        const serializedData = { ...data };
-        
-        if (colName === 'games' || colName === 'payments') {
-          delete serializedData.receiptURL;
-          delete serializedData.imageUrl;
-        }
-
-        for (const key in serializedData) {
-          if (serializedData[key]?.toDate && typeof serializedData[key].toDate === 'function') {
-            serializedData[key] = {
-              __type: 'timestamp',
-              seconds: serializedData[key].seconds,
-              nanoseconds: serializedData[key].nanoseconds
-            };
-          } else if (serializedData[key] instanceof Date) {
-            serializedData[key] = {
-              __type: 'date',
-              value: serializedData[key].toISOString()
-            };
+  await Promise.all(
+    COLLECTIONS_TO_BACKUP.map(async (colName) => {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        backupData[colName] = snap.docs.map(docSnap => {
+          const data = docSnap.data();
+          const serializedData = { ...data };
+          
+          if (colName === 'games' || colName === 'payments') {
+            delete serializedData.receiptURL;
+            delete serializedData.imageUrl;
           }
-        }
-        return {
-          id: docSnap.id,
-          data: serializedData
-        };
-      });
-      totalRecords += backupData[colName].length;
-    } catch (e) {
-      console.warn(`Aviso ao arquivar coleção ${colName}:`, e);
-      backupData[colName] = [];
-    }
+
+          for (const key in serializedData) {
+            if (serializedData[key]?.toDate && typeof serializedData[key].toDate === 'function') {
+              serializedData[key] = {
+                __type: 'timestamp',
+                seconds: serializedData[key].seconds,
+                nanoseconds: serializedData[key].nanoseconds
+              };
+            } else if (serializedData[key] instanceof Date) {
+              serializedData[key] = {
+                __type: 'date',
+                value: serializedData[key].toISOString()
+              };
+            }
+          }
+          return {
+            id: docSnap.id,
+            data: serializedData
+          };
+        });
+      } catch (e) {
+        console.warn(`Aviso ao arquivar coleção ${colName}:`, e);
+        backupData[colName] = [];
+      }
+    })
+  );
+
+  for (const colName of COLLECTIONS_TO_BACKUP) {
+    totalRecords += (backupData[colName] || []).length;
   }
 
   const docRef = await addDoc(collection(db, 'backups_history'), {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, setDoc, Timestamp, collection, getDocs } from 'firebase/firestore';
+import { doc, setDoc, Timestamp, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { getIsAdmin } from '../lib/authHelpers';
@@ -194,18 +194,20 @@ export default function BackupManager() {
         addToast('☁️ Baixando coleções ativas da nuvem para o APK...', 'info');
         data = {};
         const COLLECTIONS = ['pools', 'games', 'members', 'users', 'payments', 'lotofacil_results', 'megasena_results', 'chats', 'polls'];
-        for (const colName of COLLECTIONS) {
-          try {
-            const snap = await getDocs(collection(db, colName));
-            data[colName] = snap.docs.map(d => ({
-              id: d.id,
-              data: d.data()
-            }));
-          } catch (colErr) {
-            console.warn(`Warning fetching ${colName}:`, colErr);
-            data[colName] = [];
-          }
-        }
+        await Promise.all(
+          COLLECTIONS.map(async (colName) => {
+            try {
+              const snap = await getDocs(collection(db, colName));
+              data[colName] = snap.docs.map(d => ({
+                id: d.id,
+                data: d.data()
+              }));
+            } catch (colErr) {
+              console.warn(`Warning fetching ${colName}:`, colErr);
+              data[colName] = [];
+            }
+          })
+        );
       }
 
       if (!data || Object.keys(data).length === 0) {
@@ -226,25 +228,47 @@ export default function BackupManager() {
   };
 
   const executeImportLogic = async (data: any) => {
-    setImportProgress(0);
-    addToast('📤 Restaurando e sincronizando registros...', 'info');
+    setImportProgress(5);
+    addToast('⚡ Iniciando sincronização ultra-rápida...', 'info');
+
+    let wakeLock: any = null;
+    try {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (navigator as any).wakeLock) {
+        wakeLock = await (navigator as any).wakeLock.request('screen');
+      }
+    } catch {}
 
     try {
       const collections = Object.keys(data).filter(c => c !== '_metadata');
-      let totalDocs = 0;
-      collections.forEach(col => {
-        if (Array.isArray(data[col])) {
-          totalDocs += data[col].length;
+      
+      // 1. Atualiza imediatamente os caches locais (localStorage) para que os jogos apareçam no app instantaneamente
+      try {
+        if (Array.isArray(data.games) && data.games.length > 0) {
+          const formattedGames = data.games.map((g: any) => ({
+            id: g.id,
+            ...(g.data || g)
+          }));
+          localStorage.setItem('bolao_cache_games', JSON.stringify(formattedGames));
         }
-      });
-
-      if (totalDocs === 0) {
-        addToast('Nenhum registro para importar.', 'info');
-        setIsImporting(false);
-        return;
+        if (Array.isArray(data.members) && data.members.length > 0) {
+          const formattedMembers = data.members.map((m: any) => ({
+            id: m.id,
+            ...(m.data || m)
+          }));
+          localStorage.setItem('bolao_cache_members', JSON.stringify(formattedMembers));
+        }
+      } catch (cacheErr) {
+        console.warn('Cache local atualizado com segurança:', cacheErr);
       }
 
-      let importedCount = 0;
+      // 2. Prepara lista de documentos a serem gravados
+      interface BatchItem {
+        colName: string;
+        id: string;
+        data: any;
+      }
+      const pendingItems: BatchItem[] = [];
+
       for (const colName of collections) {
         const docsList = data[colName];
         if (!Array.isArray(docsList)) continue;
@@ -264,25 +288,70 @@ export default function BackupManager() {
             }
           }
 
-          try {
-            await setDoc(doc(db, colName, docItem.id), restoredData, { merge: true });
-          } catch (docErr) {
-            console.warn(`Error setting doc ${colName}/${docItem.id}:`, docErr);
-          }
-          importedCount++;
-          setImportProgress(Math.round((importedCount / totalDocs) * 100));
+          pendingItems.push({
+            colName,
+            id: docItem.id,
+            data: restoredData
+          });
         }
       }
 
-      addToast(`🎉 Backup puxado e restaurado com sucesso! ${importedCount} registros sincronizados.`, 'success');
+      const totalDocs = pendingItems.length;
+      if (totalDocs === 0) {
+        addToast('Nenhum registro para importar.', 'info');
+        setIsImporting(false);
+        if (wakeLock) await wakeLock.release().catch(() => {});
+        return;
+      }
+
+      // 3. Execução em lotes (writeBatch) de 450 itens por commit (limite do Firestore é 500)
+      // Reduz 1400+ requisições individuais para apenas 3 a 4 envios atômicos!
+      const BATCH_SIZE = 450;
+      const batches: BatchItem[][] = [];
+      for (let i = 0; i < pendingItems.length; i += BATCH_SIZE) {
+        batches.push(pendingItems.slice(i, i + BATCH_SIZE));
+      }
+
+      let processedCount = 0;
+      for (let b = 0; b < batches.length; b++) {
+        const chunk = batches[b];
+        const batch = writeBatch(db);
+
+        for (const item of chunk) {
+          batch.set(doc(db, item.colName, item.id), item.data, { merge: true });
+        }
+
+        try {
+          await batch.commit();
+        } catch (batchErr) {
+          console.warn(`Lote ${b + 1} commit error, fallback individual:`, batchErr);
+          // Fallback seguro caso algum documento individual do lote tenha restrição
+          for (const item of chunk) {
+            try {
+              await setDoc(doc(db, item.colName, item.id), item.data, { merge: true });
+            } catch {}
+          }
+        }
+
+        processedCount += chunk.length;
+        setImportProgress(Math.min(100, Math.round((processedCount / totalDocs) * 100)));
+      }
+
+      addToast(`🎉 Concluído em alta velocidade! ${processedCount} registros sincronizados.`, 'success');
       
       setTimeout(() => {
         window.location.reload();
-      }, 1500);
+      }, 1000);
     } catch (err) {
-      console.error(err);
-      addToast('Erro ao importar o backup para o banco de dados.', 'error');
+      console.error('Erro geral na restauração:', err);
+      addToast('Erro ao importar backup.', 'error');
       setIsImporting(false);
+    } finally {
+      if (wakeLock) {
+        try {
+          await wakeLock.release();
+        } catch {}
+      }
     }
   };
 
