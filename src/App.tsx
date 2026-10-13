@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth, db } from './lib/firebase';
+import { auth, db, isAIStudioPreview } from './lib/firebase';
 import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, deleteDoc, onSnapshot, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
@@ -764,6 +764,11 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
     <div
       className="h-dvh overflow-hidden flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white"
     >
+      {isAIStudioPreview && (
+        <div className="bg-amber-600 text-white text-[11px] font-medium px-3 py-1 text-center shrink-0 flex items-center justify-center gap-2 z-50">
+          <span>⚠️ Modo Preview Web: Banco de dados desconectado (Ativo no APK e Links de Convidados/Participantes).</span>
+        </div>
+      )}
       {!hideHeader && (
         <header
           style={{ paddingTop: 'calc(var(--safe-top, 0px) + 0.25rem)' }}

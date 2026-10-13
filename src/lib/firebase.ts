@@ -1,8 +1,13 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache, getFirestore } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, getFirestore, disableNetwork } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from './firebaseConfig';
+
+export const isAIStudioPreview = typeof window !== 'undefined' && (
+  window.location.hostname.includes('ais-dev') || 
+  window.location.hostname.includes('ais-pre')
+);
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -13,7 +18,6 @@ const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestor
 
 let dbInstance;
 try {
-  // Use initializeFirestore to set custom settings like long polling (critical for iframes/mobile)
   dbInstance = databaseId
     ? initializeFirestore(app, {
         localCache: memoryLocalCache(),
@@ -28,6 +32,10 @@ try {
   dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
+// Disconnect database network in AI Studio preview as requested ("dados não deve tah ligado aqui no preview")
+if (isAIStudioPreview) {
+  disableNetwork(dbInstance).catch(() => {});
+}
 
 import { logSystemError } from './systemErrorLogger';
 
