@@ -51,7 +51,7 @@ public class DailyPrizeCheckReceiver extends BroadcastReceiver {
             if (alarmManager == null) return;
 
             Intent intent = new Intent(context, DailyPrizeCheckReceiver.class);
-            intent.setAction("com.lotofacil.gestor.ACTION_DAILY_PRIZE_CHECK_2155");
+            intent.setAction(context.getPackageName() + ".ACTION_DAILY_PRIZE_CHECK_2155");
 
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

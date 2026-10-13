@@ -19,7 +19,15 @@ export default function VisitorPortal() {
   const nextDraw = getNextDrawDate(new Date(), isMegaSena ? 'megasena' : 'lotofacil');
 
   // Abas do Portal de Visitantes: Convite, Jogos Atuais e Histórico
-  const [activeVisitorTab, setActiveVisitorTab] = useState<'overview' | 'games' | 'history'>('overview');
+  const [activeVisitorTab, setActiveVisitorTab] = useState<'overview' | 'games' | 'history'>(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const tabParam = sp.get('tab') || sp.get('aba');
+      if (tabParam === 'games' || tabParam === 'jogos') return 'games';
+      if (tabParam === 'history' || tabParam === 'historico') return 'history';
+    } catch {}
+    return 'overview';
+  });
 
   // Resultados oficiais e jogos cadastrados
   const [officialResults, setOfficialResults] = useState<any[]>(() => {
@@ -431,6 +439,75 @@ export default function VisitorPortal() {
                 )}
               </div>
             )}
+
+            {/* Prévia de Jogos Registrados no Bolão */}
+            <div className="bg-slate-900/90 rounded-2xl p-4 sm:p-5 border border-slate-800 space-y-3.5 shadow-lg">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                    <span>🎰</span> Bilhetes Registrados no Bolão
+                  </h2>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {games.length > 0 
+                      ? `${games.length} apostas registradas e ativas na nuvem com total transparência` 
+                      : 'Nenhum bilhete cadastrado no momento.'}
+                  </p>
+                </div>
+                {games.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveVisitorTab('games')}
+                    className="text-[11px] font-black bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <span>Ver todos ({games.length})</span>
+                    <span>→</span>
+                  </button>
+                )}
+              </div>
+
+              {games.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {games.slice(0, 4).map((g, idx) => {
+                      const cNum = extractContestNumber(g.contestNumber || g.contest);
+                      const gameNums: number[] = Array.isArray(g.numbers) 
+                        ? g.numbers.map(Number).sort((a: number, b: number) => a - b) 
+                        : [];
+                      return (
+                        <div key={g.id || idx} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-black text-indigo-300">
+                              {g.contest || (cNum ? `Concurso #${cNum}` : `Jogo #${idx + 1}`)}
+                            </span>
+                            <span className="text-[10px] text-emerald-400 font-bold">Ativo</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {gameNums.map(n => (
+                              <span key={n} className="w-6 h-6 rounded-md bg-emerald-500/20 text-emerald-300 font-bold text-[10px] flex items-center justify-center border border-emerald-500/30">
+                                {String(n).padStart(2, '0')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {games.length > 4 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveVisitorTab('games')}
+                      className="w-full text-center py-2 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl transition cursor-pointer border border-dashed border-slate-700 block"
+                    >
+                      + Ver mais {games.length - 4} jogos registrados na aba Jogos →
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center text-xs text-slate-400">
+                  Os bilhetes serão exibidos aqui assim que forem registrados pelo administrador.
+                </div>
+              )}
+            </div>
 
             {/* Chave PIX Oficial com Copiar e Colar */}
             <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 rounded-2xl p-4 sm:p-5 border border-indigo-500/30 space-y-3 shadow-lg">

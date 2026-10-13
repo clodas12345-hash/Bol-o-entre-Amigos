@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { doc, setDoc, Timestamp, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
@@ -370,9 +371,12 @@ export default function BackupManager() {
       window.dispatchEvent(new Event('bolao_data_restored'));
       setIsImporting(false);
 
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
+      // No app nativo (Android/Capacitor), evita reload forçado da WebView para manter a tela estável
+      if (!Capacitor.isNativePlatform()) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      }
     } catch (err) {
       console.error('Erro geral na restauração:', err);
       addToast('Erro ao importar backup.', 'error');
