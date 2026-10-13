@@ -1,4 +1,4 @@
-package com.gkdmobility.app;
+package com.bolaoamigos.app;
 
 import android.app.Application;
 import android.util.Log;
@@ -7,7 +7,7 @@ import com.google.firebase.FirebaseOptions;
 
 /**
  * Classe Application personalizada que garante a inicialização antecipada
- * e infalível do FirebaseApp no processo com.gkdmobility.app antes de qualquer
+ * e infalível do FirebaseApp no processo com.bolaoamigos.app antes de qualquer
  * chamada de plugins do Capacitor como PushNotifications.register().
  */
 public class MainApplication extends Application {

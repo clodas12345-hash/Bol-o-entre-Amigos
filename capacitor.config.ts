@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.gkdmobility.app',
+  appId: 'com.bolaoamigos.app',
   appName: 'Bolão Amigos',
   webDir: 'dist',
   plugins: {

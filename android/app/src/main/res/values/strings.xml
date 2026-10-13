@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Bolão Amigos</string>
     <string name="title_activity_main">Bolão Amigos</string>
-    <string name="package_name">com.gkdmobility.app</string>
-    <string name="custom_url_scheme">com.gkdmobility.app</string>
+    <string name="package_name">com.bolaoamigos.app</string>
+    <string name="custom_url_scheme">com.bolaoamigos.app</string>
 </resources>

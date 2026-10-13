@@ -1,4 +1,4 @@
-package com.gkdmobility.app;
+package com.bolaoamigos.app;
 
 import android.content.Context;
 import android.os.Bundle;
@@ -7,14 +7,12 @@ import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
-import com.lotofacil.gestor.DailyPrizeCheckReceiver;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "MainActivity";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Inicialização de segurança redundante do FirebaseApp antes do ciclo de vida da Activity
         try {
             if (FirebaseApp.getApps(this).isEmpty()) {
                 FirebaseApp.initializeApp(this);

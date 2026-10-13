@@ -1,4 +1,4 @@
-package com.lotofacil.gestor;
+package com.bolaoamigos.app;
 
 import android.app.AlarmManager;
 import android.app.NotificationChannel;
