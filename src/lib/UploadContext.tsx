@@ -71,7 +71,7 @@ const formatDateToMonthRef = (date: Date): string => {
 
 const performClientSideOcr = async (base64Image: string, apiKey: string): Promise<any> => {
   const cleanBase64 = base64Image.replace(/^data:[^;]+;base64,/, '').trim();
-  const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+  const modelsToTry = ['gemini-3.8-flash', 'gemini-flash-latest'];
   let lastError: any = null;
 
   const prompt = `Extraia dados deste bilhete da Caixa (Lotofácil/Mega-Sena) em JSON:
@@ -92,7 +92,7 @@ Regras Críticas:
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // Limite estrito de 30 segundos por tentativa de IA
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // Limite rápido de 12 segundos
 
       const response = await fetch(url, {
         method: 'POST',
@@ -346,7 +346,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images: [compressed] })
               },
-              60000 // Timeout estendido para 60s para processamento complexo de imagem + IA
+              20000 // Timeout otimizado para 20s para resposta ultra-rápida
             );
 
             if (fetchRes.success) {
