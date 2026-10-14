@@ -122,23 +122,23 @@ export default function GameHistory({
       return;
     }
 
-    setIsDeletingGroup(true);
+    const currentGroup = groupToDelete;
+    setGroupToDelete(null);
+    addToast(`Excluindo ${currentGroup.contestTitle}...`, 'info');
+
     try {
       const batch = writeBatch(db);
-      groupToDelete.games.forEach((g: any) => {
+      currentGroup.games.forEach((g: any) => {
         if (g.id) {
           batch.delete(doc(db, 'games', g.id));
         }
       });
       await batch.commit();
 
-      addToast(`Todas as ${groupToDelete.games.length} apostas do ${groupToDelete.contestTitle} foram excluídas com sucesso.`, 'success');
-      setGroupToDelete(null);
+      addToast(`Todas as ${currentGroup.games.length} apostas do ${currentGroup.contestTitle} foram excluídas com sucesso.`, 'success');
     } catch (err) {
       console.error('Erro ao excluir grupo de apostas:', err);
       addToast('Erro ao excluir apostas do concurso.', 'error');
-    } finally {
-      setIsDeletingGroup(false);
     }
   };
 
