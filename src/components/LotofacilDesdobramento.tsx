@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, writeBatch, doc } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './NotificationManager';
@@ -131,6 +131,9 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
       let savedCount = 0;
       let duplicateCount = 0;
 
+      const batch = writeBatch(db);
+      let batchCount = 0;
+
       for (let i = 0; i < generatedGames.length; i++) {
         const gameNums = [...generatedGames[i]].sort((a, b) => a - b);
         const valRes = validateGameSchema({ numbers: gameNums });
@@ -153,7 +156,8 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
           continue;
         }
 
-        await addDoc(collection(db, 'games'), {
+        const newGameRef = doc(collection(db, 'games'));
+        batch.set(newGameRef, {
           poolId,
           numbers: gameNums,
           numbersKey,
@@ -170,6 +174,16 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
 
         existingSigs.add(`contest::${contestVal}::${numbersKey}`);
         savedCount++;
+        batchCount++;
+
+        if (batchCount >= 450) {
+          await batch.commit();
+          batchCount = 0;
+        }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
       }
 
       if (duplicateCount > 0 && savedCount > 0) {

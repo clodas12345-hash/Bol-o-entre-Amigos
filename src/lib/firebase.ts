@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache, getFirestore, disableNetwork } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, disableNetwork } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from './firebaseConfig';
 
@@ -18,14 +18,19 @@ const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestor
 
 let dbInstance;
 try {
+  let cacheSettings;
+  try {
+    cacheSettings = persistentLocalCache({ tabManager: persistentMultipleTabManager() });
+  } catch (e) {
+    cacheSettings = memoryLocalCache();
+  }
+
   dbInstance = databaseId
     ? initializeFirestore(app, {
-        localCache: memoryLocalCache(),
-        experimentalForceLongPolling: true,
+        localCache: cacheSettings,
       }, databaseId)
     : initializeFirestore(app, {
-        localCache: memoryLocalCache(),
-        experimentalForceLongPolling: true,
+        localCache: cacheSettings,
       });
 } catch (err) {
   console.warn('Firestore already initialized or failed to initialize with settings, falling back to getFirestore:', err);

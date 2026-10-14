@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp, orderBy, limit, getDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, serverTimestamp, Timestamp, orderBy, limit, getDoc, doc, writeBatch } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { db, isQuotaError } from './firebase';
 import { useToast } from '../components/NotificationManager';
@@ -417,6 +417,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       let savedCount = 0;
       let duplicateCount = 0;
+      const batch = writeBatch(db);
+      let batchCount = 0;
+
       // Prioritize IA extraction for Teimosinha if present, otherwise fall back to manual options
       const isTeim = typeof data.isTeimosinha === 'boolean' 
         ? data.isTeimosinha 
@@ -456,7 +459,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               duplicateCount++;
             } else {
               const sig = `contest::${currentContestNum}::${numbersKey}`;
-              await addDoc(collection(db, 'games'), {
+              const newGameRef = doc(collection(db, 'games'));
+              batch.set(newGameRef, {
                 poolId,
                 numbers: gameNums,
                 numbersKey,
@@ -470,6 +474,12 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               });
               savedCount++;
               existingSigs.add(sig);
+              batchCount++;
+
+              if (batchCount >= 450) {
+                await batch.commit();
+                batchCount = 0;
+              }
             }
           }
         } else {
@@ -492,7 +502,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             duplicateCount++;
           } else {
             const sig = startContestNum > 0 ? `contest::${startContestNum}::${numbersKey}` : `date::${dateStr}::${numbersKey}`;
-            await addDoc(collection(db, 'games'), {
+            const newGameRef = doc(collection(db, 'games'));
+            batch.set(newGameRef, {
               poolId,
               numbers: gameNums,
               numbersKey,
@@ -506,8 +517,18 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             });
             savedCount++;
             existingSigs.add(sig);
+            batchCount++;
+
+            if (batchCount >= 450) {
+              await batch.commit();
+              batchCount = 0;
+            }
           }
         }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
       }
 
       // Calculate hits against latest official result if available
