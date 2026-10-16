@@ -664,25 +664,34 @@ export default function MembersList() {
     }
 
     try {
-      await addDoc(collection(db, 'members'), {
-        displayName: newDisplayName.trim(),
-        phone: normalizedPhone,
-        quotas: quotasVal,
-        role: newRole,
-        notes: newNotes.trim() || null,
-        paymentStatus: newPaymentStatus,
-        createdAt: serverTimestamp(),
-        approved: true
-      });
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
+      await Promise.race([
+        addDoc(collection(db, 'members'), {
+          displayName: newDisplayName.trim(),
+          phone: normalizedPhone,
+          quotas: quotasVal,
+          role: newRole,
+          notes: newNotes.trim() || null,
+          paymentStatus: newPaymentStatus,
+          createdAt: serverTimestamp(),
+          approved: true
+        }),
+        timeoutPromise
+      ]);
 
       addToast(`Participante cadastrado como ${newRole === 'counselor' ? 'Conselheiro' : 'Membro'} com ${quotasVal} cota(s)!`, 'success');
-    } catch (error) {
-      console.error('CRITICAL: Failed to add member to Firebase:', error);
+    } catch (error: any) {
+      const isTimeout = error?.message === 'Timeout';
+      if (!isTimeout) {
+        console.error('Failed to add member to Firebase:', error);
+      } else {
+        console.warn('Network timeout adding member to Firebase, saving locally.');
+      }
       if (isQuotaError(error)) {
         setIsQuotaExceeded(true);
       }
       saveLocalMember(localMemberData);
-      addToast(`Erro ao salvar no banco, mas salvo localmente: ${error}`, 'error');
+      addToast(isTimeout ? 'Participante cadastrado localmente (Modo Offline).' : `Salvo localmente: ${error}`, isTimeout ? 'success' : 'error');
     } finally {
       setNewDisplayName('');
       setNewPhone('');
@@ -1223,7 +1232,7 @@ export default function MembersList() {
                 </td>
               </tr>
             ) : (
-              displayedMembers.map((member) => {
+              displayedMembers.map((member, idx) => {
                 const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
                 const isPaid = member.paymentStatus === 'Pago';
                 const monthlyValue = quotas * 20.00;
@@ -1237,7 +1246,7 @@ export default function MembersList() {
                 );
 
                 return (
-                  <tr key={member.id} className="hover:bg-gray-50/50 transition">
+                  <tr key={member.id} className={`${idx % 2 === 1 ? 'bg-slate-100 border-y border-slate-200' : 'bg-white'} hover:bg-slate-200/70 transition`}>
                     <td className="py-2.5 px-2.5 sm:p-3 min-w-[130px]">
                       <div className="font-bold text-gray-900 text-xs sm:text-sm leading-tight">
                         {member.displayName || 'Sem Nome'}

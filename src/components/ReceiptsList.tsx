@@ -466,10 +466,10 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
           Nenhum comprovante pendente no momento.
         </div>
       ) : (
-        receipts.map(r => {
+        receipts.map((r, idx) => {
           const matched = findMatchingMember(r);
           return (
-            <div key={r.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div key={r.id} className={`${idx % 2 === 1 ? 'bg-slate-100 border-slate-300' : 'bg-white border-gray-200'} p-4 rounded-2xl shadow-sm border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4`}>
               <div className="flex items-center gap-3 min-w-0">
                 <a href={r.imageBase64} target="_blank" rel="noopener noreferrer" title="Ampliar imagem">
                   <img src={r.imageBase64} alt="Comprovante" className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-gray-200 hover:scale-105 transition cursor-pointer shadow-xs shrink-0" />

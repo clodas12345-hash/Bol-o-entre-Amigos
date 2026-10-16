@@ -202,12 +202,12 @@ export default function DetailedFinancialReport() {
                 </td>
               </tr>
             ) : (
-              report.map(m => {
+              report.map((m, idx) => {
                 const isPaid = m.paymentStatus === 'Pago';
                 const whatsappUrl = getWhatsAppCobrarUrl(m.phone, m.displayName || m.email, m.quotas, pixConfig.defaultAmount || 20.00, pixConfig.pixKey || '11953292570');
 
                 return (
-                  <tr key={m.id} className="hover:bg-gray-50/70 transition">
+                  <tr key={m.id} className={`${idx % 2 === 1 ? 'bg-slate-100' : 'bg-white'} hover:bg-slate-200/60 transition`}>
                     <td className="p-2.5 font-medium text-gray-800">
                       <div className="font-bold">{formatFirstAndLastName(m.displayName || m.email)}</div>
                       {m.phone && <span className="text-[10px] text-gray-400">{m.phone}</span>}
