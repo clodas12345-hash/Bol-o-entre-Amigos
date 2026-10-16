@@ -127,13 +127,16 @@ export default function GameHistory({
     addToast(`Excluindo ${currentGroup.contestTitle}...`, 'info');
 
     try {
-      const batch = writeBatch(db);
-      currentGroup.games.forEach((g: any) => {
-        if (g.id) {
+      const gamesList = currentGroup.games.filter((g: any) => g.id);
+      const BATCH_SIZE = 450;
+      for (let i = 0; i < gamesList.length; i += BATCH_SIZE) {
+        const chunk = gamesList.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((g: any) => {
           batch.delete(doc(db, 'games', g.id));
-        }
-      });
-      await batch.commit();
+        });
+        await batch.commit();
+      }
 
       addToast(`Todas as ${currentGroup.games.length} apostas do ${currentGroup.contestTitle} foram excluídas com sucesso.`, 'success');
     } catch (err) {
@@ -473,11 +476,15 @@ export default function GameHistory({
         return;
       }
 
-      const batch = writeBatch(db);
-      gamesToDelete.forEach(g => {
-        batch.delete(doc(db, 'games', g.id));
-      });
-      await batch.commit();
+      const BATCH_SIZE = 450;
+      for (let i = 0; i < gamesToDelete.length; i += BATCH_SIZE) {
+        const chunk = gamesToDelete.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach(g => {
+          batch.delete(doc(db, 'games', g.id));
+        });
+        await batch.commit();
+      }
 
       addToast(`🧹 Varredura concluída com sucesso! Mantido apenas o Concurso #${targetNumber} e removidos ${groupsToRemove.length} concursos duplicados (${gamesToDelete.length} apostas excluídas).`, 'success');
       setShowSweepModal(false);

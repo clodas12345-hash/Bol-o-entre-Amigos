@@ -634,14 +634,16 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     setIsDeletingGroup(true);
 
     try {
-      // Usa lote de gravação (writeBatch) do Firestore: muito mais rápido do que dezenas de requisições isoladas
-      const batch = writeBatch(db);
-      groupToDelete.games.forEach((g: any) => {
-        if (g.id) {
+      const gamesList = groupToDelete.games.filter((g: any) => g.id);
+      const BATCH_SIZE = 450;
+      for (let i = 0; i < gamesList.length; i += BATCH_SIZE) {
+        const chunk = gamesList.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((g: any) => {
           batch.delete(doc(db, 'games', g.id));
-        }
-      });
-      await batch.commit();
+        });
+        await batch.commit();
+      }
 
       addToast(`Todas as ${count} apostas do ${title} foram excluídas com sucesso.`, 'success');
     } catch (err) {
@@ -650,19 +652,24 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       addToast('Erro ao excluir apostas do concurso.', 'error');
     } finally {
       setIsDeletingGroup(false);
+      setGroupToDelete(null);
     }
   };
   
   const handleDeleteAllArchived = async () => {
     try {
-      const archivedGames = games.filter(g => !isGameActiveOrToday(g));
+      const archivedGames = games.filter(g => !isGameActiveOrToday(g) && g.id);
       if (archivedGames.length === 0) return;
 
-      const batch = writeBatch(db);
-      archivedGames.forEach(g => {
-        batch.delete(doc(db, 'games', g.id));
-      });
-      await batch.commit();
+      const BATCH_SIZE = 450;
+      for (let i = 0; i < archivedGames.length; i += BATCH_SIZE) {
+        const chunk = archivedGames.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach(g => {
+          batch.delete(doc(db, 'games', g.id));
+        });
+        await batch.commit();
+      }
       addToast(`${archivedGames.length} apostas arquivadas foram removidas com sucesso.`, 'success');
     } catch (err) {
       console.error('Erro ao excluir histórico de apostas:', err);
@@ -2175,7 +2182,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                             className={`p-3.5 sm:p-5 transition rounded-xl ${
                               hitsInfo.isWinner 
                                 ? 'bg-gradient-to-r from-emerald-100 via-amber-50 to-teal-100 border-2 border-emerald-500 shadow-xl ring-4 ring-emerald-300/50' 
-                                : 'hover:bg-gray-50/70'
+                                : gameIndex % 2 === 1 
+                                  ? 'bg-slate-100/80 border border-slate-200 hover:bg-slate-200/70' 
+                                  : 'bg-white border border-gray-100 hover:bg-gray-50'
                             }`}
                           >
                             {/* Destaque Eminente para Aposta Premiada */}

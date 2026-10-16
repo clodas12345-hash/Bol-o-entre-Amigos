@@ -542,9 +542,23 @@ export default function BackupManager() {
             .footer { margin-top: 30px; border-top: 1px solid #cbd5e1; pt: 12px; text-align: center; font-size: 9px; color: #94a3b8; }
             .signature-area { margin-top: 35px; display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #64748b; page-break-inside: avoid; }
             .signature-line { width: 180px; border-top: 1px solid #94a3b8; margin-top: 35px; padding-top: 4px; font-weight: bold; }
+            @media print {
+              .no-print { display: none !important; }
+            }
+            .btn-action { background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; }
+            .btn-action:hover { background: #1d4ed8; }
+            .btn-close { background: #dc2626; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; }
+            .btn-close:hover { background: #b91c1c; }
           </style>
         </head>
         <body>
+          <div class="no-print" style="background: #1e293b; color: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="font-size: 12px; font-weight: bold;">📄 Relatório / Backup pronto para salvar ou imprimir</div>
+            <div style="display: flex; gap: 10px;">
+              <button onclick="window.print()" class="btn-action">🖨️ Imprimir / Salvar PDF</button>
+              <button onclick="window.close()" class="btn-close">✖️ Fechar Aba</button>
+            </div>
+          </div>
           <div class="header">
             <div>
               <h1 class="title">Bolão Amigos — Relatório & Backup em PDF</h1>

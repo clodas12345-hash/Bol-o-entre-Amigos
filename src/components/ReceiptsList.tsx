@@ -345,9 +345,10 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
   };
 
   const handleDelete = async (receiptId: string) => {
+    addToast('Removendo comprovante...', 'info');
     try {
       await deleteDoc(doc(db, 'pending_receipts', receiptId));
-      addToast('Comprovante rejeitado/removido.', 'info');
+      addToast('Comprovante removido com sucesso.', 'success');
     } catch (e) {
       console.error(e);
       addToast('Erro ao remover comprovante.', 'error');

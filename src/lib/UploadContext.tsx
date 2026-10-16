@@ -74,18 +74,21 @@ const performClientSideOcr = async (base64Image: string, apiKey: string): Promis
   const modelsToTry = ['gemini-3.8-flash', 'gemini-flash-latest'];
   let lastError: any = null;
 
-  const prompt = `Extraia dados deste bilhete da Caixa (Lotofácil/Mega-Sena) em JSON:
+  const prompt = `Extraia com máxima precisão e exatidão todas as dezenas e dados deste bilhete de loteria da Caixa Econômica Federal (Lotofácil, Mega-Sena, Quina, Lotomania, etc.) em JSON estrito:
 {
   "success": true,
   "date": "YYYY-MM-DD",
-  "contest": "número",
+  "contest": "número do concurso",
   "isTeimosinha": boolean,
   "teimosinhaCount": number,
-  "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
+  "games": [[dezenas_jogo_1], [dezenas_jogo_2], ...]
 }
-Regras Críticas:
-1. Priorize número do concurso (CONC) e capture todas as dezenas marcadas.
-2. ATENÇÃO AOS BILHETES DA MEGA-SENA: Ignore completamente qualquer quadrado ou fundo verde ao redor das dezenas ou do volante. Foque exclusivamente nos números impressos e marcados (pretos ou assinalados), desconsiderando totalmente qualquer coloração de fundo verde.`;
+Regras Críticas para 100% de Precisão:
+1. Analise cuidadosamente cada número impresso ou marcado no bilhete, mesmo que a foto esteja inclinada ou com iluminação imperfeita.
+2. Identifique corretamente o número do concurso (CONC) e a data do sorteio.
+3. Extraia cada jogo listado no bilhete como um array de números inteiros ordenados (ex: [1, 3, 5, 7, 9, ...]).
+4. Ignore completamente fundos coloridos, marca d'água ou quadrados verdes/amarelos ao redor das dezenas. Foque exclusivamente nos números impressos e assinalados.
+5. Retorne APENAS o JSON válido sem markdown adicional.`;
 
   for (const model of modelsToTry) {
     try {
