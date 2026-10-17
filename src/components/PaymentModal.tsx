@@ -25,6 +25,8 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
   const [month, setMonth] = useState(getCurrentMonth());
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScheduledPix, setIsScheduledPix] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState('');
 
   const { addToast } = useToast();
 
@@ -106,12 +108,15 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
         amount: parsedAmount,
         month: month.trim(),
         receiptURL: downloadURL || null,
+        isScheduledPix: isScheduledPix,
+        scheduledDate: isScheduledPix ? scheduledDate : null,
+        status: isScheduledPix ? 'pending' : 'verified',
         createdAt: serverTimestamp()
       });
 
-      // Atualiza o status do participante para "Pago"
+      // Atualiza o status do participante para "Pago" apenas se não for Pix agendado
       const memberObj = users.find(u => u.id === selectedUser || u.uid === selectedUser);
-      if (memberObj) {
+      if (memberObj && !isScheduledPix) {
         const col = memberObj.collectionName || 'users';
         await updateDoc(doc(db, col, memberObj.id), { paymentStatus: 'Pago' });
       }
@@ -244,6 +249,32 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 className="w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isScheduledPix}
+                  onChange={(e) => setIsScheduledPix(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                />
+                <span className="text-xs font-bold text-gray-700">Registrar como PIX Programado</span>
+              </label>
+              {isScheduledPix && (
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Data Programada *
+                  </label>
+                  <input
+                    type="date"
+                    value={scheduledDate}
+                    onChange={(e) => setScheduledDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs focus:outline-blue-500"
+                    required={isScheduledPix}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-3 border-t">

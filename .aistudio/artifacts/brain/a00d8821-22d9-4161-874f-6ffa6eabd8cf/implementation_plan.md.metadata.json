@@ -1,0 +1,6 @@
+{
+  "summary": "Plano para implementação do Sistema de Pix Programado:\n1. Atualização do banco de dados (Firestore) para armazenar datas de Pix programado por membro.\n2. Atualização da UI administrativa (PaymentModal) para agendar o Pix.\n3. Criação de serviço automático de verificação diária para disparar notificações no dia seguinte ao agendado.\n4. Criação da interface de confirmação para o membro (no aviso recebido) e para o administrador (no Dashboard).",
+  "updatedAt": "2026-10-17T13:05:05.983524914Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

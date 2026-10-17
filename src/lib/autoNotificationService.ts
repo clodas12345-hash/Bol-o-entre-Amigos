@@ -260,3 +260,23 @@ export async function runAutoPrizeCheck() {
     console.warn('[Auto Prize Check] Falha na conferência automática:', err);
   }
 }
+
+export async function checkScheduledPix() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const q = query(collection(db, 'payments'), where('status', '==', 'pending'), where('isScheduledPix', '==', true));
+    const snap = await getDocs(q);
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      if (data.scheduledDate === today) {
+        // Notificar o admin e o usuário
+        await sendAppNotification(`Verificar Pix Programado: ${data.memberName || 'Participante'}`, {
+          body: `O Pix programado de R$ ${data.amount} está agendado para hoje. Por favor, confira o extrato.`
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[Auto Pix Check] Falha na verificação de Pix:', err);
+  }
+}
