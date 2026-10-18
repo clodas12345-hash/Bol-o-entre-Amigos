@@ -74,28 +74,38 @@ const performClientSideOcr = async (base64Image: string, apiKey: string): Promis
   const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest'];
   let lastError: any = null;
 
-  const prompt = `Extraia com máxima precisão e exatidão todas as dezenas e dados deste bilhete de loteria da Caixa Econômica Federal (Lotofácil, Mega-Sena, Quina, Lotomania, etc.) em JSON estrito:
+  const prompt = `Extraia com 100% de exatidão todas as dezenas e informações deste comprovante da Caixa (Lotofácil ou Mega-Sena) em JSON estrito:
 {
   "success": true,
   "date": "YYYY-MM-DD",
   "contest": "número do concurso",
   "isTeimosinha": boolean,
   "teimosinhaCount": number,
-  "games": [[dezenas_jogo_1], [dezenas_jogo_2], ...]
+  "games": [
+    [dezenas_jogo_1],
+    [dezenas_jogo_2]
+  ]
 }
-Regras Críticas para 100% de Precisão:
-1. Analise cuidadosamente cada número impresso ou marcado no bilhete, mesmo que a foto esteja inclinada ou com iluminação imperfeita.
-2. Identifique corretamente o número do concurso (CONC) e a data do sorteio.
-3. Extraia cada jogo listado no bilhete como um array de números inteiros ordenados (ex: [1, 3, 5, 7, 9, ...]).
-4. Ignore completamente fundos coloridos, marca d'água ou quadrados verdes/amarelos ao redor das dezenas. Foque exclusivamente nos números impressos e assinalados.
-5. Retorne APENAS o JSON válido sem markdown adicional.`;
+REGRAS CRÍTICAS:
+1. PRINTS DO APLICATIVO "LOTERIAS CAIXA":
+   - A imagem pode ser um print do aplicativo oficial da Caixa (fundo roxo/violeta, tela 'Apostas da Compra').
+   - Cada bloco de dezenas dentro de círculos sob o cabeçalho 'Seus números' ou 'Lotofácil' representa UM jogo independente.
+   - Extraia TODOS os jogos visíveis na imagem como arrays separados dentro de "games" (se houver 2 jogos, retorne os 2; se houver 3, retorne os 3; etc.).
+   - Concurso: capture o número após "Conc." (ex: "Conc. 3800" -> "3800").
+   - Data: capture a data informada (ex: "08/10/2026" -> "2026-10-08").
+   - Teimosinha: se contiver "12 Teimosinhas" ou similar, retorne isTeimosinha: true e teimosinhaCount: 12.
+2. BILHETES FÍSICOS DA LOTÉRICA:
+   - Extraia todas as dezenas assinaladas ou impressas de cada jogo (Jogo A, Jogo B, etc.).
+3. Na Lotofácil, cada aposta tem 15 dezenas (entre 01 e 25), ordenadas crescentemente.
+4. Na Mega-Sena, cada aposta tem no mínimo 6 dezenas (entre 01 e 60).
+5. Retorne estritamente o JSON válido sem texto adicional.`;
 
   for (const model of modelsToTry) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000); // Limite rápido de 12 segundos
+      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 segundos para conexões móveis e lotes grandes
 
       const response = await fetch(url, {
         method: 'POST',
@@ -293,7 +303,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX = 800; // Redução agressiva para upload instantâneo e processamento rápido da IA
+            const MAX = 1800; // Alta resolução para manter a nitidez perfeita de todos os números e círculos
             let w = img.width, h = img.height;
             if (w > h ? w > MAX : h > MAX) {
               if (w > h) { h = Math.round(h * (MAX / w)); w = MAX; }
@@ -303,9 +313,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'low'; // Velocidade máxima
+              ctx.imageSmoothingQuality = 'high';
               ctx.drawImage(img, 0, 0, w, h);
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.60), mimeType: 'image/jpeg' });
+              resolve({ base64: canvas.toDataURL('image/jpeg', 0.88), mimeType: 'image/jpeg' });
             } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
           };
           img.src = e.target?.result as string;
@@ -349,7 +359,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images: [compressed] })
               },
-              20000 // Timeout otimizado para 20s para resposta ultra-rápida
+              40000 // 40s para conexões lentas ou lotes grandes
             );
 
             if (fetchRes.success) {
@@ -408,12 +418,29 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         ? formatDateToMonthRef(parsedDate)
         : (monthRef || formatDateToMonthRef(parsedDate));
       
-      const rawGames = data.games.map((g: any) => 
-        (Array.isArray(g) ? g : [])
-          .map((n: any) => Number(n))
-          .filter((n: number) => isMegaSena ? (n >= 1 && n <= 60) : (n >= 1 && n <= 25))
-          .sort((a: number, b: number) => a - b)
-      );
+      const extractNumbersArray = (g: any): any[] => {
+        if (Array.isArray(g)) return g;
+        if (g && typeof g === 'object') {
+          if (Array.isArray(g.numbers)) return g.numbers;
+          if (Array.isArray(g.dezenas)) return g.dezenas;
+          if (Array.isArray(g.game)) return g.game;
+          if (Array.isArray(g.jogo)) return g.jogo;
+          for (const key of Object.keys(g)) {
+            if (Array.isArray(g[key]) && g[key].length >= 5) return g[key];
+          }
+        }
+        return [];
+      };
+
+      const rawGames = (Array.isArray(data.games) ? data.games : [])
+        .map(extractNumbersArray)
+        .map((g: any[]) => 
+          g
+            .map((n: any) => Number(n))
+            .filter((n: number) => !isNaN(n) && (isMegaSena ? (n >= 1 && n <= 60) : (n >= 1 && n <= 25)))
+            .filter((val, idx, arr) => arr.indexOf(val) === idx)
+            .sort((a: number, b: number) => a - b)
+        );
 
       const validGames = rawGames.filter((g: number[]) => isMegaSena ? (g.length >= 6) : (g.length >= 10));
       if (!validGames.length) throw new Error('Nenhuma dezena válida');

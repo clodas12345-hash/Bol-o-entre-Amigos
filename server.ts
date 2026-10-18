@@ -27,12 +27,12 @@ async function processBetImageWithSharp(rawBase64: string): Promise<{ base64: st
 
   const processedBuffer = await sharp(inputBuffer)
     .rotate() 
-    .resize(1024, 1024, { // Reduzido de 1280 para 1024 para processamento instantâneo
+    .resize(1800, 1800, {
       fit: 'inside',
       withoutEnlargement: true
     })
     .linear(contrastMultiplier, contrastOffset)
-    .jpeg({ quality: 80, mozjpeg: true }) // Qualidade 80 mantendo cores vivas
+    .jpeg({ quality: 88, mozjpeg: true })
     .toBuffer();
 
   return {
@@ -665,18 +665,31 @@ app.post('/api/lotofacil/ocr-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nenhuma imagem fornecida para análise.' });
     }
 
-    const prompt = `Extraia dados deste bilhete da Caixa (Lotofácil/Mega-Sena) em JSON:
+    const prompt = `Extraia com 100% de exatidão todas as dezenas e informações deste comprovante da Caixa (Lotofácil ou Mega-Sena) em JSON estrito:
 {
   "success": true,
   "date": "YYYY-MM-DD",
-  "contest": "número",
+  "contest": "número do concurso",
   "isTeimosinha": boolean,
   "teimosinhaCount": number,
-  "games": [[dezenas_jogo_1], [dezenas_jogo_2]]
+  "games": [
+    [dezenas_jogo_1],
+    [dezenas_jogo_2]
+  ]
 }
-Regras Críticas:
-1. Priorize número do concurso (CONC) e capture todas as dezenas marcadas.
-2. ATENÇÃO AOS BILHETES DA MEGA-SENA: Ignore completamente qualquer quadrado ou fundo verde ao redor das dezenas ou do volante. Foque exclusivamente nos números impressos e marcados (pretos ou assinalados), desconsiderando totalmente qualquer coloração de fundo verde.`;
+REGRAS CRÍTICAS:
+1. PRINTS DO APLICATIVO "LOTERIAS CAIXA":
+   - A imagem pode ser um print do aplicativo oficial da Caixa (fundo roxo/violeta, tela 'Apostas da Compra').
+   - Cada bloco de dezenas dentro de círculos sob o cabeçalho 'Seus números' ou 'Lotofácil' representa UM jogo independente.
+   - Extraia TODOS os jogos visíveis na imagem como arrays separados dentro de "games" (se houver 2 jogos, retorne os 2; se houver 3, retorne os 3; etc.).
+   - Concurso: capture o número após "Conc." (ex: "Conc. 3800" -> "3800").
+   - Data: capture a data informada (ex: "08/10/2026" -> "2026-10-08").
+   - Teimosinha: se contiver "12 Teimosinhas" ou similar, retorne isTeimosinha: true e teimosinhaCount: 12.
+2. BILHETES FÍSICOS DA LOTÉRICA:
+   - Extraia todas as dezenas assinaladas ou impressas de cada jogo (Jogo A, Jogo B, etc.).
+3. Na Lotofácil, cada aposta tem 15 dezenas (entre 01 e 25), ordenadas crescentemente.
+4. Na Mega-Sena, cada aposta tem no mínimo 6 dezenas (entre 01 e 60).
+5. Retorne estritamente o JSON válido sem texto adicional.`;
 
     const response = await generateWithFallback({
       contents: {
