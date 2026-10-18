@@ -71,7 +71,7 @@ const formatDateToMonthRef = (date: Date): string => {
 
 const performClientSideOcr = async (base64Image: string, apiKey: string): Promise<any> => {
   const cleanBase64 = base64Image.replace(/^data:[^;]+;base64,/, '').trim();
-  const modelsToTry = ['gemini-3.8-flash', 'gemini-flash-latest'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest'];
   let lastError: any = null;
 
   const prompt = `Extraia com máxima precisão e exatidão todas as dezenas e dados deste bilhete de loteria da Caixa Econômica Federal (Lotofácil, Mega-Sena, Quina, Lotomania, etc.) em JSON estrito:

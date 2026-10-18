@@ -608,13 +608,32 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     // Atualização otimista imediata da interface (0ms de latência percebida)
     setGames(prev => prev.filter(g => g.id !== gameId));
     setDeletingId(null);
+
     try {
-      await deleteDoc(doc(db, 'games', gameId));
+      const cached = localStorage.getItem('bolao_cache_games');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem('bolao_cache_games', JSON.stringify(parsed.filter((g: any) => g.id !== gameId)));
+        }
+      }
+    } catch {}
+
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 3500)
+      );
+      await Promise.race([deleteDoc(doc(db, 'games', gameId)), timeoutPromise]);
       addToast('Aposta removida com sucesso.', 'info');
-    } catch (err) {
-      console.error('Erro ao deletar jogo:', err);
-      if (isQuotaError(err)) setIsQuotaExceeded(true);
-      addToast('Erro ao remover aposta.', 'error');
+    } catch (err: any) {
+      if (err?.message === 'Timeout') {
+        console.warn('Timeout ao remover aposta no Firebase, mantida remoção local.');
+        addToast('Aposta removida localmente (Modo Offline).', 'info');
+      } else {
+        console.warn('Aviso ao deletar jogo:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
+        addToast('Aposta removida localmente.', 'info');
+      }
     }
   };
 
@@ -624,17 +643,35 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       return;
     }
 
-    const idsToRemove = new Set(groupToDelete.games.map((g: any) => g.id));
-    const count = groupToDelete.games.length;
-    const title = groupToDelete.contestTitle;
+    const currentGroup = groupToDelete;
+    const idsToRemove = new Set(currentGroup.games.map((g: any) => g.id));
+    const count = currentGroup.games.length;
+    const title = currentGroup.contestTitle;
 
-    // Atualização otimista na tela em 0ms
-    setGames(prev => prev.filter(g => !idsToRemove.has(g.id)));
+    // 1. FECHA O MODAL IMEDIATAMENTE - a tela NUNCA mais fica presa
     setGroupToDelete(null);
-    setIsDeletingGroup(true);
+    setIsDeletingGroup(false);
 
+    // 2. Atualização otimista imediata da lista na tela (0ms)
+    setGames(prev => prev.filter(g => !idsToRemove.has(g.id)));
+
+    // 3. Atualiza cache local imediatamente
     try {
-      const gamesList = groupToDelete.games.filter((g: any) => g.id);
+      const cached = localStorage.getItem('bolao_cache_games');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((g: any) => !idsToRemove.has(g.id));
+          localStorage.setItem('bolao_cache_games', JSON.stringify(updated));
+        }
+      }
+    } catch {}
+
+    addToast(`Excluindo ${count} aposta(s) do ${title}...`, 'info');
+
+    // 4. Executa no banco com timeout seguro de 3.5s para evitar travamento em modo offline/desconectado
+    try {
+      const gamesList = currentGroup.games.filter((g: any) => g.id);
       const BATCH_SIZE = 450;
       for (let i = 0; i < gamesList.length; i += BATCH_SIZE) {
         const chunk = gamesList.slice(i, i + BATCH_SIZE);
@@ -642,17 +679,22 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         chunk.forEach((g: any) => {
           batch.delete(doc(db, 'games', g.id));
         });
-        await batch.commit();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 3500)
+        );
+        await Promise.race([batch.commit(), timeoutPromise]);
       }
 
       addToast(`Todas as ${count} apostas do ${title} foram excluídas com sucesso.`, 'success');
-    } catch (err) {
-      console.error('Erro ao excluir grupo de apostas:', err);
-      if (isQuotaError(err)) setIsQuotaExceeded(true);
-      addToast('Erro ao excluir apostas do concurso.', 'error');
-    } finally {
-      setIsDeletingGroup(false);
-      setGroupToDelete(null);
+    } catch (err: any) {
+      if (err?.message === 'Timeout') {
+        console.warn('Timeout ao excluir lote no Firebase, mantendo exclusão local.');
+        addToast(`${count} apostas removidas localmente (Modo Offline).`, 'success');
+      } else {
+        console.warn('Aviso ao excluir grupo no Firestore:', err);
+        if (isQuotaError(err)) setIsQuotaExceeded(true);
+        addToast(`${count} apostas removidas localmente.`, 'info');
+      }
     }
   };
   
@@ -1495,8 +1537,10 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setGroupToDelete(null)}
-                disabled={isDeletingGroup}
+                onClick={() => {
+                  setGroupToDelete(null);
+                  setIsDeletingGroup(false);
+                }}
                 className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl transition cursor-pointer"
               >
                 Cancelar
@@ -1556,7 +1600,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 </span>
                 {latestResult?.nextEstimatedPrize && (
                   <span className="bg-amber-400 text-gray-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap tabular-nums">
-                    R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR')}
+                    R$ {Number(latestResult.nextEstimatedPrize).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
               </div>

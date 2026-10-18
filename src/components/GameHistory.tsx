@@ -123,7 +123,21 @@ export default function GameHistory({
     }
 
     const currentGroup = groupToDelete;
+    const idsToRemove = new Set(currentGroup.games.map((g: any) => g.id));
     setGroupToDelete(null);
+
+    // Atualiza cache local imediatamente
+    try {
+      const cached = localStorage.getItem('bolao_cache_games');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((g: any) => !idsToRemove.has(g.id));
+          localStorage.setItem('bolao_cache_games', JSON.stringify(updated));
+        }
+      }
+    } catch {}
+
     addToast(`Excluindo ${currentGroup.contestTitle}...`, 'info');
 
     try {
@@ -135,13 +149,21 @@ export default function GameHistory({
         chunk.forEach((g: any) => {
           batch.delete(doc(db, 'games', g.id));
         });
-        await batch.commit();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 3500)
+        );
+        await Promise.race([batch.commit(), timeoutPromise]);
       }
 
       addToast(`Todas as ${currentGroup.games.length} apostas do ${currentGroup.contestTitle} foram excluídas com sucesso.`, 'success');
-    } catch (err) {
-      console.error('Erro ao excluir grupo de apostas:', err);
-      addToast('Erro ao excluir apostas do concurso.', 'error');
+    } catch (err: any) {
+      if (err?.message === 'Timeout') {
+        console.warn('Timeout ao excluir lote no Firebase, mantida remoção local.');
+        addToast(`${currentGroup.games.length} apostas removidas localmente (Modo Offline).`, 'success');
+      } else {
+        console.warn('Aviso ao excluir grupo no Firestore:', err);
+        addToast(`${currentGroup.games.length} apostas removidas localmente.`, 'info');
+      }
     }
   };
 

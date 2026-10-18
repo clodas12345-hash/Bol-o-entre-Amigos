@@ -412,8 +412,31 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
-  const [currentContest, setCurrentContest] = useState<number | null>(null);
-  const [currentPrize, setCurrentPrize] = useState<number | null>(null);
+  const [currentContest, setCurrentContest] = useState<number | null>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_latest_result');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const cNum = Number(parsed?.contest);
+        if (cNum > 0 && !parsed?.isSimulated) {
+          return cNum + 1;
+        }
+      }
+    } catch {}
+    return null;
+  });
+  const [currentPrize, setCurrentPrize] = useState<number | null>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_latest_result');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.nextEstimatedPrize) {
+          return Number(parsed.nextEstimatedPrize);
+        }
+      }
+    } catch {}
+    return null;
+  });
   
   const [isEditingContest, setIsEditingContest] = useState(false);
   const [customContestInput, setCustomContestInput] = useState('');
@@ -655,8 +678,10 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         const data = snapshot.docs[0].data();
         const cNum = Number(data.contest);
         if (cNum > 0) {
-          setCurrentContest(cNum + 1);
-          setCurrentPrize(data.nextEstimatedPrize || null);
+          setCurrentContest(prev => Math.max(prev || 0, cNum + 1));
+          if (data.nextEstimatedPrize) {
+            setCurrentPrize(data.nextEstimatedPrize);
+          }
         }
       }
     }, err => {
@@ -669,10 +694,56 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
     scheduleUpcomingDrawAlerts(isMegaSena ? 'megasena' : 'lotofacil');
   }, [isMegaSena]);
 
+  useEffect(() => {
+    const handleResultSynced = (e: any) => {
+      const res = e.detail;
+      if (res && res.contest > 0 && !isMegaSena) {
+        setCurrentContest(prev => Math.max(prev || 0, Number(res.contest) + 1));
+        if (res.nextEstimatedPrize) {
+          setCurrentPrize(Number(res.nextEstimatedPrize));
+        }
+      }
+    };
+    const handleMegaResultSynced = (e: any) => {
+      const res = e.detail;
+      if (res && res.contest > 0 && isMegaSena) {
+        setCurrentContest(prev => Math.max(prev || 0, Number(res.contest) + 1));
+        if (res.nextEstimatedPrize) {
+          setCurrentPrize(Number(res.nextEstimatedPrize));
+        }
+      }
+    };
+    window.addEventListener('bolao_lottery_result_synced', handleResultSynced);
+    window.addEventListener('bolao_mega_result_synced', handleMegaResultSynced);
+    return () => {
+      window.removeEventListener('bolao_lottery_result_synced', handleResultSynced);
+      window.removeEventListener('bolao_mega_result_synced', handleMegaResultSynced);
+    };
+  }, [isMegaSena]);
+
   const { addToast } = useToast();
   const isHome = location.pathname === '/';
   const isChatPage = location.pathname === '/chat';
-  const displayContestNum = Math.max(currentContest || 0, activePool?.currentContest || 0);
+  
+  const latestCachedOfficialContest = (() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_latest_result');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const cNum = Number(parsed?.contest);
+        if (cNum > 0 && !parsed?.isSimulated) {
+          return cNum + 1;
+        }
+      }
+    } catch {}
+    return 0;
+  })();
+
+  const baseContest = Math.max(currentContest || 0, latestCachedOfficialContest || 0);
+  const displayContestNum = Math.max(
+    baseContest,
+    (activePool?.currentContest && activePool.currentContest >= baseContest) ? activePool.currentContest : baseContest
+  );
   const canManageMembers = can('members_edit');
 
   const handleSaveCustomContest = async () => {
@@ -1441,12 +1512,14 @@ export default function App() {
         const lotoResult = await fetchLotteryResultDirectly('lotofacil', 'latest');
         if (lotoResult && lotoResult.contest > 0) {
           console.log(`[Auto-Sync] Sorteio oficial Lotofácil #${lotoResult.contest} sincronizado`);
+          window.dispatchEvent(new CustomEvent('bolao_lottery_result_synced', { detail: lotoResult }));
           await checkAndNotifyWinningGamesForResult('lotofacil', lotoResult);
         }
 
         const megaResult = await fetchLotteryResultDirectly('megasena', 'latest');
         if (megaResult && megaResult.contest > 0) {
           console.log(`[Auto-Sync] Sorteio oficial Mega-Sena #${megaResult.contest} sincronizado`);
+          window.dispatchEvent(new CustomEvent('bolao_mega_result_synced', { detail: megaResult }));
           await checkAndNotifyWinningGamesForResult('megasena', megaResult);
         }
       } catch (err) {
