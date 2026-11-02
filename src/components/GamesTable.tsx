@@ -399,51 +399,83 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   useEffect(() => {
     if (!activePool) return;
 
+    // Detecta se este é o bolão principal ou se é o único bolão (para garantir suporte a jogos antigos/importados)
     const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
       activePool.name?.toLowerCase().includes('principal') || 
-      activePool.name?.toLowerCase().includes('lotofácil');
+      activePool.name?.toLowerCase().includes('lotofácil') ||
+      pools.length <= 1;
 
-    // Otimização: Filtra por poolId diretamente no Firestore para reduzir tráfego e latência
+    // Otimização: Filtra por poolId diretamente no Firestore quando possível.
+    // REMOVIDO orderBy('createdAt') para evitar que documentos sem esse campo sejam excluídos do resultado (comportamento padrão do Firestore)
     let qGames;
     if (isPrincipalPool) {
-      // Para o pool principal, pegamos os mais recentes incluindo retroativos
-      qGames = query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(5000));
+      // Para o pool principal ou se for o único, pegamos todos para garantir retrocompatibilidade total
+      qGames = query(collection(db, 'games'), limit(5000));
     } else {
-      // Busca filtrada e instantânea para pools específicos
+      // Busca filtrada para pools específicos (ainda sem orderBy por segurança de dados legados)
       qGames = query(collection(db, 'games'), where('poolId', '==', activePool.id), limit(5000));
     }
 
     const unsubGames = onSnapshot(qGames, snapshot => {
       const allDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      // Filtro de memória inteligente para suporte a jogos sem poolId (retroativos)
+      // Se estivermos no pool principal, mostramos jogos deste pool OU sem pool OU com ID padrão
       let list = allDocs.filter((g: any) => {
         if (!activePool) return true;
         if (g.poolId === activePool.id) return true;
-        // Suporte retroativo para jogos cadastrados sem poolId ou com ID padrão
         if (isPrincipalPool && (!g.poolId || g.poolId === 'default_lotofacil_pool')) return true;
+        
+        // Adicional: Se o pool ativo for o principal, mostramos jogos que pertencem a pools que não existem mais
+        if (isPrincipalPool && g.poolId && !pools.some(p => p.id === g.poolId)) return true;
+        
         return false;
       });
 
+      // Se por algum motivo o filtro acima esvaziou a lista mas temos documentos, fallback para mostrar tudo no pool principal
       if (list.length === 0 && allDocs.length > 0 && isPrincipalPool) {
         list = allDocs;
       }
 
+      // Ordenação robusta em memória: prioritiza data e concurso decrescente
       list.sort((a: any, b: any) => {
         const cNumA = extractContestNumber(a.contestNumber || a.contest);
         const cNumB = extractContestNumber(b.contestNumber || b.contest);
         const dateA = parseDateSafely(a.date, a.month, cNumA).getTime();
         const dateB = parseDateSafely(b.date, b.month, cNumB).getTime();
         if (dateA !== dateB) return dateB - dateA;
-        return (cNumB || 0) - (cNumA || 0);
+        if ((cNumB || 0) !== (cNumA || 0)) return (cNumB || 0) - (cNumA || 0);
+        const tsA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
+        const tsB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+        return tsB - tsA;
       });
+
       setGames(list);
       setGamesReady(true);
+      
+      // Informa o administrador sobre o status da sincronização
+      if (isAdmin && allDocs.length > 0) {
+        const hiddenCount = allDocs.length - list.length;
+        if (hiddenCount > 0) {
+          console.log(`[Sync] Encontrados ${allDocs.length} jogos na nuvem. ${list.length} visíveis neste bolão, ${hiddenCount} em outros bolões.`);
+        } else {
+          console.log(`[Sync] Sincronização completa: ${list.length} jogos carregados da nuvem.`);
+        }
+      }
+
+      // Cache assíncrono com proteção de cota (localStorage tem limite de 5MB)
       setTimeout(() => {
         try {
-          localStorage.setItem('bolao_cache_games', JSON.stringify(list));
+          // Salva apenas os primeiros 1000 para não estourar o cache local, mas mantém todos em memória
+          const cacheList = list.slice(0, 1000);
+          localStorage.setItem('bolao_cache_games', JSON.stringify(cacheList));
         } catch (cacheErr) {
-          console.warn('Failed to save games to localStorage cache:', cacheErr);
+          console.warn('LocalStorage limit exceeded, caching only first 100 games');
+          try {
+             localStorage.setItem('bolao_cache_games', JSON.stringify(list.slice(0, 100)));
+          } catch (e) {}
         }
-      }, 50);
+      }, 100);
     }, err => {
       console.warn('Games snapshot error, loading cache:', err);
       if (isQuotaError(err)) {
@@ -817,59 +849,22 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     return getGameDateInfo(game).isActive;
   };
 
+  // Deduplicação visual apenas para exibição (não deleta do banco)
   const uniqueGames = useMemo(() => {
     const seen = new Set<string>();
     return games.filter(g => {
-      const cNum = extractContestNumber(g.contest);
+      const cNum = extractContestNumber(g.contestNumber || g.contest);
       const dateInfo = getGameDateInfo(g);
       const numbersKey = Array.isArray(g.numbers)
         ? g.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b).join('-')
         : '';
-      const sig = `${g.poolId || ''}::${cNum || dateInfo.dateStr}::${numbersKey}`;
+      // A assinatura agora inclui o ID do documento para garantir que não escondemos jogos diferentes com mesmos números
+      const sig = `${g.poolId || ''}::${cNum || dateInfo.dateStr}::${numbersKey}::${g.id}`;
       if (seen.has(sig)) return false;
       seen.add(sig);
       return true;
     });
   }, [games]);
-
-  // Lista de bilhetes que estão duplicados no banco de dados para permitir exclusão em lote
-  const duplicateGamesList = useMemo(() => {
-    const seen = new Set<string>();
-    const dupes: any[] = [];
-    games.forEach(g => {
-      const cNum = extractContestNumber(g.contest);
-      const dateInfo = getGameDateInfo(g);
-      const numbersKey = Array.isArray(g.numbers)
-        ? g.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b).join('-')
-        : '';
-      const sig = `${g.poolId || ''}::${cNum || dateInfo.dateStr}::${numbersKey}`;
-      if (seen.has(sig)) {
-        dupes.push(g);
-      } else {
-        seen.add(sig);
-      }
-    });
-    return dupes;
-  }, [games]);
-
-  // Auto-deduplicação silenciosa no Firestore caso algum bilhete repetido já exista no banco
-  const autoCleanDuplicatesRef = useRef(false);
-  useEffect(() => {
-    if (duplicateGamesList.length > 0 && !autoCleanDuplicatesRef.current) {
-      autoCleanDuplicatesRef.current = true;
-      const batch = writeBatch(db);
-      duplicateGamesList.forEach(g => {
-        if (g.id) {
-          batch.delete(doc(db, 'games', g.id));
-        }
-      });
-      batch.commit().catch(err => {
-        console.warn('Auto deduplication error:', err);
-      }).finally(() => {
-        autoCleanDuplicatesRef.current = false;
-      });
-    }
-  }, [duplicateGamesList]);
 
   const gamesWithPrizes = useMemo(() => {
     return uniqueGames.map(game => {
@@ -1847,46 +1842,54 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
       {/* 2. ORDEM SECUNDÁRIA: Tabela / Lista de Apostas do Bolão com Abas (Hoje vs Futuras vs Histórico) */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
-        {/* Abas: Jogos de Hoje vs Apostas Futuras vs Histórico Arquivado */}
-        <div className="grid grid-cols-3 border-b border-gray-200 bg-gray-100/80 p-1 gap-1 text-[11px] sm:text-xs">
-          <button
-            type="button"
-            onClick={() => setGamesTab('today')}
-            className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
-              gamesTab === 'today'
-                ? 'bg-purple-900 text-white shadow-xs font-black'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
-            }`}
-          >
-            <span>🎯</span>
-            <span className="truncate">Hoje ({todayGames.length})</span>
-          </button>
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-100/80 p-1 gap-1 text-[11px] sm:text-xs overflow-x-auto no-scrollbar">
+          <div className="grid grid-cols-3 flex-1 gap-1 min-w-max">
+            <button
+              type="button"
+              onClick={() => setGamesTab('today')}
+              className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
+                gamesTab === 'today'
+                  ? 'bg-purple-900 text-white shadow-xs font-black'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+              }`}
+            >
+              <span>🎯</span>
+              <span className="truncate">Hoje ({todayGames.length})</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setGamesTab('future')}
-            className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
-              gamesTab === 'future'
-                ? 'bg-purple-900 text-white shadow-xs font-black'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
-            }`}
-          >
-            <span>⏳</span>
-            <span className="truncate">Futuras ({futureGames.length})</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setGamesTab('future')}
+              className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
+                gamesTab === 'future'
+                  ? 'bg-purple-900 text-white shadow-xs font-black'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+              }`}
+            >
+              <span>⏳</span>
+              <span className="truncate">Futuras ({futureGames.length})</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setGamesTab('history')}
-            className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
-              gamesTab === 'history'
-                ? 'bg-purple-900 text-white shadow-xs font-black'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
-            }`}
-          >
-            <span>📜</span>
-            <span className="truncate">Histórico ({historyGames.length})</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setGamesTab('history')}
+              className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
+                gamesTab === 'history'
+                  ? 'bg-purple-900 text-white shadow-xs font-black'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+              }`}
+            >
+              <span>📜</span>
+              <span className="truncate">Histórico ({historyGames.length})</span>
+            </button>
+          </div>
+
+          {isAdmin && (
+            <div className="px-2 py-1.5 bg-white/50 rounded-lg border border-gray-200 flex flex-col items-center justify-center min-w-max leading-none ml-1">
+              <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter mb-0.5">Total Nuvem</span>
+              <span className="text-[11px] font-black text-indigo-700">{games.length}</span>
+            </div>
+          )}
         </div>
 
         {gamesTab === 'history' ? (
