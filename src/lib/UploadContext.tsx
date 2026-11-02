@@ -195,10 +195,18 @@ export const checkGameDuplicateInFirestore = async (
   return { isDuplicate: false };
 };
 
-export const getExistingSignatures = async (): Promise<Set<string>> => {
+export const getExistingSignatures = async (poolId?: string): Promise<Set<string>> => {
   const signatures = new Set<string>();
   try {
-    const q = query(collection(db, 'games'));
+    let q;
+    if (poolId) {
+      // Filtra por poolId para reduzir drasticamente o número de documentos lidos e aumentar a velocidade
+      q = query(collection(db, 'games'), where('poolId', '==', poolId));
+    } else {
+      // Fallback para todos os jogos se poolId não for fornecido (limitado para evitar travamentos)
+      q = query(collection(db, 'games'), limit(5000));
+    }
+    
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
       const data = doc.data();
@@ -698,9 +706,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Pre-fetch signatures once or use cache for the batch
+    const targetPoolId = options?.poolId;
     let existingSigs = signaturesCache;
     if (!existingSigs) {
-      existingSigs = await getExistingSignatures();
+      existingSigs = await getExistingSignatures(targetPoolId);
       setSignaturesCache(existingSigs);
     }
 
@@ -711,7 +720,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const failedItems = queue.filter(item => item.status === 'error');
     if (failedItems.length === 0) return;
 
-    const existingSigs = await getExistingSignatures();
+    // Tenta obter o poolId do primeiro item falho para otimizar
+    const targetPoolId = failedItems[0]?.options?.poolId;
+    const existingSigs = await getExistingSignatures(targetPoolId);
     await runBatchUntilAllSucceed(failedItems, existingSigs);
   }, [queue, pools]);
 

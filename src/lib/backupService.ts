@@ -191,6 +191,19 @@ export async function downloadFullBackup(): Promise<{ totalRecords: number; file
 export async function saveDailyCloudBackupToFirestore(): Promise<{ id: string; totalRecords: number; isNew: boolean }> {
   const todayStr = new Date().toLocaleDateString('pt-BR');
   
+  // 1. Verifica se já existe um backup para hoje para não repetir o trabalho pesado (download/upload de milhares de docs)
+  try {
+    const qExisting = query(collection(db, 'backups_history'), where('dateRef', '==', todayStr), limit(1));
+    const snapExisting = await getDocs(qExisting);
+    if (!snapExisting.empty) {
+      const docData = snapExisting.docs[0].data();
+      console.log(`[Backup] Já existe um backup para hoje (${todayStr}), pulando nova geração.`);
+      return { id: snapExisting.docs[0].id, totalRecords: docData.totalRecords || 0, isNew: false };
+    }
+  } catch (e) {
+    console.warn('[Backup] Erro ao verificar backups existentes, prosseguindo...', e);
+  }
+  
 
   // Gera novo backup na nuvem
   const backupData: Record<string, any[]> = {

@@ -399,23 +399,31 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   useEffect(() => {
     if (!activePool) return;
 
-    // Escuta todos os jogos cadastrados (incluindo anos anteriores e registros sem campo date)
-    const qGames = query(collection(db, 'games'), limit(2000));
+    const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
+      activePool.name?.toLowerCase().includes('principal') || 
+      activePool.name?.toLowerCase().includes('lotofácil');
+
+    // Otimização: Filtra por poolId diretamente no Firestore para reduzir tráfego e latência
+    let qGames;
+    if (isPrincipalPool) {
+      // Para o pool principal, pegamos os mais recentes incluindo retroativos
+      qGames = query(collection(db, 'games'), orderBy('createdAt', 'desc'), limit(5000));
+    } else {
+      // Busca filtrada e instantânea para pools específicos
+      qGames = query(collection(db, 'games'), where('poolId', '==', activePool.id), limit(5000));
+    }
+
     const unsubGames = onSnapshot(qGames, snapshot => {
       const allDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       let list = allDocs.filter((g: any) => {
         if (!activePool) return true;
         if (g.poolId === activePool.id) return true;
         // Suporte retroativo para jogos cadastrados sem poolId ou com ID padrão
-        const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
-          activePool.name?.toLowerCase().includes('principal') || 
-          activePool.name?.toLowerCase().includes('lotofácil');
-        if (!g.poolId && isPrincipalPool) return true;
-        if (g.poolId === 'default_lotofacil_pool' && isPrincipalPool) return true;
+        if (isPrincipalPool && (!g.poolId || g.poolId === 'default_lotofacil_pool')) return true;
         return false;
       });
 
-      if (list.length === 0 && allDocs.length > 0) {
+      if (list.length === 0 && allDocs.length > 0 && isPrincipalPool) {
         list = allDocs;
       }
 
@@ -435,7 +443,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         } catch (cacheErr) {
           console.warn('Failed to save games to localStorage cache:', cacheErr);
         }
-      }, 0);
+      }, 50);
     }, err => {
       console.warn('Games snapshot error, loading cache:', err);
       if (isQuotaError(err)) {

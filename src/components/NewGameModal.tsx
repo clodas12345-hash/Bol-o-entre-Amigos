@@ -194,7 +194,7 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
     setSubmitError(null);
     try {
       const targetPoolId = selectedPoolId || activePool?.id || 'default_lotofacil_pool';
-      const existingSigs = await getExistingSignatures();
+      const existingSigs = await getExistingSignatures(targetPoolId);
 
       const receiptURL = null;
       let parsedDate = parseDateSafely(gameDate);

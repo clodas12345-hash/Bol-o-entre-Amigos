@@ -123,8 +123,8 @@ export default function LotofacilDesdobramento({ onClose, onGamesSaved }: Lotofa
     setIsSaving(true);
     try {
       const contestVal = contestNumber.trim() ? Number(contestNumber.trim()) : 0;
-      const existingSigs = await getExistingSignatures();
       const poolId = activePool?.id || 'default_lotofacil_pool';
+      const existingSigs = await getExistingSignatures(poolId);
       const d = new Date();
       const currentMonth = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 
