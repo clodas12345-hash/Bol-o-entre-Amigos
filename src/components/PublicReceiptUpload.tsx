@@ -50,7 +50,7 @@ export default function PublicReceiptUpload() {
       // 1. Processamento e Compressão (se for imagem)
       if (file.type.startsWith('image/')) {
         try {
-          base64Data = await compressImage(file, 1200, 0.7);
+          base64Data = await compressImage(file, 1024, 0.6);
           mimeType = 'image/jpeg';
         } catch (compressErr) {
           console.warn('Falha na compressão, tentando envio direto:', compressErr);
@@ -91,9 +91,9 @@ export default function PublicReceiptUpload() {
         status: 'pending'
       });
 
-      // Timeout de 10 segundos para evitar travamento em conexões lentas
+      // Timeout de 30 segundos para garantir sucesso em arquivos maiores ou redes instáveis
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 10000)
+        setTimeout(() => reject(new Error('TIMEOUT')), 30000)
       );
 
       await Promise.race([uploadPromise, timeoutPromise]);

@@ -6,7 +6,7 @@
  * Comprime uma imagem utilizando o Canvas API para garantir que o tamanho do Base64
  * seja compatível com os limites do Firestore (1MB) e melhore a velocidade de upload.
  */
-export async function compressImage(file: File, maxWidth = 1200, quality = 0.7): Promise<string> {
+export async function compressImage(file: File, maxWidth = 1024, quality = 0.6): Promise<string> {
   return new Promise((resolve, reject) => {
     // Se não for imagem, retorna o erro
     if (!file.type.startsWith('image/')) {

@@ -38,8 +38,17 @@ try {
 }
 
 // Disconnect database network in AI Studio preview as requested ("dados não deve tah ligado aqui no preview")
-if (isAIStudioPreview) {
-  disableNetwork(dbInstance).catch(() => {});
+// We only disconnect on the 'ais-pre' (Shared) domain and NEVER on public pages like upload-receipt or visitante.
+if (isAIStudioPreview && typeof window !== 'undefined') {
+  const isPublicPage = window.location.pathname.includes('/upload-receipt') || 
+                       window.location.pathname.includes('/visitante') ||
+                       window.location.search.includes('comprovante=1');
+  
+  const isSharedPreview = window.location.hostname.includes('ais-pre');
+  
+  if (isSharedPreview && !isPublicPage) {
+    disableNetwork(dbInstance).catch(() => {});
+  }
 }
 
 import { logSystemError } from './systemErrorLogger';

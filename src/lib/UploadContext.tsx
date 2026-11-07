@@ -310,7 +310,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       if (item.file && item.file.type.startsWith('image/')) {
         try {
-          base64Data = await compressImage(item.file, 1200, 0.7);
+          base64Data = await compressImage(item.file, 1024, 0.6);
           mimeType = 'image/jpeg';
         } catch (compressErr) {
           console.warn('Falha na compressão, tentando envio direto:', compressErr);

@@ -427,7 +427,7 @@ export default function Chat() {
     setIsSending(true);
     try {
       if (file.type.startsWith('image/')) {
-        const compressedBase64 = await compressImage(file, 1200, 0.7);
+        const compressedBase64 = await compressImage(file, 1024, 0.6);
         sendImageMessage(compressedBase64);
       } else {
         const reader = new FileReader();
