@@ -25,6 +25,41 @@ export function formatFirstAndLastName(nameOrEmail?: string | null): string {
 }
 
 /**
+ * Determina se um participante estava ativo em um determinado mês de referência (MM/AAAA).
+ * Se o participante foi excluído/desativado do grupo:
+ *  - Não aparece no mês atual nem nas listas dos próximos meses.
+ *  - Permanece visível nas listas dos meses anteriores para manter o histórico antigo intacto.
+ */
+export function isMemberActiveInMonth(member: any, targetMonthStr?: string): boolean {
+  if (!member) return false;
+
+  const now = new Date();
+  const currentMonthStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  const monthToTest = targetMonthStr || currentMonthStr;
+
+  const isExplicitlyInactive = member.active === false || member.status === 'inativo' || member.archived === true;
+
+  if (!isExplicitlyInactive) {
+    return true;
+  }
+
+  // Se o membro possui mês de remoção registrado (ex: 11/2026)
+  if (member.removedMonth && monthToTest) {
+    const [targetM, targetY] = monthToTest.split('/').map(Number);
+    const [remM, remY] = member.removedMonth.split('/').map(Number);
+
+    if (targetY && targetM && remY && remM) {
+      const targetVal = targetY * 12 + targetM;
+      const remVal = remY * 12 + remM;
+      // Se o mês testado for estritamente anterior ao mês de remoção, o membro estava ativo e deve ser exibido!
+      return targetVal < remVal;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Normaliza o telefone garantindo o DDI 55 (Brasil) para o WhatsApp.
  * Evita que o DDD 11 seja interpretado pelo WhatsApp como código de país +1 (EUA).
  */

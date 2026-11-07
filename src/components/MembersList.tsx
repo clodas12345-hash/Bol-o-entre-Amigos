@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, getDoc, setDoc, doc, updateDoc, deleteDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
-import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, calculatePendingMonths } from '../lib/formatters';
+import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, calculatePendingMonths, isMemberActiveInMonth } from '../lib/formatters';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
@@ -77,7 +77,7 @@ export default function MembersList() {
   } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts'>('all');
+  const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts' | 'inactive'>('all');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -529,38 +529,95 @@ export default function MembersList() {
 
   const deleteMember = async (member: any) => {
     if (!isAdmin) {
-      addToast('Apenas administradores podem remover membros.', 'error');
+      addToast('Apenas administradores podem desativar membros.', 'error');
       return;
     }
+
+    const now = new Date();
+    const currentMonthStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
     if (member.isLocalOnly) {
       try {
         const local = getLocalMembers();
-        const updated = local.filter(m => m.id !== member.id);
+        const updated = local.map(m =>
+          m.id === member.id
+            ? { ...m, active: false, status: 'inativo', archived: true, removedMonth: currentMonthStr }
+            : m
+        );
         localStorage.setItem('bolao_local_members', JSON.stringify(updated));
-        addToast('Membro local removido com sucesso.', 'info');
+        addToast(`Membro "${member.displayName || member.name}" desativado do mês atual e futuros. O histórico antigo permanece preservado!`, 'info');
         fetchMembers();
       } catch (err) {
-        addToast('Erro ao remover membro local.', 'error');
+        addToast('Erro ao desativar membro local.', 'error');
       }
       return;
     }
 
     try {
       const colName = member.collectionName || 'members';
-      await deleteDoc(doc(db, colName, member.id));
-      addToast('Membro removido com sucesso.', 'info');
+      await updateDoc(doc(db, colName, member.id), {
+        active: false,
+        status: 'inativo',
+        archived: true,
+        removedMonth: currentMonthStr,
+        removedAt: serverTimestamp()
+      });
+      addToast(`Membro "${member.displayName || member.name}" desativado do mês atual e futuros. O histórico dos meses passados foi mantido!`, 'success');
       fetchMembers();
     } catch (err) {
       if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
-        // Remove do cache local também
         const local = getLocalMembers();
-        const updated = local.filter(m => m.id !== member.id);
+        const updated = local.map(m =>
+          m.id === member.id
+            ? { ...m, active: false, status: 'inativo', archived: true, removedMonth: currentMonthStr }
+            : m
+        );
         localStorage.setItem('bolao_local_members', JSON.stringify(updated));
-        addToast('Membro removido localmente devido ao limite de cota do servidor.', 'info');
+        addToast(`Membro "${member.displayName || member.name}" desativado localmente. Histórico mantido!`, 'info');
         fetchMembers();
+      } else {
+        addToast('Erro ao desativar membro.', 'error');
       }
+    }
+  };
+
+  const reactivateMember = async (member: any) => {
+    if (!isAdmin) {
+      addToast('Apenas administradores podem reativar membros.', 'error');
+      return;
+    }
+
+    if (member.isLocalOnly) {
+      try {
+        const local = getLocalMembers();
+        const updated = local.map(m =>
+          m.id === member.id
+            ? { ...m, active: true, status: 'ativo', archived: false, removedMonth: null }
+            : m
+        );
+        localStorage.setItem('bolao_local_members', JSON.stringify(updated));
+        addToast(`Membro "${member.displayName || member.name}" reativado para o grupo!`, 'success');
+        fetchMembers();
+      } catch (err) {
+        addToast('Erro ao reativar membro local.', 'error');
+      }
+      return;
+    }
+
+    try {
+      const colName = member.collectionName || 'members';
+      await updateDoc(doc(db, colName, member.id), {
+        active: true,
+        status: 'ativo',
+        archived: false,
+        removedMonth: null,
+        removedAt: null
+      });
+      addToast(`Membro "${member.displayName || member.name}" reativado para as listas do grupo!`, 'success');
+      fetchMembers();
+    } catch (err) {
+      addToast('Erro ao reativar membro.', 'error');
     }
   };
 
@@ -642,6 +699,18 @@ export default function MembersList() {
 
   const [openChargeMenu, setOpenChargeMenu] = useState<string | null>(null);
 
+  // Efeito para fechar menu ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('[data-charge-menu-trigger]') && !target.closest('[data-charge-menu-content]')) {
+        setOpenChargeMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openChargeMenu]);
+
   // Ordenação alfabética crescente (A-Z) para a lista telefônica / membros
   const sortedMembers = useMemo(() => {
     return [...members].sort((a, b) => {
@@ -651,18 +720,25 @@ export default function MembersList() {
     });
   }, [members]);
 
-  // Membros aprovados e pedidos pendentes de autorização
+  // Membros aprovados e ativos no mês vigente
+  const now = new Date();
+  const currentMonthStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+
   const approvedMembers = useMemo(() => {
-    return sortedMembers.filter(m => m.approved !== false);
-  }, [sortedMembers]);
+    return sortedMembers.filter(m => m.approved !== false && isMemberActiveInMonth(m, currentMonthStr));
+  }, [sortedMembers, currentMonthStr]);
+
+  const inactiveMembers = useMemo(() => {
+    return sortedMembers.filter(m => m.approved !== false && !isMemberActiveInMonth(m, currentMonthStr));
+  }, [sortedMembers, currentMonthStr]);
 
   const pendingJoinRequests = useMemo(() => {
     return sortedMembers.filter(m => m.approved === false);
   }, [sortedMembers]);
 
   const pendingQuotaRequests = useMemo(() => {
-    return sortedMembers.filter(m => m.approved !== false && m.quotaRequest && m.quotaRequest.status === 'Pendente');
-  }, [sortedMembers]);
+    return sortedMembers.filter(m => m.approved !== false && isMemberActiveInMonth(m, currentMonthStr) && m.quotaRequest && m.quotaRequest.status === 'Pendente');
+  }, [sortedMembers, currentMonthStr]);
 
   const displayedMembers = useMemo(() => {
     if (memberFilterTab === 'pending') {
@@ -674,8 +750,11 @@ export default function MembersList() {
     if (memberFilterTab === 'unpaid') {
       return approvedMembers.filter(m => m.paymentStatus === 'Pendente');
     }
+    if (memberFilterTab === 'inactive') {
+      return inactiveMembers;
+    }
     return approvedMembers;
-  }, [memberFilterTab, approvedMembers]);
+  }, [memberFilterTab, approvedMembers, inactiveMembers]);
 
   const totalMembers = approvedMembers.length;
   const totalQuotas = approvedMembers.reduce((sum, m) => sum + (Number(m.quotas) || 1), 0);
@@ -862,6 +941,20 @@ export default function MembersList() {
           >
             <span>📄</span>
             <span>Comprovantes</span>
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setMemberFilterTab('inactive')}
+            className={`flex-1 sm:flex-initial py-2 px-2.5 sm:px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer font-bold whitespace-nowrap ${
+              memberFilterTab === 'inactive'
+                ? 'bg-slate-700 text-white shadow-xs font-black'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+            }`}
+          >
+            <span>🏚️</span>
+            <span>Desativados / Histórico ({inactiveMembers.length})</span>
           </button>
         )}
       </div>
@@ -1367,15 +1460,28 @@ export default function MembersList() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setConfirmation({
-                                    action: () => deleteMember(member),
-                                    message: `Excluir definitivamente o participante ${member.displayName}?`
-                                  });
+                                  const isCurrentlyActive = isMemberActiveInMonth(member, currentMonthStr);
+                                  if (!isCurrentlyActive) {
+                                    reactivateMember(member);
+                                  } else {
+                                    setConfirmation({
+                                      action: () => deleteMember(member),
+                                      message: `Desativar o participante "${member.displayName || member.name}" do mês atual e das listas futuras? O histórico antigo dos meses passados continuará mantido intacto!`
+                                    });
+                                  }
                                 }}
-                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                                title="Remover"
+                                className={`p-1.5 rounded-lg transition cursor-pointer flex items-center gap-1 text-xs font-bold ${
+                                  !isMemberActiveInMonth(member, currentMonthStr)
+                                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 px-2'
+                                    : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                                }`}
+                                title={!isMemberActiveInMonth(member, currentMonthStr) ? 'Reativar participante no grupo' : 'Desativar das listas do mês e próximas'}
                               >
-                                🗑️
+                                {!isMemberActiveInMonth(member, currentMonthStr) ? (
+                                  <><span>⚡</span><span>Reativar</span></>
+                                ) : (
+                                  <span>🗑️</span>
+                                )}
                               </button>
                             )}
                           </div>

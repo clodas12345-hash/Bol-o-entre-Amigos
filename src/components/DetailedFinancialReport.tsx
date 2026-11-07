@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, doc, updateDoc, getDoc, addDoc, deleteDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db, isQuotaError, auth } from '../lib/firebase';
-import { formatFirstAndLastName, getWhatsAppCobrarUrl, calculatePendingMonths } from '../lib/formatters';
+import { formatFirstAndLastName, getWhatsAppCobrarUrl, calculatePendingMonths, isMemberActiveInMonth } from '../lib/formatters';
 import { useToast } from './NotificationManager';
 import PixPaymentArea from './PixPaymentArea';
 import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
@@ -123,7 +123,35 @@ export default function DetailedFinancialReport() {
 
   const [openChargeMenu, setOpenChargeMenu] = useState<string | null>(null);
 
+  // Efeito para fechar menu ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('[data-charge-menu-trigger]') && !target.closest('[data-charge-menu-content]')) {
+        setOpenChargeMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openChargeMenu]);
+
   const report = members
+    .filter(member => {
+      const allMemberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
+      const filteredPayments = showAllTime 
+        ? allMemberPayments 
+        : allMemberPayments.filter(p => p.month === monthKey);
+
+      // Se possui pagamento registrado para este mês ou no histórico total, sempre exibe!
+      if (filteredPayments.length > 0) return true;
+
+      if (showAllTime) {
+        return isMemberActiveInMonth(member, monthKey) || allMemberPayments.length > 0;
+      }
+
+      // No mês selecionado, verifica se o participante estava ativo naquela época
+      return isMemberActiveInMonth(member, monthKey);
+    })
     .map(member => {
       const allMemberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
       
@@ -378,6 +406,7 @@ export default function DetailedFinancialReport() {
                         {!isPaid && can('members_send_reminder') && (
                           <div className="relative">
                             <button
+                              data-charge-menu-trigger
                               onClick={() => setOpenChargeMenu(openChargeMenu === m.id ? null : m.id)}
                               className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
                               title="Opções de cobrança"
@@ -385,7 +414,7 @@ export default function DetailedFinancialReport() {
                               💬 Cobrar ▼
                             </button>
                             {openChargeMenu === m.id && (
-                              <div className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                              <div data-charge-menu-content className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
                                 <div className="p-2 bg-gray-50 text-[10px] font-black text-gray-500 uppercase text-center border-b">Escolha o dia:</div>
                                 {days.map(day => (
                                   <button
