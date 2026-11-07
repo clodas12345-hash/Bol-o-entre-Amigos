@@ -155,11 +155,12 @@ export function formatAnyDateBR(dateVal: any): string {
 }
 
 export function getAppPublicUrl(): string {
-  const PUBLIC_SHARED_URL = 'https://ais-pre-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+  // Ajustado conforme solicitação: links de retorno devem usar DEV e nunca PRE
+  const PUBLIC_SHARED_URL = 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
   if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
-    // Nunca retorna ais-dev para links compartilhados no WhatsApp, pois o ais-dev exige "Cookie check" de autenticação do AI Studio
-    if (window.location.origin.includes('ais-dev-')) {
-      return window.location.origin.replace('ais-dev-', 'ais-pre-');
+    // Força o uso do subdomínio ais-dev conforme instrução
+    if (window.location.origin.includes('ais-pre-')) {
+      return window.location.origin.replace('ais-pre-', 'ais-dev-');
     }
     return window.location.origin;
   }

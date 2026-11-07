@@ -3,6 +3,7 @@ import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'fire
 import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
+import { compressImage, getBase64Size } from '../lib/imageUtils';
 import logoImg from '../assets/images/bolao_logo_app.png';
 
 export default function PublicReceiptUpload() {
@@ -41,73 +42,97 @@ export default function PublicReceiptUpload() {
     }
 
     setLoading(true);
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onloadend = async () => {
-      try {
-        const base64Data = String(reader.result || '');
-        const cleanName = name.trim();
-        const cleanPhone = phone.trim();
+    
+    try {
+      let base64Data = '';
+      let mimeType = file.type || 'image/jpeg';
 
-        // Grava diretamente no Firestore (funciona tanto na Web quanto no APK sem depender de servidor externo)
-        await addDoc(collection(db, 'pending_receipts'), {
-          name: cleanName,
-          phone: cleanPhone,
-          imageBase64: base64Data,
-          mimeType: file.type || 'image/jpeg',
-          createdAt: serverTimestamp(),
-          status: 'pending'
-        });
-
-        // Notifica os administradores em tempo real
+      // 1. Processamento e Compressão (se for imagem)
+      if (file.type.startsWith('image/')) {
         try {
-          const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
-          const adminSnap = await getDocs(qAdmin);
-          for (const adminDoc of adminSnap.docs) {
-            const adminData = adminDoc.data();
-            await addDoc(collection(db, 'notifications'), {
-              userId: adminData.uid || adminDoc.id,
-              title: '💸 Novo Comprovante PIX Enviado',
-              message: `${cleanName} (${cleanPhone}) enviou um comprovante de pagamento pelo link!`,
-              type: 'payment',
-              targetPath: '/contatos',
-              read: false,
-              createdAt: serverTimestamp()
-            });
-          }
-        } catch {}
-
-        setSubmittedSuccess(true);
-        addToast('Comprovante enviado com sucesso para o administrador!', 'success');
-        setFile(null);
-      } catch (err) {
-        console.error('Erro ao salvar comprovante no Firestore, tentando rota alternativa:', err);
-        try {
-          const response = await fetch('/api/public/upload-receipt', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: name.trim(),
-              phone: phone.trim(),
-              imageBase64: reader.result,
-              mimeType: file.type
-            })
+          base64Data = await compressImage(file, 1200, 0.7);
+          mimeType = 'image/jpeg';
+        } catch (compressErr) {
+          console.warn('Falha na compressão, tentando envio direto:', compressErr);
+          // Fallback para leitura direta se falhar compressão
+          const reader = new FileReader();
+          base64Data = await new Promise((resolve) => {
+            reader.onloadend = () => resolve(String(reader.result || ''));
+            reader.readAsDataURL(file);
           });
-          const data = await response.json();
-          if (data.success) {
-            setSubmittedSuccess(true);
-            addToast('Comprovante enviado com sucesso!', 'success');
-            setFile(null);
-          } else {
-            addToast(data.message || 'Erro ao enviar comprovante.', 'error');
-          }
-        } catch {
-          addToast('Erro ao enviar comprovante. Verifique sua conexão.', 'error');
         }
-      } finally {
-        setLoading(false);
+      } else {
+        // Para PDF ou outros tipos suportados
+        const reader = new FileReader();
+        base64Data = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(String(reader.result || ''));
+          reader.readAsDataURL(file);
+        });
       }
-    };
+
+      // 2. Validação de tamanho final (Firestore tem limite de 1MB por documento)
+      const dataSize = getBase64Size(base64Data);
+      if (dataSize > 1000000) {
+        addToast('O arquivo é muito grande (limite 1MB). Tente tirar uma foto com menor resolução ou enviar um arquivo menor.', 'error');
+        setLoading(false);
+        return;
+      }
+
+      const cleanName = name.trim();
+      const cleanPhone = phone.trim();
+
+      // 3. Envio para o Firestore com timeout de segurança
+      const uploadPromise = addDoc(collection(db, 'pending_receipts'), {
+        name: cleanName,
+        phone: cleanPhone,
+        imageBase64: base64Data,
+        mimeType: mimeType,
+        createdAt: serverTimestamp(),
+        status: 'pending'
+      });
+
+      // Timeout de 10 segundos para evitar travamento em conexões lentas
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT')), 10000)
+      );
+
+      await Promise.race([uploadPromise, timeoutPromise]);
+
+      // 4. Notificações para Administradores
+      try {
+        const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
+        const adminSnap = await getDocs(qAdmin);
+        for (const adminDoc of adminSnap.docs) {
+          const adminData = adminDoc.data();
+          await addDoc(collection(db, 'notifications'), {
+            userId: adminData.uid || adminDoc.id,
+            title: '💸 Novo Comprovante PIX Enviado',
+            message: `${cleanName} (${cleanPhone}) enviou um comprovante de pagamento pelo link!`,
+            type: 'payment',
+            targetPath: '/contatos',
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        }
+      } catch (notifErr) {
+        console.warn('Erro ao notificar admin:', notifErr);
+      }
+
+      setSubmittedSuccess(true);
+      addToast('Comprovante enviado com sucesso!', 'success');
+      setFile(null);
+    } catch (err: any) {
+      console.error('Erro ao enviar comprovante:', err);
+      if (err.message === 'TIMEOUT') {
+        addToast('O envio está demorando muito. Verifique sua conexão e tente novamente.', 'error');
+      } else if (err.code === 'permission-denied') {
+        addToast('Erro de permissão no servidor. Contate o administrador.', 'error');
+      } else {
+        addToast('Erro ao salvar comprovante. Tente novamente em instantes.', 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

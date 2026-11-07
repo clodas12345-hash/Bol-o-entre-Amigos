@@ -11,6 +11,7 @@ import { containsBadWords } from '../lib/profanityFilter';
 import { Camera, Image as ImageIcon, Mic, AtSign, Bot, Send, Reply, Smile, Trash2, Lock, Unlock, Sparkles, X, Check, AlertTriangle, ArrowLeft, EyeOff } from 'lucide-react';
 import { getApiUrl } from '../lib/apiHelper';
 import { getNextDrawDate, getDayNameBR } from '../lib/drawCalendar';
+import { compressImage } from '../lib/imageUtils';
 
 function formatMessageTime(dateVal: any): string {
   if (!dateVal) return '';
@@ -418,25 +419,31 @@ export default function Chat() {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     setShowCameraOptions(false);
     if (!file) return;
 
-    if (file.size > 4 * 1024 * 1024) {
-      addToast('A imagem é muito grande. Escolha uma imagem de até 4MB.', 'error');
-      e.target.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (uploadEvent) => {
-      const base64String = uploadEvent.target?.result as string;
-      if (base64String) {
-        sendImageMessage(base64String);
+    setIsSending(true);
+    try {
+      if (file.type.startsWith('image/')) {
+        const compressedBase64 = await compressImage(file, 1200, 0.7);
+        sendImageMessage(compressedBase64);
+      } else {
+        const reader = new FileReader();
+        reader.onload = async (uploadEvent) => {
+          const base64String = uploadEvent.target?.result as string;
+          if (base64String) {
+            sendImageMessage(base64String);
+          }
+        };
+        reader.readAsDataURL(file);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Erro ao processar imagem para o chat:', err);
+      addToast('Não foi possível processar a imagem.', 'error');
+      setIsSending(false);
+    }
     e.target.value = '';
   };
 

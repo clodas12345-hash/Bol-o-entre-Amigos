@@ -674,7 +674,7 @@ export default function MembersList() {
   const paidQuotas = paidMembers.reduce((sum, m) => sum + (Number(m.quotas) || 1), 0);
 
   return (
-    <div className="bg-white p-3 sm:p-4 space-y-4 sm:space-y-6 rounded-2xl border border-gray-150 shadow-xs overflow-hidden">
+    <div className="bg-white p-3 sm:p-4 space-y-4 sm:space-y-6 rounded-2xl border border-gray-150 shadow-xs">
 
       {confirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -1307,15 +1307,22 @@ export default function MembersList() {
                               <div className="relative">
                                 <button
                                   type="button"
-                                  onClick={() => setOpenChargeMenu(openChargeMenu === member.id ? null : member.id)}
-                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                                  title="Opções de Cobrança"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenChargeMenu(openChargeMenu === member.id ? null : member.id);
+                                  }}
+                                  className={`px-2 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-[11px] font-black uppercase tracking-tight shadow-xs border ${
+                                    openChargeMenu === member.id 
+                                      ? 'bg-emerald-600 text-white border-emerald-500 scale-105' 
+                                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  }`}
+                                  title="Opções de Cobrança (Dias 02, 07, 12)"
                                 >
-                                  💬 Cobrar ▼
+                                  <span>💬</span> Cobrar {openChargeMenu === member.id ? '▲' : '▼'}
                                 </button>
                                 {openChargeMenu === member.id && (
-                                  <div className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-                                    <div className="p-2 bg-gray-50 text-[10px] font-black text-gray-500 uppercase text-center border-b">Escolha o dia:</div>
+                                  <div className="absolute right-0 top-full mt-1.5 w-40 bg-white rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.2)] border border-indigo-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                    <div className="p-2 bg-indigo-50 text-[9px] font-black text-indigo-900 uppercase text-center border-b border-indigo-100">Lembrar Pagamento:</div>
                                     {['02', '07', '12'].map(day => (
                                       <button
                                         key={day}

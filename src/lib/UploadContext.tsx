@@ -8,6 +8,7 @@ import { LOTOFACIL_PRICES, MEGASENA_PRICES } from './prizes';
 import { getApiUrl, safeFetchJson } from './apiHelper';
 import { getValidDrawSequence, getNextDrawDate, formatDateToYYYYMMDD } from './drawCalendar';
 import { logSystemError } from './systemErrorLogger';
+import { compressImage, getBase64Size } from './imageUtils';
 
 export interface QueueItem {
   id: string;
@@ -303,35 +304,39 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     try {
       updateItem(item.id, { status: 'compressing', progress: 20, message: 'Preparando imagem para envio...' });
 
-      // 1. Redimensionamento básico no cliente para economizar banda (máx 1600px, Sharp cuidará dos 1280px e filtros)
-      const compressed = await new Promise<{ base64: string; mimeType: string }>((resolve) => {
-        if (!item.file) return resolve({ base64: '', mimeType: '' });
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const MAX = 1800; // Alta resolução para manter a nitidez perfeita de todos os números e círculos
-            let w = img.width, h = img.height;
-            if (w > h ? w > MAX : h > MAX) {
-              if (w > h) { h = Math.round(h * (MAX / w)); w = MAX; }
-              else { w = Math.round(w * (MAX / h)); h = MAX; }
-            }
-            canvas.width = w; canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'high';
-              ctx.drawImage(img, 0, 0, w, h);
-              resolve({ base64: canvas.toDataURL('image/jpeg', 0.88), mimeType: 'image/jpeg' });
-            } else resolve({ base64: e.target?.result as string, mimeType: item.file?.type || '' });
-          };
-          img.src = e.target?.result as string;
-        };
-        reader.readAsDataURL(item.file);
-      });
+      // 1. Processamento e Compressão (se for imagem)
+      let base64Data = '';
+      let mimeType = item.file?.type || 'image/jpeg';
 
-      if (!compressed.base64) throw new Error('Falha ao processar arquivo');
+      if (item.file && item.file.type.startsWith('image/')) {
+        try {
+          base64Data = await compressImage(item.file, 1200, 0.7);
+          mimeType = 'image/jpeg';
+        } catch (compressErr) {
+          console.warn('Falha na compressão, tentando envio direto:', compressErr);
+          const reader = new FileReader();
+          base64Data = await new Promise((resolve) => {
+            reader.onloadend = () => resolve(String(reader.result || ''));
+            reader.readAsDataURL(item.file!);
+          });
+        }
+      } else if (item.file) {
+        const reader = new FileReader();
+        base64Data = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(String(reader.result || ''));
+          reader.readAsDataURL(item.file!);
+        });
+      }
+
+      if (!base64Data) throw new Error('Falha ao processar arquivo');
+
+      // 2. Validação de tamanho final (Firestore tem limite de 1MB por documento)
+      const dataSize = getBase64Size(base64Data);
+      if (dataSize > 1000000) {
+        throw new Error('Arquivo muito grande para o banco de dados (Limite 1MB). Tente tirar uma foto com menor resolução.');
+      }
+
+      const compressed = { base64: base64Data, mimeType };
 
       updateItem(item.id, { status: 'ocr', progress: 40, message: 'Enviando imagem...' });
 
