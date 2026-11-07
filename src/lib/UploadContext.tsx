@@ -209,7 +209,7 @@ export const getExistingSignatures = async (poolId?: string): Promise<Set<string
     
     const snap = await getDocs(q);
     snap.docs.forEach((doc) => {
-      const data = doc.data();
+      const data: any = doc.data();
       let cNum = '';
       if (typeof data.contestNumber === 'number') {
         cNum = String(data.contestNumber);

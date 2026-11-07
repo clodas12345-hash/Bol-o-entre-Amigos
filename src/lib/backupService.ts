@@ -274,6 +274,24 @@ export async function saveDailyCloudBackupToFirestore(): Promise<{ id: string; t
     type: 'daily_cloud'
   });
 
+  // Atualiza o cache local com os metadados do novo backup
+  try {
+    const cached = localStorage.getItem('bolao_cache_backups_history');
+    let list = cached ? JSON.parse(cached) : [];
+    const newItem = {
+      id: docRef.id,
+      totalRecords,
+      dateRef: todayStr,
+      monthRef: new Date().toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }),
+      type: 'daily_cloud',
+      createdAt: { seconds: Math.floor(Date.now() / 1000) }
+    };
+    list = [newItem, ...list.filter((x: any) => x.id !== docRef.id)].slice(0, 15);
+    localStorage.setItem('bolao_cache_backups_history', JSON.stringify(list));
+  } catch (cErr) {
+    console.warn('Erro ao atualizar cache local do backup diário:', cErr);
+  }
+
   recordBackupCompleted();
 
   return { id: docRef.id, totalRecords, isNew: true };
@@ -369,14 +387,42 @@ export async function getLatestAndRichestBackup(): Promise<any | null> {
 }
 
 export async function getBackupsHistory(): Promise<any[]> {
+  const saveToLocalCache = (items: any[]) => {
+    try {
+      const sanitized = items.map(item => ({
+        id: item.id,
+        dateRef: item.dateRef,
+        monthRef: item.monthRef,
+        totalRecords: item.totalRecords,
+        createdAt: item.createdAt?.seconds ? { seconds: item.createdAt.seconds } : item.createdAt,
+        type: item.type
+      }));
+      localStorage.setItem('bolao_cache_backups_history', JSON.stringify(sanitized));
+    } catch (e) {
+      console.warn('Erro ao salvar cache de histórico de backups:', e);
+    }
+  };
+
+  const getFromLocalCache = () => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_backups_history');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  };
+
   try {
-    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(8));
+    const q = query(collection(db, 'backups_history'), orderBy('createdAt', 'desc'), limit(15));
     const snap = await withTimeout(getDocs(q), 10000);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (list.length > 0) {
+      saveToLocalCache(list);
+      return list;
+    }
   } catch (err) {
     console.warn('Error fetching backup history with orderBy, falling back without orderBy:', err);
     try {
-      const qFallback = query(collection(db, 'backups_history'), limit(8));
+      const qFallback = query(collection(db, 'backups_history'), limit(15));
       const snap = await withTimeout(getDocs(qFallback), 8000);
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       list.sort((a: any, b: any) => {
@@ -384,11 +430,15 @@ export async function getBackupsHistory(): Promise<any[]> {
         const tB = b.createdAt?.seconds || 0;
         return tB - tA;
       });
-      return list;
+      if (list.length > 0) {
+        saveToLocalCache(list);
+        return list;
+      }
     } catch (fallbackErr) {
       console.error('Error in fallback backup history:', fallbackErr);
-      return [];
     }
   }
+
+  return getFromLocalCache();
 }
 

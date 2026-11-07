@@ -55,6 +55,7 @@ import NotificationManager, { useToast } from './components/NotificationManager'
 import PoolSelector from './components/PoolSelector';
 import NotificationBell from './components/NotificationBell';
 import { PoolProvider, usePool } from './lib/PoolContext';
+import { DataProvider } from './lib/DataContext';
 import { UploadProvider, useUpload } from './lib/UploadContext';
 import { PermissionsProvider, usePermissions } from './lib/PermissionsContext';
 import { PendingRequestsProvider, usePendingRequests } from './lib/PendingRequestsContext';
@@ -1463,7 +1464,10 @@ export default function App() {
           mData.role = 'admin';
         }
         const updated = {
-          sessionUser: phoneUser.sessionUser,
+          sessionUser: {
+            ...phoneUser.sessionUser,
+            displayName: mData.displayName || mData.name || phoneUser.sessionUser?.displayName || 'Participante'
+          },
           memberData: { id: docSnap.id, ...mData }
         };
         setPhoneUser(updated);
@@ -1476,7 +1480,10 @@ export default function App() {
               uData.role = 'admin';
             }
             const updated = {
-              sessionUser: phoneUser.sessionUser,
+              sessionUser: {
+                ...phoneUser.sessionUser,
+                displayName: uData.displayName || uData.name || phoneUser.sessionUser?.displayName || 'Participante'
+              },
               memberData: { id: userSnap.id, ...uData }
             };
             setPhoneUser(updated);
@@ -1701,11 +1708,12 @@ export default function App() {
   return (
     <PoolProvider>
       <PermissionsProvider>
-        <PendingRequestsProvider>
-          <UploadProvider>
-            <BrowserRouter>
-            <Layout user={activeUser} userData={activeUserData} isAdmin={isUserAdmin} onSignOut={handleSignOut} onUpdateUserData={setUserData}>
-            <Routes>
+        <DataProvider userId={activeUser?.uid}>
+          <PendingRequestsProvider>
+            <UploadProvider>
+              <BrowserRouter>
+              <Layout user={activeUser} userData={activeUserData} isAdmin={isUserAdmin} onSignOut={handleSignOut} onUpdateUserData={setUserData}>
+              <Routes>
               <Route path="/upload-receipt" element={<PublicReceiptUpload />} />
               <Route path="/visitante" element={<VisitorPortal />} />
               <Route path="/convite" element={<VisitorPortal />} />
@@ -1730,7 +1738,7 @@ export default function App() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h1 className="text-lg sm:text-xl font-bold text-gray-800 group-hover:text-blue-600 transition flex items-center gap-1.5">
-                          <span>👋</span> Bem-vindo, {formatFirstAndLastName(activeUser.displayName || activeUser.email)}
+                          <span>👋</span> Bem-vindo, {formatFirstAndLastName(activeUserData?.displayName || activeUserData?.name || activeUser?.displayName || activeUser?.email)}
                         </h1>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
@@ -1815,12 +1823,21 @@ export default function App() {
                       onClose={() => setShowEditProfileModal(false)}
                       onSaved={(updated) => {
                         if (userData) setUserData((prev: any) => ({ ...prev, ...updated }));
+                        if (user) {
+                          setUser((prevUser: any) => {
+                            if (!prevUser) return prevUser;
+                            return { ...prevUser, displayName: updated.displayName };
+                          });
+                        }
                         if (phoneUser) {
                           setPhoneUser((prev: any) => ({
                             ...prev,
                             memberData: { ...(prev?.memberData || {}), ...updated },
                             sessionUser: { ...(prev?.sessionUser || {}), displayName: updated.displayName }
                           }));
+                        }
+                        if (updated.displayName) {
+                          syncActiveUserDisplayName(updated.displayName);
                         }
                       }}
                     />
@@ -1872,7 +1889,8 @@ export default function App() {
           </Layout>
         </BrowserRouter>
         </UploadProvider>
-        </PendingRequestsProvider>
+          </PendingRequestsProvider>
+        </DataProvider>
       </PermissionsProvider>
     </PoolProvider>
   );

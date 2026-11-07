@@ -5,110 +5,33 @@ import { calculateGamePrize, getCorrectGameCost } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
+import { useData } from '../lib/DataContext';
 
 export default function FinancialDashboard() {
   const { setIsQuotaExceeded, isQuotaExceeded, activePool } = usePool();
   const { isMobile, compactCardClass } = useResponsiveLayout();
-  const [payments, setPayments] = useState<any[]>([]);
-  const [games, setGames] = useState<any[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
-  const [results, setResults] = useState<any[]>([]);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
-  const [usingCache, setUsingCache] = useState(false);
+  const { payments, games: allGames, members, lotofacilResults: results } = useData();
 
-  useEffect(() => {
-    const checkQuotaError = (err: any) => {
-      if (isQuotaError(err)) {
-        setIsQuotaExceeded(true);
-        setUsingCache(true);
-      }
-    };
+  const games = useMemo(() => {
+    // Filtra jogos pelo bolão ativo ou retrocompatibilidade com fallback
+    let filtered = allGames.filter((g: any) => {
+      if (!activePool) return true;
+      if (g.poolId === activePool.id) return true;
+      const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
+        activePool.name?.toLowerCase().includes('principal') || 
+        activePool.name?.toLowerCase().includes('lotofácil');
+      if (!g.poolId && isPrincipalPool) return true;
+      return false;
+    });
 
-    const loadData = async () => {
-      try {
-        const [paySnap, gameSnap, resSnap, usersSnap, membersSnap] = await Promise.all([
-          getDocs(query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(500))),
-          getDocs(query(collection(db, 'games'), orderBy('date', 'desc'), limit(300))),
-          getDocs(query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(150))),
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'members'))
-        ]);
+    if (filtered.length === 0 && allGames.length > 0) {
+      filtered = allGames;
+    }
+    return filtered;
+  }, [allGames, activePool]);
 
-        const payList = paySnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const allGames = gameSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const resList = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        
-        // Filtra jogos pelo bolão ativo ou retrocompatibilidade com fallback
-        let filteredGames = allGames.filter((g: any) => {
-          if (!activePool) return true;
-          if (g.poolId === activePool.id) return true;
-          const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
-            activePool.name?.toLowerCase().includes('principal') || 
-            activePool.name?.toLowerCase().includes('lotofácil');
-          if (!g.poolId && isPrincipalPool) return true;
-          return false;
-        });
-
-        if (filteredGames.length === 0 && allGames.length > 0) {
-          filteredGames = allGames;
-        }
-
-        setPayments(payList);
-        setGames(filteredGames);
-        setResults(resList);
-        setUsingCache(false);
-
-        const uList: any[] = usersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
-        const mList: any[] = membersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
-        const combined = [...uList];
-        for (const m of mList) {
-          if (!combined.some(u => u.id === m.id || (u.email && m.email && u.email === m.email))) {
-            combined.push(m);
-          }
-        }
-        combined.sort((a, b) => {
-          const nameA = (a.displayName || a.name || a.email || '').trim();
-          const nameB = (b.displayName || b.name || b.email || '').trim();
-          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
-        });
-        setMembers(combined);
-
-        // Cache successful data
-        try {
-          localStorage.setItem('bolao_cache_payments', JSON.stringify(payList));
-          localStorage.setItem('bolao_cache_games', JSON.stringify(filteredGames));
-          localStorage.setItem('bolao_cache_results', JSON.stringify(resList));
-          localStorage.setItem('bolao_cache_members', JSON.stringify(combined));
-        } catch (cacheErr) {
-          console.warn('Failed to cache financial data:', cacheErr);
-        }
-      } catch (e) {
-        if (!isQuotaError(e)) {
-          console.error('FinancialDashboard load error:', e);
-        }
-        checkQuotaError(e);
-        
-        // Try to load from cache
-        try {
-          const cachedPay = localStorage.getItem('bolao_cache_payments');
-          const cachedGames = localStorage.getItem('bolao_cache_games');
-          const cachedResults = localStorage.getItem('bolao_cache_results');
-          const cachedMembers = localStorage.getItem('bolao_cache_members');
-          
-          if (cachedPay) setPayments(JSON.parse(cachedPay));
-          if (cachedGames) setGames(JSON.parse(cachedGames));
-          if (cachedResults) setResults(JSON.parse(cachedResults));
-          if (cachedMembers) setMembers(JSON.parse(cachedMembers));
-        } catch (cacheErr) {
-          console.warn('Failed to load from financial cache:', cacheErr);
-        }
-      }
-    };
-    loadData();
-
-    // No dashboard financeiro, updates em tempo real são menos críticos que economia de cota.
-    // Removendo onSnapshots que ouvem coleções inteiras.
-  }, [activePool]);
+  const usingCache = false; // DataContext cuida do cache localmente de forma transparente
 
   // Soma de pagamentos explícitos na coleção payments
   const paymentsTotal = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);

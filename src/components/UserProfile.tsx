@@ -324,11 +324,11 @@ export default function UserProfile() {
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-black">
-            {(activeUser?.displayName || 'U')[0].toUpperCase()}
+            {(userProfile?.displayName || userProfile?.name || activeUser?.displayName || 'U')[0].toUpperCase()}
           </div>
           <div>
             <h2 className="font-bold text-base text-gray-800">
-              {formatFirstAndLastName(activeUser?.displayName)}
+              {formatFirstAndLastName(userProfile?.displayName || userProfile?.name || activeUser?.displayName)}
             </h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <span className="bg-amber-100 text-amber-900 font-black text-[10px] px-2.5 py-0.5 rounded-full border border-amber-300 uppercase">

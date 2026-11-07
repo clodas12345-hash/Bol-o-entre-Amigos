@@ -16,7 +16,7 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
   const { addToast } = useToast();
 
   const [displayName, setDisplayName] = useState(
-    userData?.displayName || user?.displayName || ''
+    userData?.displayName || userData?.name || user?.displayName || ''
   );
   const [phone, setPhone] = useState(
     userData?.phone || user?.phoneNumber || ''
@@ -41,10 +41,11 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
 
     setIsSaving(true);
     const cleanPhone = normalizeBrazilianPhoneDigits(phone);
-    const userId = user?.uid;
+    const userId = user?.uid || user?.id || userData?.id || userData?.uid;
 
     const updatedProfileData = {
       displayName: displayName.trim(),
+      name: displayName.trim(),
       phone: cleanPhone,
 
       quotas: Math.max(1, quotas),
@@ -65,7 +66,7 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
         }
       }
 
-      // 2. Atualiza no Firestore nas coleções users e members se houver uid
+      // 2. Atualiza no Firestore nas coleções users e members se houver id/uid
       if (userId) {
         try {
           const userDocRef = doc(db, 'users', userId);
@@ -82,7 +83,7 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
         }
       }
 
-      // 3. Atualiza sessão local de login via celular se aplicável
+      // 3. Atualiza sessão local de login via celular e cache de usuário se aplicável
       try {
         const savedPhoneUser = localStorage.getItem('bolao_phone_user');
         if (savedPhoneUser) {
@@ -101,8 +102,22 @@ export default function EditProfileModal({ user, userData, onClose, onSaved }: E
           localStorage.setItem('bolao_phone_user', JSON.stringify(updated));
         }
       } catch (e) {
-        console.warn('Erro ao atualizar cache local:', e);
+        console.warn('Erro ao atualizar cache local phone user:', e);
       }
+
+      try {
+        const savedUserData = localStorage.getItem('bolao_cache_user_data');
+        if (savedUserData) {
+          const parsed = JSON.parse(savedUserData);
+          const updated = {
+            ...parsed,
+            ...updatedProfileData
+          };
+          localStorage.setItem('bolao_cache_user_data', JSON.stringify(updated));
+        }
+      } catch (e) {}
+
+      localStorage.setItem('bolao_cached_user_name', displayName.trim());
 
       addToast('Cadastro atualizado com sucesso!', 'success');
       if (onSaved) {

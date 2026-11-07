@@ -16,6 +16,7 @@ import { notifyWinningPrize, sendAppNotification, requestNotificationPermission,
 import { usePermissions } from '../lib/PermissionsContext';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
 import { isDrawDay, getNextDrawDate, isNationalHoliday, formatDateBR } from '../lib/drawCalendar';
+import { useData } from '../lib/DataContext';
 
 interface GamesTableProps {
   onOpenNewGame?: () => void;
@@ -32,67 +33,48 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const canDeleteGames = can('games_delete');
   const canEditOfficialResult = can('games_official_result_edit');
 
-  const [gamesReady, setGamesReady] = useState(false);
-  const [renewalPopupDismissed, setRenewalPopupDismissed] = useState(false);
+  const { 
+    games: cloudGames, 
+    members: cloudMembers, 
+    lotofacilResults, 
+    megasenaResults, 
+    latestLotofacil, 
+    latestMegasena,
+    gamesReady: cloudGamesReady
+  } = useData();
+
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const isMegaSena = activePool?.lotteryType === 'megasena';
+  
+  const games = useMemo(() => {
+    return cloudGames.filter(g => !deletedIds.has(g.id));
+  }, [cloudGames, deletedIds]);
+
+  const members = cloudMembers;
+  const savedResultsList = isMegaSena ? megasenaResults : lotofacilResults;
+  const [latestResult, setLatestResult] = useState<any | null>(null);
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<any | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
+
   const baselineBetsRef = useRef<{ initialized: boolean; activeCount: number; maxTs: number }>({
     initialized: false,
     activeCount: 0,
     maxTs: 0
   });
 
-  const [games, setGames] = useState<any[]>(() => {
-    try {
-      const cached = localStorage.getItem('bolao_cache_games');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [latestResult, setLatestResult] = useState<any | null>(() => {
-    try {
-      const cached = localStorage.getItem('bolao_cache_latest_result');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const cNum = Number(parsed?.contest);
-        // Remove strict filtering to ensure we show the best available info on load
-        if (cNum > 0) {
-          return parsed;
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
-  const [savedResultsList, setSavedResultsList] = useState<any[]>(() => {
-    try {
-      const cached = localStorage.getItem('bolao_cache_results');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(r => {
-            const cNum = Number(r?.contest);
-            return cNum > 0 && !r?.isSimulated;
-          });
-        }
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  });
-  const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [groupToDelete, setGroupToDelete] = useState<any | null>(null);
-  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
-  const [members, setMembers] = useState<any[]>(() => {
-    try {
-      const cached = localStorage.getItem('bolao_cache_members');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  useEffect(() => {
+    setLatestResult(isMegaSena ? latestMegasena : latestLotofacil);
+  }, [isMegaSena, latestLotofacil, latestMegasena]);
+
+  const [gamesReady, setGamesReady] = useState(false);
+  useEffect(() => {
+    if (cloudGamesReady) setGamesReady(true);
+  }, [cloudGamesReady]);
+
+  const [renewalPopupDismissed, setRenewalPopupDismissed] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showVolantesComparator, setShowVolantesComparator] = useState(false);
   const [showThermometer, setShowThermometer] = useState(false);
@@ -226,7 +208,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     addToast('Abrindo Google Agenda com evento recorrente...', 'info');
   };
 
-  const isMegaSena = activePool?.lotteryType === 'megasena';
   const stats = isMegaSena ? MEGASENA_STATS : LOTOFACIL_STATS;
   const resultsCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
   const resultsApi = isMegaSena ? '/api/megasena/results' : '/api/lotofacil/results';
@@ -396,249 +377,11 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     }
   };
 
-  useEffect(() => {
-    if (!activePool) return;
+  // O carregamento e sincronização agora são feitos globalmente via DataContext.
+  // GamesTable apenas consome e filtra os dados.
 
-    // Detecta se este é o bolão principal ou se é o único bolão (para garantir suporte a jogos antigos/importados)
-    const isPrincipalPool = activePool.id === 'default_lotofacil_pool' || 
-      activePool.name?.toLowerCase().includes('principal') || 
-      activePool.name?.toLowerCase().includes('lotofácil') ||
-      pools.length <= 1;
-
-    // Otimização: Filtra por poolId diretamente no Firestore quando possível.
-    // REMOVIDO orderBy('createdAt') para evitar que documentos sem esse campo sejam excluídos do resultado (comportamento padrão do Firestore)
-    let qGames;
-    if (isPrincipalPool) {
-      // Para o pool principal ou se for o único, pegamos todos para garantir retrocompatibilidade total
-      qGames = query(collection(db, 'games'), limit(5000));
-    } else {
-      // Busca filtrada para pools específicos (ainda sem orderBy por segurança de dados legados)
-      qGames = query(collection(db, 'games'), where('poolId', '==', activePool.id), limit(5000));
-    }
-
-    const unsubGames = onSnapshot(qGames, snapshot => {
-      const allDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      // Filtro de memória inteligente para suporte a jogos sem poolId (retroativos)
-      // Se estivermos no pool principal, mostramos jogos deste pool OU sem pool OU com ID padrão
-      let list = allDocs.filter((g: any) => {
-        if (!activePool) return true;
-        if (g.poolId === activePool.id) return true;
-        if (isPrincipalPool && (!g.poolId || g.poolId === 'default_lotofacil_pool')) return true;
-        
-        // Adicional: Se o pool ativo for o principal, mostramos jogos que pertencem a pools que não existem mais
-        if (isPrincipalPool && g.poolId && !pools.some(p => p.id === g.poolId)) return true;
-        
-        return false;
-      });
-
-      // Se por algum motivo o filtro acima esvaziou a lista mas temos documentos, fallback para mostrar tudo no pool principal
-      if (list.length === 0 && allDocs.length > 0 && isPrincipalPool) {
-        list = allDocs;
-      }
-
-      // Ordenação robusta em memória: prioritiza data e concurso decrescente
-      list.sort((a: any, b: any) => {
-        const cNumA = extractContestNumber(a.contestNumber || a.contest);
-        const cNumB = extractContestNumber(b.contestNumber || b.contest);
-        const dateA = parseDateSafely(a.date, a.month, cNumA).getTime();
-        const dateB = parseDateSafely(b.date, b.month, cNumB).getTime();
-        if (dateA !== dateB) return dateB - dateA;
-        if ((cNumB || 0) !== (cNumA || 0)) return (cNumB || 0) - (cNumA || 0);
-        const tsA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
-        const tsB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
-        return tsB - tsA;
-      });
-
-      setGames(list);
-      setGamesReady(true);
-      
-      // Informa o administrador sobre o status da sincronização
-      if (isAdmin && allDocs.length > 0) {
-        const hiddenCount = allDocs.length - list.length;
-        if (hiddenCount > 0) {
-          console.log(`[Sync] Encontrados ${allDocs.length} jogos na nuvem. ${list.length} visíveis neste bolão, ${hiddenCount} em outros bolões.`);
-        } else {
-          console.log(`[Sync] Sincronização completa: ${list.length} jogos carregados da nuvem.`);
-        }
-      }
-
-      // Cache assíncrono com proteção de cota (localStorage tem limite de 5MB)
-      setTimeout(() => {
-        try {
-          // Salva apenas os primeiros 1000 para não estourar o cache local, mas mantém todos em memória
-          const cacheList = list.slice(0, 1000);
-          localStorage.setItem('bolao_cache_games', JSON.stringify(cacheList));
-        } catch (cacheErr) {
-          console.warn('LocalStorage limit exceeded, caching only first 100 games');
-          try {
-             localStorage.setItem('bolao_cache_games', JSON.stringify(list.slice(0, 100)));
-          } catch (e) {}
-        }
-      }, 100);
-    }, err => {
-      console.warn('Games snapshot error, loading cache:', err);
-      if (isQuotaError(err)) {
-        setIsQuotaExceeded(true);
-      }
-      const cached = localStorage.getItem('bolao_cache_games');
-      if (cached) {
-        setGames(JSON.parse(cached));
-      }
-      setGamesReady(true);
-    });
-
-    // Escuta todo o histórico de resultados salvos no Firestore em tempo real
-    const qAllResults = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(150));
-    const unsubResults = onSnapshot(qAllResults, snapshot => {
-      if (!snapshot.empty) {
-        const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        // Deduplica por concurso e ordena do maior para o menor
-        const uniqueMap = new Map<number, any>();
-        list.forEach((item: any) => {
-          const cNum = Number(item.contest);
-          if (cNum && !item.isSimulated && !uniqueMap.has(cNum)) {
-            uniqueMap.set(cNum, item);
-          }
-        });
-        const sorted = Array.from(uniqueMap.values()).sort((a, b) => Number(b.contest) - Number(a.contest));
-        setSavedResultsList(sorted);
-        setTimeout(() => {
-          try {
-            localStorage.setItem('bolao_cache_results', JSON.stringify(sorted));
-          } catch (cacheErr) {
-            console.warn('Failed to save results to localStorage cache:', cacheErr);
-          }
-        }, 0);
-
-        // Atualiza para o concurso mais recente
-        const defaultLatest = sorted.length > 0 ? sorted[0] : null;
-
-        if (defaultLatest) {
-          setLatestResult((prev: any) => {
-            const nextLatest = prev && sorted.some((r: any) => Number(r.contest) === Number(prev.contest)) ? prev : defaultLatest;
-            if (nextLatest) {
-              setTimeout(() => {
-                try {
-                  localStorage.setItem('bolao_cache_latest_result', JSON.stringify(nextLatest));
-                } catch (cacheErr) {
-                  console.warn('Failed to save latestResult to cache:', cacheErr);
-                }
-              }, 0);
-            }
-            return nextLatest;
-          });
-        }
-      }
-    }, err => {
-      console.warn('Results snapshot error, loading cache:', err);
-      if (isQuotaError(err)) {
-        setIsQuotaExceeded(true);
-      }
-      const cached = localStorage.getItem('bolao_cache_results');
-      if (cached) {
-        try {
-          const list = JSON.parse(cached);
-          if (Array.isArray(list)) {
-            setSavedResultsList(list.filter((r: any) => Number(r.contest) > 0 && !r.isSimulated));
-          }
-        } catch {}
-      }
-      const cachedLatest = localStorage.getItem('bolao_cache_latest_result');
-      if (cachedLatest) {
-        try {
-          const parsed = JSON.parse(cachedLatest);
-          const cNum = Number(parsed?.contest);
-          if (cNum > 0 && !parsed?.isSimulated) {
-            setLatestResult(parsed);
-          }
-        } catch {}
-      }
-    });
-
-    // Carrega membros para cálculo de cotas
-    const loadMembers = async () => {
-      try {
-        const [usersSnap, membersSnap] = await Promise.all([
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'members'))
-        ]);
-        const list: any[] = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        membersSnap.docs.forEach(d => {
-          const data = d.data();
-          if (!list.some(u => u.id === d.id || (data.email && u.email === data.email))) {
-            list.push({ id: d.id, ...data });
-          }
-        });
-        list.sort((a, b) => {
-          const nameA = (a.displayName || a.name || a.email || '').trim();
-          const nameB = (b.displayName || b.name || b.email || '').trim();
-          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
-        });
-        setMembers(list);
-        try {
-          localStorage.setItem('bolao_cache_members', JSON.stringify(list));
-        } catch (cacheErr) {
-          console.warn('Failed to save members to localStorage cache:', cacheErr);
-        }
-      } catch (e: any) {
-        console.warn('Erro ao buscar membros para rateio, carregando cache:', e);
-        if (e && (e.message?.includes('Quota exceeded') || e.message?.includes('quota') || e.code === 'resource-exhausted')) {
-          setIsQuotaExceeded(true);
-        }
-        const cached = localStorage.getItem('bolao_cache_members');
-        if (cached) {
-          setMembers(JSON.parse(cached));
-        }
-      }
-    };
-    loadMembers();
-
-    return () => {
-      unsubGames();
-      unsubResults();
-    };
-  }, [activePool]);
-
-  // Atualiza instantaneamente a lista de jogos e membros caso ocorra uma restauração de backup ou o app retorne do 2º plano
-  useEffect(() => {
-    const handleSyncFromCache = () => {
-      try {
-        const cachedGames = localStorage.getItem('bolao_cache_games');
-        if (cachedGames) {
-          const parsed = JSON.parse(cachedGames);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setGames(parsed);
-            setGamesReady(true);
-          }
-        }
-        const cachedMembers = localStorage.getItem('bolao_cache_members');
-        if (cachedMembers) {
-          const parsedM = JSON.parse(cachedMembers);
-          if (Array.isArray(parsedM) && parsedM.length > 0) {
-            setMembers(parsedM);
-          }
-        }
-        const cachedResults = localStorage.getItem('bolao_cache_results');
-        if (cachedResults) {
-          const parsedR = JSON.parse(cachedResults);
-          if (Array.isArray(parsedR) && parsedR.length > 0) {
-            setSavedResultsList(parsedR);
-          }
-        }
-      } catch (err) {
-        console.warn('Erro ao sincronizar do cache local:', err);
-      }
-    };
-
-    window.addEventListener('bolao_data_restored', handleSyncFromCache);
-    window.addEventListener('bolao_app_resumed', handleSyncFromCache);
-
-    return () => {
-      window.removeEventListener('bolao_data_restored', handleSyncFromCache);
-      window.removeEventListener('bolao_app_resumed', handleSyncFromCache);
-    };
-  }, []);
+  // O carregamento e sincronização agora são feitos globalmente via DataProvider (DataContext.tsx).
+  // GamesTable apenas consome e filtra os dados reativos.
 
   const drawnNumbers: number[] = Array.isArray(latestResult?.numbers)
     ? latestResult.numbers.map((n: any) => Number(n))
@@ -646,7 +389,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
   const handleDeleteGame = async (gameId: string) => {
     // Atualização otimista imediata da interface (0ms de latência percebida)
-    setGames(prev => prev.filter(g => g.id !== gameId));
+    setDeletedIds(prev => new Set(prev).add(gameId));
     setDeletingId(null);
 
     try {
@@ -684,7 +427,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     }
 
     const currentGroup = groupToDelete;
-    const idsToRemove = new Set(currentGroup.games.map((g: any) => g.id));
+    const idsToRemove = new Set<string>(currentGroup.games.map((g: any) => String(g.id)));
     const count = currentGroup.games.length;
     const title = currentGroup.contestTitle;
 
@@ -693,7 +436,11 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     setIsDeletingGroup(false);
 
     // 2. Atualização otimista imediata da lista na tela (0ms)
-    setGames(prev => prev.filter(g => !idsToRemove.has(g.id)));
+    setDeletedIds(prev => {
+      const next = new Set(prev);
+      idsToRemove.forEach(id => next.add(id));
+      return next;
+    });
 
     // 3. Atualiza cache local imediatamente
     try {

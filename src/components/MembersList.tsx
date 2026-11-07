@@ -8,6 +8,7 @@ import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
 import { usePermissions } from '../lib/PermissionsContext';
 import { Contacts } from '@capacitor-community/contacts';
+import { useData } from '../lib/DataContext';
 import { UserSearch } from 'lucide-react';
 import ReceiptsList from './ReceiptsList';
 
@@ -48,7 +49,24 @@ export default function MembersList() {
   const canSendReminder = isAdminOrCounselor && can('members_send_reminder');
 
   const navigate = useNavigate();
-  const [members, setMembers] = useState<any[]>([]);
+  const { members: syncMembers } = useData();
+  const [localMembers, setLocalMembersState] = useState<any[]>(getLocalMembers());
+  
+  const members = useMemo(() => {
+    const combined = [...syncMembers];
+    localMembers.forEach(loc => {
+      const alreadyExists = combined.some(c => c.id === loc.id || (loc.phone && c.phone === loc.phone));
+      if (!alreadyExists) {
+        combined.push(loc);
+      }
+    });
+    return combined;
+  }, [syncMembers, localMembers]);
+
+  const fetchMembers = () => {
+    setLocalMembersState(getLocalMembers());
+  };
+
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
   const [latePaymentModal, setLatePaymentModal] = useState<{
     member: any;
@@ -92,99 +110,6 @@ export default function MembersList() {
     } catch (error) {
       console.error('Error picking contact:', error);
       addToast('Não foi possível acessar a agenda.', 'error');
-    }
-  };
-
-  useEffect(() => {
-    fetchMembers();
-
-    let unsubUsers = () => {};
-    let unsubMembers = () => {};
-
-    try {
-      unsubUsers = onSnapshot(collection(db, 'users'), () => {
-        fetchMembers();
-      }, (err) => {
-        console.warn('Snapshot users error:', err);
-      });
-    } catch {}
-
-    try {
-      unsubMembers = onSnapshot(collection(db, 'members'), () => {
-        fetchMembers();
-      }, (err) => {
-        console.warn('Snapshot members error:', err);
-      });
-    } catch {}
-
-    return () => {
-      unsubUsers();
-      unsubMembers();
-    };
-  }, []);
-
-  const fetchMembers = async () => {
-    try {
-      const [usersSnap, membersSnap] = await Promise.all([
-        getDocs(collection(db, 'users')).catch(() => ({ docs: [] })),
-        getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))
-      ]);
-
-      const usersList: any[] = usersSnap.docs.map(d => ({
-        id: d.id,
-        collectionName: 'users',
-        quotas: 1,
-        ...d.data()
-      }));
-      const membersList: any[] = membersSnap.docs.map(d => ({
-        id: d.id,
-        collectionName: 'members',
-        quotas: 1,
-        ...d.data()
-      }));
-
-      // Merge de Firestore
-      const combined: any[] = [...usersList];
-      for (const m of membersList) {
-        const alreadyExists = combined.some(u =>
-          u.id === m.id ||
-          (m.displayName && u.displayName && u.displayName.toLowerCase() === m.displayName.toLowerCase())
-        );
-        if (!alreadyExists) {
-          combined.push(m);
-        }
-      }
-
-      // Adiciona membros salvos localmente
-      const localSaved = getLocalMembers();
-      for (const loc of localSaved) {
-        const alreadyExists = combined.some(c => c.id === loc.id || (loc.phone && c.phone === loc.phone));
-        if (!alreadyExists) {
-          combined.push(loc);
-        }
-      }
-
-      setMembers(combined);
-      try {
-        localStorage.setItem('bolao_cache_members', JSON.stringify(combined));
-      } catch (cacheErr) {
-        console.warn('Failed to cache members list in localStorage:', cacheErr);
-      }
-    } catch (err) {
-      console.warn('Error fetching members, loading from local cache:', err);
-      if (isQuotaError(err)) setIsQuotaExceeded(true);
-      
-      const cached = localStorage.getItem('bolao_cache_members');
-      let combined: any[] = cached ? JSON.parse(cached) : [];
-      
-      const localSaved = getLocalMembers();
-      for (const loc of localSaved) {
-        const alreadyExists = combined.some(c => c.id === loc.id || (loc.phone && c.phone === loc.phone));
-        if (!alreadyExists) {
-          combined.push(loc);
-        }
-      }
-      setMembers(combined);
     }
   };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { doc, setDoc, Timestamp, collection, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { getIsAdmin } from '../lib/authHelpers';
@@ -47,7 +47,14 @@ export default function BackupManager() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [lastBackup, setLastBackup] = useState<Date | null>(null);
   const [settings, setSettings] = useState<BackupReminderSettings>(getBackupReminderSettings());
-  const [backupsHistory, setBackupsHistory] = useState<any[]>([]);
+  const [backupsHistory, setBackupsHistory] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_backups_history');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isAutoBackingUp, setIsAutoBackingUp] = useState(false);
   
@@ -62,8 +69,16 @@ export default function BackupManager() {
 
   const loadHistory = async () => {
     setIsLoadingHistory(true);
+    try {
+      const cached = localStorage.getItem('bolao_cache_backups_history');
+      if (cached) {
+        setBackupsHistory(JSON.parse(cached));
+      }
+    } catch {}
     const history = await getBackupsHistory();
-    setBackupsHistory(history);
+    if (history && history.length > 0) {
+      setBackupsHistory(history);
+    }
     setIsLoadingHistory(false);
   };
 
@@ -235,7 +250,7 @@ export default function BackupManager() {
             id: g.id,
             ...(g.data || g)
           }));
-          localStorage.setItem('bolao_cache_games', JSON.stringify(formattedGames));
+          localStorage.setItem('bolao_cache_games', JSON.stringify(formattedGames.slice(0, 1000)));
         }
         if (Array.isArray(data.members) && data.members.length > 0) {
           const formattedMembers = data.members.map((m: any) => ({
@@ -252,11 +267,28 @@ export default function BackupManager() {
           localStorage.setItem('bolao_cache_pools', JSON.stringify(formattedPools));
         }
         if (Array.isArray(data.lotofacil_results) && data.lotofacil_results.length > 0) {
-          const formattedResults = data.lotofacil_results.map((r: any) => ({
+          const formattedLoto = data.lotofacil_results.map((r: any) => ({
             id: r.id,
             ...(r.data || r)
           }));
-          localStorage.setItem('bolao_cache_results', JSON.stringify(formattedResults));
+          localStorage.setItem('bolao_cache_results_lotofacil', JSON.stringify(formattedLoto));
+          if (formattedLoto.length > 0) {
+            localStorage.setItem('bolao_cache_latest_result', JSON.stringify(formattedLoto[0]));
+          }
+        }
+        if (Array.isArray(data.megasena_results) && data.megasena_results.length > 0) {
+          const formattedMega = data.megasena_results.map((r: any) => ({
+            id: r.id,
+            ...(r.data || r)
+          }));
+          localStorage.setItem('bolao_cache_results_megasena', JSON.stringify(formattedMega));
+        }
+        if (Array.isArray(data.payments) && data.payments.length > 0) {
+          const formattedPayments = data.payments.map((p: any) => ({
+            id: p.id,
+            ...(p.data || p)
+          }));
+          localStorage.setItem('bolao_cache_payments', JSON.stringify(formattedPayments));
         }
 
         // Avisa os componentes que os dados locais já estão disponíveis
@@ -410,9 +442,24 @@ export default function BackupManager() {
 
   const downloadHistoryBackup = async (historyItem: any) => {
     try {
-      const data = JSON.parse(historyItem.data);
-      const jsonString = JSON.stringify(data, null, 2);
-      const fileName = `backup_bolao_historico_${historyItem.monthRef.replace('/', '_')}.json`;
+      let rawData = historyItem.data;
+      if (!rawData && historyItem.id) {
+        addToast('☁️ Baixando dados completos do backup...', 'info');
+        const snap = await getDoc(doc(db, 'backups_history', historyItem.id));
+        if (snap.exists()) {
+          rawData = snap.data().data;
+        }
+      }
+
+      if (!rawData) {
+        addToast('Não foi possível encontrar os dados deste backup.', 'error');
+        return;
+      }
+
+      const parsedData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+      const jsonString = JSON.stringify(parsedData, null, 2);
+      const refStr = (historyItem.monthRef || historyItem.dateRef || 'snapshot').replace(/[\/\s]/g, '_');
+      const fileName = `backup_bolao_historico_${refStr}.json`;
       
       await downloadOrShareFile({
         fileName,
@@ -420,7 +467,7 @@ export default function BackupManager() {
         mimeType: 'application/json'
       });
 
-      addToast(`Backup de ${historyItem.monthRef} baixado com sucesso!`, 'success');
+      addToast(`Backup (${historyItem.monthRef || historyItem.dateRef}) baixado com sucesso!`, 'success');
     } catch (err) {
       console.error(err);
       addToast('Erro ao processar arquivo de histórico.', 'error');
@@ -1012,50 +1059,72 @@ export default function BackupManager() {
       </div>
 
       {/* Histórico de Snapshots na Nuvem (Diários e Mensais) */}
-      {backupsHistory.length > 0 && (
+      {(backupsHistory.length > 0 || isLoadingHistory) && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mt-2">
           <div className="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
             <h4 className="text-[11px] font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
-              <span>📜</span> Histórico de Backups Salvos na Nuvem (Firestore)
+              <span>📜</span> Histórico de Backups na Nuvem e Cache Local
             </h4>
             <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-              {backupsHistory.length} salvamento(s)
+              {isLoadingHistory ? 'Atualizando nuvem...' : `${backupsHistory.length} salvamento(s)`}
             </span>
           </div>
-          <div className="divide-y divide-gray-50 max-h-56 overflow-y-auto">
-            {backupsHistory.map((item) => (
-              <div key={item.id} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50/50 transition group">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-[10px]">
-                    {item.type === 'daily_cloud' ? '☁️' : '📅'}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-[11px] font-bold text-gray-800">
-                        {item.type === 'daily_cloud' ? `Backup Diário (${formatAnyDateBR(item.dateRef || item.monthRef)})` : `Backup Mensal (${item.monthRef})`}
-                      </p>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md uppercase ${
-                        item.type === 'daily_cloud' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-                      }`}>
-                        {item.type === 'daily_cloud' ? 'Diário Nuvem' : 'Mensal'}
-                      </span>
+          {backupsHistory.length === 0 && isLoadingHistory ? (
+            <div className="p-4 text-center text-xs text-gray-400 font-medium">
+              <span className="animate-spin inline-block mr-1.5">⚙️</span> Buscando histórico de backups da nuvem...
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50 max-h-56 overflow-y-auto">
+              {backupsHistory.map((item) => {
+                let dateStr = '-';
+                if (item.createdAt?.toDate && typeof item.createdAt.toDate === 'function') {
+                  const d = item.createdAt.toDate();
+                  dateStr = `${formatAnyDateBR(d)} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                } else if (item.createdAt?.seconds) {
+                  const d = new Date(item.createdAt.seconds * 1000);
+                  dateStr = `${formatAnyDateBR(d)} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                } else if (typeof item.createdAt === 'string' || typeof item.createdAt === 'number') {
+                  const d = new Date(item.createdAt);
+                  if (!isNaN(d.getTime())) {
+                    dateStr = `${formatAnyDateBR(d)} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                  }
+                }
+
+                return (
+                  <div key={item.id} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50/50 transition group">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-[10px]">
+                        {item.type === 'daily_cloud' ? '☁️' : '📅'}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-[11px] font-bold text-gray-800">
+                            {item.type === 'daily_cloud' ? `Backup Diário (${formatAnyDateBR(item.dateRef || item.monthRef)})` : `Backup Mensal (${item.monthRef})`}
+                          </p>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md uppercase ${
+                            item.type === 'daily_cloud' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {item.type === 'daily_cloud' ? 'Diário Nuvem' : 'Mensal'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400">
+                          Gerado em {dateStr} • {item.totalRecords || 0} registros
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-gray-400">
-                      Gerado em {item.createdAt?.toDate ? `${formatAnyDateBR(item.createdAt.toDate())} às ${item.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '-'} • {item.totalRecords} registros
-                    </p>
+                    <button
+                      onClick={() => downloadHistoryBackup(item)}
+                      className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition shadow-2xs group-hover:scale-105 flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+                      title="Baixar este snapshot para seu computador"
+                    >
+                      <span>📥</span>
+                      <span className="hidden xs:inline">Baixar</span>
+                    </button>
                   </div>
-                </div>
-                <button
-                  onClick={() => downloadHistoryBackup(item)}
-                  className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition shadow-2xs group-hover:scale-105 flex items-center gap-1 text-[11px] font-bold cursor-pointer"
-                  title="Baixar este snapshot para seu computador"
-                >
-                  <span>📥</span>
-                  <span className="hidden xs:inline">Baixar</span>
-                </button>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
