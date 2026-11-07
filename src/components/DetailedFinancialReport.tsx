@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, getDocs, doc, updateDoc, getDoc, query, orderBy, limit } from 'firebase/firestore';
 import { db, isQuotaError } from '../lib/firebase';
-import { formatFirstAndLastName, getWhatsAppCobrarUrl } from '../lib/formatters';
+import { formatFirstAndLastName, getWhatsAppCobrarUrl, calculatePendingMonths } from '../lib/formatters';
 import { useToast } from './NotificationManager';
 import PixPaymentArea from './PixPaymentArea';
 import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
@@ -206,7 +206,8 @@ export default function DetailedFinancialReport() {
             ) : (
               report.map((m, idx) => {
                 const isPaid = m.paymentStatus === 'Pago';
-                const whatsappUrl = getWhatsAppCobrarUrl(m.phone, m.displayName || m.email, m.quotas, pixConfig.defaultAmount || 20.00, pixConfig.pixKey || '11953292570');
+                const pendingMonths = calculatePendingMonths(m);
+                const whatsappUrl = getWhatsAppCobrarUrl(m.phone, m.displayName || m.email, m.quotas, pixConfig.defaultAmount || 20.00, pixConfig.pixKey || '11953292570', pendingMonths);
 
                 return (
                   <tr key={m.id} className={`${idx % 2 === 1 ? 'bg-slate-100' : 'bg-white'} hover:bg-slate-200/60 transition`}>

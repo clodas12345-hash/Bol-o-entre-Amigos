@@ -1604,39 +1604,36 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             <button
               type="button"
               onClick={() => setGamesTab('today')}
-              className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
+              className={`flex-none py-2 px-2 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold ${
                 gamesTab === 'today'
                   ? 'bg-purple-900 text-white shadow-xs font-black'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
               }`}
             >
-              <span>🎯</span>
-              <span className="truncate">Hoje ({todayGames.length})</span>
+              <span className="whitespace-nowrap">Hoje ({todayGames.length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setGamesTab('future')}
-              className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
+              className={`flex-none py-2 px-2 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold ${
                 gamesTab === 'future'
                   ? 'bg-purple-900 text-white shadow-xs font-black'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
               }`}
             >
-              <span>⏳</span>
-              <span className="truncate">Futuras ({futureGames.length})</span>
+              <span className="whitespace-nowrap">Futuras ({futureGames.length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setGamesTab('history')}
-              className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
+              className={`flex-1 py-2 px-2 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
                 gamesTab === 'history'
                   ? 'bg-purple-900 text-white shadow-xs font-black'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
               }`}
             >
-              <span>📜</span>
               <span className="truncate">Histórico ({historyGames.length})</span>
             </button>
           </div>

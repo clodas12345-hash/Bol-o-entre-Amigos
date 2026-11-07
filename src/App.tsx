@@ -39,6 +39,8 @@ import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import DrawCalendarModal from './components/DrawCalendarModal';
 import ChargeReminderPopup from './components/ChargeReminderPopup';
+import CloudHistoryLimitBanner from './components/CloudHistoryLimitBanner';
+import ReceiptCleanupReminderBanner from './components/ReceiptCleanupReminderBanner';
 import { getAdjustedActiveContestInfo, formatDateBR } from './lib/drawCalendar';
 import { 
   scheduleUpcomingDrawAlerts, 
@@ -1768,6 +1770,14 @@ export default function App() {
                   {/* Componente para Membros enviarem suas apostas (apenas se houver liberação ativa) */}
                   {activeUser && (
                     <MemberBetSubmission user={activeUser} userData={activeUserData} />
+                  )}
+
+                   {/* Maintenance and Limit Reminders for Admin */}
+                  {isUserAdmin && (
+                    <>
+                      <ReceiptCleanupReminderBanner />
+                      <CloudHistoryLimitBanner />
+                    </>
                   )}
 
                   {/* 1. Tabela de Jogos Cadastrados, Apostas e Resultado Oficial Caixa Unificado */}

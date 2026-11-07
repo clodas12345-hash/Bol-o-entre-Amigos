@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, getDoc, setDoc, doc, updateDoc, deleteDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
-import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits } from '../lib/formatters';
+import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, calculatePendingMonths } from '../lib/formatters';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
@@ -398,7 +398,8 @@ export default function MembersList() {
   const sendWhatsApp = (member: any) => {
     const name = formatFirstAndLastName(member.displayName || 'Participante');
     const quotas = Number(member.quotas) || 1;
-    const url = getWhatsAppCobrarUrl(member.phone, name, quotas, 20.00, '11953292570');
+    const pendingMonths = calculatePendingMonths(member);
+    const url = getWhatsAppCobrarUrl(member.phone, name, quotas, 20.00, '11953292570', pendingMonths);
     window.open(url, '_blank');
   };
 

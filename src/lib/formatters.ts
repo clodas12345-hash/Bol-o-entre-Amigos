@@ -167,16 +167,17 @@ export function getAppPublicUrl(): string {
 }
 
 export function getVisitorPortalUrl(): string {
-  return `${getAppPublicUrl()}/?view=true`;
+  const base = getAppPublicUrl().replace(/\/$/, '');
+  return `${base}/visitante?view=true`;
 }
 
 export function getReceiptUploadUrl(name?: string, phone?: string): string {
-  const base = getAppPublicUrl();
+  const base = getAppPublicUrl().replace(/\/$/, '');
   const params = new URLSearchParams();
-  params.set('comprovante', '1');
   if (name && name.trim()) params.set('nome', name.trim());
   if (phone && phone.trim()) params.set('tel', phone.trim());
-  return `${base}/?${params.toString()}`;
+  const queryString = params.toString();
+  return `${base}/upload-receipt${queryString ? '?' + queryString : ''}`;
 }
 
 export function getParticipantPortalUrl(): string {
@@ -203,14 +204,29 @@ export function getWhatsAppCobrarUrl(
   name: string,
   quotas = 1,
   unitPrice = 20.00,
-  pixKey = '11953292570'
+  pixKey = '11953292570',
+  pendingMonths: string[] = []
 ): string {
   const firstName = name.trim().split(' ')[0] || 'Participante';
-  const totalAmount = (quotas * unitPrice).toFixed(2).replace('.', ',');
-  const quotasText = quotas > 1 ? `${quotas} cotas (R$ ${totalAmount})` : `1 cota (R$ ${totalAmount})`;
+  const totalQuotasToCharge = pendingMonths.length > 0 ? pendingMonths.length * quotas : quotas;
+  const totalAmount = (totalQuotasToCharge * unitPrice).toFixed(2).replace('.', ',');
+  
+  let quotasText = '';
+  if (pendingMonths.length > 1) {
+    quotasText = `${quotas} cota(s) por mês x ${pendingMonths.length} meses (Total: R$ ${totalAmount})`;
+  } else {
+    quotasText = quotas > 1 ? `${quotas} cotas (R$ ${totalAmount})` : `1 cota (R$ ${totalAmount})`;
+  }
+
   const uploadLink = getReceiptUploadUrl(name, phone || undefined);
 
-  const message = `🍀 *Bolão entre Amigos*\n\nOlá ${firstName}, tudo bem? Passando para lembrar da sua participação no *Bolão entre Amigos*.\nVocê possui *${quotasText}* em aberto.\n\n*Chave PIX (Celular):* ${pixKey}\n*Valor Total:* R$ ${totalAmount}\n\nApós realizar o PIX, envie o comprovante pelo link:\n${uploadLink}`;
+  let message = `🍀 *Bolão entre Amigos*\n\nOlá ${firstName}, tudo bem? Passando para lembrar da sua participação no *Bolão entre Amigos*.\n`;
+  
+  if (pendingMonths.length > 0) {
+    message += `Você possui pendência referente ao(s) mês(es): *${pendingMonths.join(', ')}*.\n`;
+  }
+  
+  message += `Total em aberto: *${quotasText}*.\n\n*Chave PIX (Celular):* ${pixKey}\n*Valor Total:* R$ ${totalAmount}\n\nApós realizar o PIX, envie o comprovante pelo link:\n${uploadLink}`;
 
   return buildWhatsAppUrl(phone, message);
 }
@@ -331,3 +347,60 @@ export function validateDataSchema(data: any, type: 'game' | 'contest'): { isVal
   return { isValid: false, error: 'Tipo de validação desconhecido.' };
 }
 
+
+/**
+ * Calcula os meses pendentes com base no último mês pago e status atual.
+ */
+export function calculatePendingMonths(member: any): string[] {
+  const pending: string[] = [];
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+  
+  // Se está pendente, o mês atual é garantidamente uma pendência
+  const isCurrentMonthPending = member.paymentStatus !== 'Pago';
+  
+  if (!member.lastPaidMonth) {
+    if (isCurrentMonthPending) {
+      pending.push(`${String(currentMonth).padStart(2, '0')}/${currentYear}`);
+    }
+    return pending;
+  }
+
+  try {
+    const [lastM, lastY] = member.lastPaidMonth.split('/').map(Number);
+    let iterM = lastM;
+    let iterY = lastY;
+
+    // Avança para o próximo mês após o último pago
+    iterM++;
+    if (iterM > 12) {
+      iterM = 1;
+      iterY++;
+    }
+
+    // Loop para encontrar meses entre o último pago e o atual
+    while (iterY < currentYear || (iterY === currentYear && iterM < currentMonth)) {
+      pending.push(`${String(iterM).padStart(2, '0')}/${iterY}`);
+      iterM++;
+      if (iterM > 12) {
+        iterM = 1;
+        iterY++;
+      }
+    }
+
+    // Adiciona o mês atual se estiver pendente
+    if (isCurrentMonthPending) {
+      const currentMonthStr = `${String(currentMonth).padStart(2, '0')}/${currentYear}`;
+      if (!pending.includes(currentMonthStr)) {
+        pending.push(currentMonthStr);
+      }
+    }
+  } catch (e) {
+    if (isCurrentMonthPending) {
+      pending.push(`${String(currentMonth).padStart(2, '0')}/${currentYear}`);
+    }
+  }
+
+  return pending;
+}
