@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, onSnapshot, query, where, orderBy, limit, deleteDoc, doc, getDocs, addDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
-import { db, isQuotaError } from '../lib/firebase';
+import { db, isAIStudioPreview, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout, formatAnyDateBR } from '../lib/formatters';
@@ -1052,8 +1052,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [lastBetInfo]);
 
-  // Exibe pop-up 1 dia antes de correr a última aposta (ou no dia da última aposta / sem apostas), exclusivo para Admin e Conselheiros
+  // Exibe pop-up 1 dia antes de correr a última aposta (ou no dia da última aposta / sem apostas), exclusivo para Admin e Conselheiros (nunca no preview web)
   const showLastBetReminderPopup =
+    !isAIStudioPreview &&
     isAdminOrCounselor &&
     gamesReady &&
     !renewalPopupDismissed &&
