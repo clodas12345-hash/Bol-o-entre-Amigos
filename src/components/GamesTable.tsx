@@ -1599,12 +1599,12 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
       {/* 2. ORDEM SECUNDÁRIA: Tabela / Lista de Apostas do Bolão com Abas (Hoje vs Futuras vs Histórico) */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
-        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-100/80 p-1 gap-1 text-[11px] sm:text-xs overflow-x-auto no-scrollbar">
-          <div className="grid grid-cols-3 flex-1 gap-1 min-w-max">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-100/80 p-1 gap-1 text-[11px] sm:text-xs">
+          <div className="flex flex-1 gap-1 min-w-0">
             <button
               type="button"
               onClick={() => setGamesTab('today')}
-              className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
+              className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
                 gamesTab === 'today'
                   ? 'bg-purple-900 text-white shadow-xs font-black'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -1617,7 +1617,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             <button
               type="button"
               onClick={() => setGamesTab('future')}
-              className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
+              className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
                 gamesTab === 'future'
                   ? 'bg-purple-900 text-white shadow-xs font-black'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -1630,7 +1630,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             <button
               type="button"
               onClick={() => setGamesTab('history')}
-              className={`py-2 px-1.5 sm:px-3 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold whitespace-nowrap ${
+              className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-bold min-w-0 ${
                 gamesTab === 'history'
                   ? 'bg-purple-900 text-white shadow-xs font-black'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
@@ -1642,9 +1642,9 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
           </div>
 
           {isAdmin && (
-            <div className="px-2 py-1.5 bg-white/50 rounded-lg border border-gray-200 flex flex-col items-center justify-center min-w-max leading-none ml-1">
-              <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter mb-0.5">Total Nuvem</span>
-              <span className="text-[11px] font-black text-indigo-700">{games.length}</span>
+            <div className="shrink-0 px-2 py-1.5 bg-white/50 rounded-lg border border-gray-200 flex flex-col items-center justify-center leading-none ml-1">
+              <span className="text-[7px] font-black text-gray-400 uppercase tracking-tighter mb-0.5 whitespace-nowrap">Total Nuvem</span>
+              <span className="text-[10px] font-black text-indigo-700">{games.length}</span>
             </div>
           )}
         </div>

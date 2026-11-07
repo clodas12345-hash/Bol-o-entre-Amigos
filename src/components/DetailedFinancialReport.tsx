@@ -110,6 +110,8 @@ export default function DetailedFinancialReport() {
     }
   };
 
+  const [openChargeMenu, setOpenChargeMenu] = useState<string | null>(null);
+
   const report = members
     .map(member => {
       const memberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
@@ -290,53 +292,57 @@ export default function DetailedFinancialReport() {
                         )}
 
                         {!isPaid && can('members_send_reminder') && (
-                          <div className="relative group">
+                          <div className="relative">
                             <button
+                              onClick={() => setOpenChargeMenu(openChargeMenu === m.id ? null : m.id)}
                               className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
                               title="Opções de cobrança"
                             >
                               💬 Cobrar ▼
                             </button>
-                            <div className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 hidden group-hover:block z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-                              <div className="p-2 bg-gray-50 text-[10px] font-black text-gray-500 uppercase text-center border-b">Escolha o dia:</div>
-                              {['02', '07', '12'].map(day => (
-                                <button
-                                  key={day}
-                                  onClick={async () => {
-                                    window.open(whatsappUrl, '_blank');
-                                    try {
-                                      const monthKey = new Date().toISOString().slice(0, 7);
-                                      const colName = m.collectionName || 'users';
-                                      const existingHistory = m.charge_history || {};
-                                      const monthHistory = existingHistory[monthKey] || {};
-                                      
-                                      await updateDoc(doc(db, colName, m.id), {
-                                        [`charge_history.${monthKey}.d${day}`]: true
-                                      });
-                                      
-                                      setMembers(prev => prev.map(member => {
-                                        if (member.id === m.id) {
-                                          return {
-                                            ...member,
-                                            charge_history: {
-                                              ...existingHistory,
-                                              [monthKey]: { ...monthHistory, [`d${day}`]: true }
-                                            }
-                                          };
-                                        }
-                                        return member;
-                                      }));
-                                      addToast(`Cobrança do dia ${day} registrada para ${formatFirstAndLastName(m.displayName || m.email)}!`, 'success');
-                                    } catch (err) {
-                                      console.error('Erro ao registrar cobrança:', err);
-                                    }
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition flex items-center gap-2"
-                                >
-                                  <span>📅</span> Dia {day}
-                                </button>
-                              ))}
-                            </div>
+                            {openChargeMenu === m.id && (
+                              <div className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                                <div className="p-2 bg-gray-50 text-[10px] font-black text-gray-500 uppercase text-center border-b">Escolha o dia:</div>
+                                {['02', '07', '12'].map(day => (
+                                  <button
+                                    key={day}
+                                    onClick={async () => {
+                                      window.open(whatsappUrl, '_blank');
+                                      try {
+                                        const monthKey = new Date().toISOString().slice(0, 7);
+                                        const colName = m.collectionName || 'users';
+                                        const existingHistory = m.charge_history || {};
+                                        const monthHistory = existingHistory[monthKey] || {};
+                                        
+                                        await updateDoc(doc(db, colName, m.id), {
+                                          [`charge_history.${monthKey}.d${day}`]: true
+                                        });
+                                        
+                                        setMembers(prev => prev.map(member => {
+                                          if (member.id === m.id) {
+                                            return {
+                                              ...member,
+                                              charge_history: {
+                                                ...existingHistory,
+                                                [monthKey]: { ...monthHistory, [`d${day}`]: true }
+                                              }
+                                            };
+                                          }
+                                          return member;
+                                        }));
+                                        addToast(`Cobrança do dia ${day} registrada para ${formatFirstAndLastName(m.displayName || m.email)}!`, 'success');
+                                        setOpenChargeMenu(null);
+                                      } catch (err) {
+                                        console.error('Erro ao registrar cobrança:', err);
+                                      }
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition flex items-center gap-2"
+                                  >
+                                    <span>📅</span> Dia {day}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
