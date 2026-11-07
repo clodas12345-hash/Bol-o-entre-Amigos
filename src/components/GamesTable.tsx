@@ -11,6 +11,7 @@ import StatsThermometer from './StatsThermometer';
 import LottoFlyerGenerator from './LottoFlyerGenerator';
 import VolantesHistoryComparator from './VolantesHistoryComparator';
 import GameHistory, { parseDateSafely } from './GameHistory';
+import EditGameModal from './EditGameModal';
 import { triggerResultNotification } from '../lib/autoNotificationService';
 import { notifyWinningPrize, sendAppNotification, requestNotificationPermission, syncMissingGamesTwoHourReminders } from '../lib/notifications';
 import { usePermissions } from '../lib/PermissionsContext';
@@ -55,6 +56,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   const [latestResult, setLatestResult] = useState<any | null>(null);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [gameToEdit, setGameToEdit] = useState<any | null>(null);
   const [groupToDelete, setGroupToDelete] = useState<any | null>(null);
   const [isDeletingGroup, setIsDeletingGroup] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
@@ -1985,6 +1987,10 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                         return (
                           <div 
                             key={game.id} 
+                            onDoubleClick={() => {
+                              if (isAdminOrCounselor) setGameToEdit(game);
+                            }}
+                            title={isAdminOrCounselor ? "💡 Dica: Clique 2 vezes nesta aposta para editá-la" : undefined}
                             className={`p-3.5 sm:p-5 transition rounded-xl ${
                               hitsInfo.isWinner 
                                 ? 'bg-gradient-to-r from-emerald-100 via-amber-50 to-teal-100 border-2 border-emerald-500 shadow-xl ring-4 ring-emerald-300/50' 
@@ -2052,6 +2058,18 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                                     className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer whitespace-nowrap"
                                   >
                                     Ver Bilhete
+                                  </button>
+                                )}
+                                {isAdminOrCounselor && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setGameToEdit(game);
+                                    }}
+                                    className="text-xs text-purple-600 hover:text-purple-800 p-1 font-bold cursor-pointer"
+                                    title="Editar aposta (ou clique 2 vezes na aposta)"
+                                  >
+                                    ✏️
                                   </button>
                                 )}
                                 {canDeleteGames && (
@@ -2341,6 +2359,13 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         </div>
       )}
 
+      {/* Modal de Edição de Aposta por Duplo Clique ou Botão */}
+      {gameToEdit && (
+        <EditGameModal
+          game={gameToEdit}
+          onClose={() => setGameToEdit(null)}
+        />
+      )}
     </div>
   );
 }

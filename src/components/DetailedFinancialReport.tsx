@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, doc, updateDoc, getDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, updateDoc, getDoc, addDoc, deleteDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db, isQuotaError, auth } from '../lib/firebase';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, calculatePendingMonths } from '../lib/formatters';
 import { useToast } from './NotificationManager';
@@ -8,12 +8,14 @@ import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { usePool } from '../lib/PoolContext';
 import { usePermissions } from '../lib/PermissionsContext';
 import { useData } from '../lib/DataContext';
+import PaymentDetailsModal from './PaymentDetailsModal';
 
 export default function DetailedFinancialReport() {
   const { setIsQuotaExceeded } = usePool();
   const { can } = usePermissions();
   const { payments, members } = useData();
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
+  const [selectedPaymentForModal, setSelectedPaymentForModal] = useState<any | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<string | null>(null);
   const [showPixModal, setShowPixModal] = useState(false);
   const [pixConfig, setPixConfig] = useState<PixConfig>(DEFAULT_PIX_CONFIG);
@@ -40,11 +42,12 @@ export default function DetailedFinancialReport() {
     const monthKey = targetMonthKey || `${String(filterMonth).padStart(2, '0')}/${filterYear}`;
     const isPaidInMonth = payments.some(p => (p.userId === member.id || p.userId === member.uid) && p.month === monthKey);
     const newStatus = isPaidInMonth ? 'Pendente' : 'Pago';
+    const currentUserEmail = auth.currentUser?.email || auth.currentUser?.displayName || 'Administrador';
     
     setIsUpdatingStatus(member.id);
     try {
       if (newStatus === 'Pago') {
-        // Registra um novo pagamento para o mês selecionado
+        // Registra um novo pagamento para o mês selecionado com histórico auditável
         const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
         const amount = quotas * (pixConfig.defaultAmount || 20.00);
         
@@ -53,8 +56,17 @@ export default function DetailedFinancialReport() {
           memberName: member.displayName || member.name || 'Participante',
           amount: amount,
           month: monthKey,
+          status: 'Pago',
           createdAt: serverTimestamp(),
-          homologatedBy: auth.currentUser?.email || 'Administrador'
+          homologatedBy: currentUserEmail,
+          history: [{
+            timestamp: new Date().toISOString(),
+            updatedBy: currentUserEmail,
+            userRole: auth.currentUser?.email ? 'admin' : 'membro',
+            previousStatus: 'Pendente',
+            newStatus: 'Pago',
+            note: `Status alterado no Extrato Financeiro por ${currentUserEmail}`
+          }]
         });
 
         addToast(`Pagamento de ${monthKey} registrado para ${formatFirstAndLastName(member.displayName || member.email)}!`, 'success');
@@ -67,7 +79,7 @@ export default function DetailedFinancialReport() {
         }
       }
 
-      // Sincroniza o status global do membro (opcional, mas bom para manter compatibilidade)
+      // Sincroniza o status global do membro
       const colName = member.collectionName || 'users';
       await updateDoc(doc(db, colName, member.id), {
         paymentStatus: newStatus,
@@ -159,6 +171,14 @@ export default function DetailedFinancialReport() {
             />
           </div>
         </div>
+      )}
+
+      {/* Modal de Detalhes & Rastreabilidade do Pagamento */}
+      {selectedPaymentForModal && (
+        <PaymentDetailsModal
+          payment={selectedPaymentForModal}
+          onClose={() => setSelectedPaymentForModal(null)}
+        />
       )}
 
       {/* Modal de Comprovante PIX/Transferência */}
@@ -279,16 +299,36 @@ export default function DetailedFinancialReport() {
                       {m.lastPayment?.month || '-'}
                     </td>
                     <td className="p-2.5 text-center">
-                      {m.lastPayment?.receiptURL ? (
+                      <div className="flex flex-col items-center gap-1">
+                        {m.lastPayment?.receiptURL && (
+                          <button
+                            onClick={() => setSelectedReceipt(m.lastPayment.receiptURL)}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
+                          >
+                            Ver PIX
+                          </button>
+                        )}
                         <button
-                          onClick={() => setSelectedReceipt(m.lastPayment.receiptURL)}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
+                          onClick={() => {
+                            const paymentObj = m.lastPayment || {
+                              id: `payment_${m.id}_${monthKey}`,
+                              memberName: m.displayName || m.name || m.email,
+                              userId: m.id || m.uid,
+                              phone: m.phone,
+                              amount: (Number(m.quotas) > 0 ? Number(m.quotas) : 1) * (pixConfig.defaultAmount || 20.00),
+                              month: monthKey,
+                              status: isPaid ? 'Pago' : 'Pendente',
+                              createdAt: m.createdAt,
+                              history: m.payment_history || m.history || []
+                            };
+                            setSelectedPaymentForModal(paymentObj);
+                          }}
+                          className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+                          title="Ver histórico de alterações de status e rastreabilidade"
                         >
-                          Ver PIX
+                          <span>🔍</span> Detalhes
                         </button>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                      </div>
                     </td>
                     <td className="p-2.5 text-center">
                       <div className="flex flex-col items-center gap-2">

@@ -6,6 +6,7 @@ import { useToast } from './NotificationManager';
 import PrizeSplitModal from './PrizeSplitModal';
 import { usePermissions } from '../lib/PermissionsContext';
 import { formatAnyDateBR } from '../lib/formatters';
+import EditGameModal from './EditGameModal';
 
 interface GameHistoryProps {
   games: any[];
@@ -108,6 +109,7 @@ export default function GameHistory({
   const [expandedContests, setExpandedContests] = useState<Record<string, boolean>>({});
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [gameToEdit, setGameToEdit] = useState<any | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<any>(null);
   const [isDeletingGroup, setIsDeletingGroup] = useState(false);
@@ -1057,6 +1059,10 @@ export default function GameHistory({
                                 return (
                                   <div
                                     key={game.id || gameIndex}
+                                    onDoubleClick={() => {
+                                      if (isAdminOrCounselor) setGameToEdit(game);
+                                    }}
+                                    title={isAdminOrCounselor ? "💡 Dica: Clique 2 vezes nesta aposta para editá-la" : undefined}
                                     className={`p-3.5 sm:p-4 transition rounded-xl ${
                                       hitsInfo.isWinner
                                         ? 'bg-gradient-to-r from-emerald-100 via-amber-50 to-teal-100 border-2 border-emerald-500 shadow-md'
@@ -1367,6 +1373,14 @@ export default function GameHistory({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Edição de Aposta por Duplo-Clique ou Botão no Histórico */}
+      {gameToEdit && (
+        <EditGameModal
+          game={gameToEdit}
+          onClose={() => setGameToEdit(null)}
+        />
       )}
     </div>
   );

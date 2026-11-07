@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db, isNativeApk } from '../lib/firebase';
+import { collection, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { db, isNativeApk, auth } from '../lib/firebase';
 import { calculateGamePrize, getCorrectGameCost } from '../lib/prizes';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend } from 'recharts';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
 import { useData } from '../lib/DataContext';
 import { extractContestNumber, parseDateSafely } from './GameHistory';
+import { useToast } from './NotificationManager';
 
 export const evaluateGamePrize = (game: any, savedResultsList: any[] = []): number => {
   const contestNumber = extractContestNumber(game.contestNumber || game.contest);
@@ -32,6 +33,7 @@ export const evaluateGamePrize = (game: any, savedResultsList: any[] = []): numb
 export default function FinancialDashboard() {
   const { activePool } = usePool();
   const { isMobile } = useResponsiveLayout();
+  const { addToast } = useToast();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [viewScope, setViewScope] = useState<'current_month' | 'all_time'>('current_month');
   
@@ -45,15 +47,23 @@ export default function FinancialDashboard() {
 
   const [pendingReceiptsCount, setPendingReceiptsCount] = useState<number>(0);
   const [last24HoursPendingCount, setLast24HoursPendingCount] = useState<number>(0);
+  const [pendingItems, setPendingItems] = useState<any[]>([]);
+  const [isQuickValidating, setIsQuickValidating] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!isNativeApk) return;
     const unsub = onSnapshot(collection(db, 'pending_receipts'), (snap) => {
       const now = Date.now();
       const twentyFourHoursMs = 24 * 60 * 60 * 1000;
       let count24h = 0;
+      const items: any[] = [];
       snap.docs.forEach(docSnap => {
         const data = docSnap.data();
+        if (data.status === 'validado' || data.status === 'approved' || data.status === 'homologado') {
+          return;
+        }
+        const item = { id: docSnap.id, ...data };
+        items.push(item);
+
         let createdAtMs = now;
         if (data.createdAt?.toDate) {
           createdAtMs = data.createdAt.toDate().getTime();
@@ -67,10 +77,90 @@ export default function FinancialDashboard() {
         }
       });
       setLast24HoursPendingCount(count24h);
-      setPendingReceiptsCount(snap.docs.length);
+      setPendingReceiptsCount(items.length);
+      setPendingItems(items);
     }, () => {});
     return () => unsub();
   }, []);
+
+  const handleQuickValidate = async (targetItem?: any) => {
+    setIsQuickValidating(true);
+    try {
+      const itemsToProcess = targetItem ? [targetItem] : [...pendingItems];
+      if (itemsToProcess.length === 0) {
+        addToast?.('Nenhum comprovante pendente para validar', 'warning');
+        setIsQuickValidating(false);
+        return;
+      }
+
+      const today = new Date();
+      const todayStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+      const monthStr = `${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
+      for (const item of itemsToProcess) {
+        const currentUserEmail = auth.currentUser?.email || 'admin';
+        const nowIso = new Date().toISOString();
+        const auditLogEntry = {
+          timestamp: nowIso,
+          updatedBy: currentUserEmail,
+          userRole: 'admin' as const,
+          previousStatus: item.status || 'aguardando_validacao',
+          newStatus: 'validado',
+          note: `Confirmação rápida realizada pelo administrador (${currentUserEmail}) em ${todayStr}`
+        };
+
+        // 1. Update pending_receipts document status to 'validado' with current date and audit history
+        if (item.id) {
+          await updateDoc(doc(db, 'pending_receipts', item.id), {
+            status: 'validado',
+            validatedDate: todayStr,
+            validatedAt: serverTimestamp(),
+            homologatedBy: currentUserEmail,
+            history: arrayUnion(auditLogEntry)
+          }).catch(() => {});
+        }
+
+        // 2. Record payment in payments collection with audit history
+        await addDoc(collection(db, 'payments'), {
+          memberId: item.memberId || item.userId || '',
+          memberName: item.memberName || item.userName || item.name || 'Membro',
+          amount: Number(item.amount || item.value || 20.00),
+          month: item.month || monthStr,
+          status: 'validado',
+          validatedDate: todayStr,
+          createdAt: serverTimestamp(),
+          receiptUrl: item.receiptUrl || '',
+          homologatedBy: currentUserEmail,
+          history: [auditLogEntry]
+        }).catch(() => {});
+
+        // 3. Update member status to 'Pago' in members/users collections
+        const targetMemberId = item.memberId || item.userId;
+        if (targetMemberId) {
+          await updateDoc(doc(db, 'members', targetMemberId), {
+            paymentStatus: 'Pago',
+            lastPaymentDate: todayStr
+          }).catch(() => {});
+
+          await updateDoc(doc(db, 'users', targetMemberId), {
+            paymentStatus: 'Pago',
+            lastPaymentDate: todayStr
+          }).catch(() => {});
+        }
+      }
+
+      const msg = targetItem
+        ? `⚡ Pagamento de ${targetItem.memberName || 'membro'} validado com sucesso!`
+        : `⚡ ${itemsToProcess.length} pagamentos validados com sucesso para hoje (${todayStr})!`;
+      
+      addToast?.(msg, 'success');
+    } catch (err) {
+      console.error('Erro na validação rápida:', err);
+      addToast?.('Erro ao validar pagamento.', 'error');
+    } finally {
+      setIsQuickValidating(false);
+    }
+  };
 
   const isMegaSena = activePool?.lotteryType === 'megasena';
   const savedResultsList = isMegaSena ? megasenaResults : lotofacilResults;
@@ -290,31 +380,74 @@ export default function FinancialDashboard() {
   return (
     <div className="p-4 sm:p-5 bg-white">
       {pendingReceiptsCount > 0 && (
-        <div 
-          onClick={() => {
-            window.dispatchEvent(new CustomEvent('bolao_navigate_to', { detail: { path: '/contatos?tab=receipts' } }));
-          }}
-          className="mb-4 bg-gradient-to-r from-amber-500 via-orange-600 to-rose-600 text-white p-3.5 rounded-xl shadow-lg border-2 border-amber-200 flex items-center justify-between cursor-pointer hover:opacity-95 transition animate-pulse"
-        >
-          <div className="flex items-center gap-3">
-            <span className="relative text-2xl">
-              🚨
-              {last24HoursPendingCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-md">
-                  {last24HoursPendingCount}
-                </span>
-              )}
-            </span>
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-amber-100">Alerta de Pagamentos Pendentes</p>
-              <h4 className="text-sm font-black flex items-center gap-2 flex-wrap">
-                <span>{pendingReceiptsCount} aguardando validação ({last24HoursPendingCount} {last24HoursPendingCount === 1 ? 'novo nas últimas 24h' : 'novos nas últimas 24h'})</span>
-              </h4>
+        <div className="mb-4 bg-gradient-to-r from-amber-500 via-orange-600 to-rose-600 text-white p-3.5 rounded-xl shadow-lg border-2 border-amber-200 flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="relative text-2xl">
+                🚨
+                {last24HoursPendingCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-md">
+                    {last24HoursPendingCount}
+                  </span>
+                )}
+              </span>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-amber-100">Alerta de Pagamentos Pendentes</p>
+                <h4 className="text-sm font-black flex items-center gap-2 flex-wrap">
+                  <span>{pendingReceiptsCount} aguardando validação ({last24HoursPendingCount} {last24HoursPendingCount === 1 ? 'novo nas últimas 24h' : 'novos nas últimas 24h'})</span>
+                </h4>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={isQuickValidating}
+                onClick={() => handleQuickValidate()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-3.5 py-2 rounded-lg shadow-md transition flex items-center gap-1.5 cursor-pointer border border-emerald-400 disabled:opacity-50"
+              >
+                <span>⚡</span> {isQuickValidating ? 'Validando...' : 'Confirmação Rápida (Validar Todos)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('bolao_navigate_to', { detail: { path: '/contatos?tab=receipts' } }));
+                }}
+                className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold px-3 py-2 rounded-lg transition cursor-pointer shrink-0"
+              >
+                Detalhes →
+              </button>
             </div>
           </div>
-          <span className="bg-white text-orange-900 text-xs font-black px-3 py-1.5 rounded-lg shadow-sm shrink-0">
-            Validar Agora →
-          </span>
+
+          {/* Lista rápida para confirmação individual sem modal */}
+          {pendingItems.length > 0 && (
+            <div className="bg-black/25 rounded-lg p-2.5 flex flex-col gap-2 mt-1 border border-white/10">
+              <div className="text-[11px] font-black text-amber-100 uppercase tracking-wider flex items-center gap-1">
+                <span>⚡</span> Confirmação Rápida Sem Modal:
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {pendingItems.map((item) => (
+                  <div key={item.id} className="bg-white/10 backdrop-blur-xs p-2 rounded-md flex items-center justify-between text-xs border border-white/10">
+                    <div className="truncate mr-2">
+                      <span className="font-bold block truncate text-white">{item.memberName || item.userName || item.name || 'Membro'}</span>
+                      <span className="text-amber-200 text-[10px] font-semibold">
+                        R$ {(Number(item.amount || item.value || 20)).toFixed(2)} - {item.month || 'Mês vigente'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isQuickValidating}
+                      onClick={() => handleQuickValidate(item)}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[11px] px-2.5 py-1.5 rounded shadow-sm flex items-center gap-1 transition cursor-pointer shrink-0 disabled:opacity-50"
+                    >
+                      <span>⚡</span> Validar Hoje
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

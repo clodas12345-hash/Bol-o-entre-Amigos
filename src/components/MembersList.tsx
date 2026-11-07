@@ -1183,7 +1183,12 @@ export default function MembersList() {
                 );
 
                 return (
-                  <tr key={member.id} className={`${idx % 2 === 1 ? 'bg-slate-100 border-y border-slate-200' : 'bg-white'} hover:bg-slate-200/70 transition`}>
+                  <tr 
+                    key={member.id} 
+                    onDoubleClick={() => canEditMember && handleOpenEdit(member)}
+                    title={canEditMember ? "💡 Dica: Clique 2 vezes para editar este cadastro" : undefined}
+                    className={`${idx % 2 === 1 ? 'bg-slate-100 border-y border-slate-200' : 'bg-white'} hover:bg-slate-200/70 transition cursor-pointer select-none`}
+                  >
                     <td className="py-2.5 px-2.5 sm:p-3 min-w-[130px]">
                       <div className="font-bold text-gray-900 text-xs sm:text-sm leading-tight">
                         {member.displayName || 'Sem Nome'}

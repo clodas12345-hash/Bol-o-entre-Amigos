@@ -185,6 +185,18 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
       const quotas = Number(member?.quotas) > 0 ? Number(member.quotas) : 1;
       const amountPaid = quotas * 20.0;
       const isLatePreviousMonth = targetPeriod === 'previous';
+      const currentUserEmail = auth.currentUser?.email || 'Administrador';
+
+      const auditLog = [{
+        timestamp: approvalTimestamp.toISOString(),
+        updatedBy: currentUserEmail,
+        userRole: 'admin' as const,
+        previousStatus: receipt.status || 'aguardando_validacao',
+        newStatus: 'homologated',
+        note: isLatePreviousMonth
+          ? `Homologado como Pagamento Atrasado (Mês ${monthRefStr}) por ${currentUserEmail}`
+          : `Homologado como Pagamento Regular (Mês ${monthRefStr}) por ${currentUserEmail}`
+      }];
 
       // 1. Salva no histórico homologado permanente (Auditoria / Homologação de Envio)
       await addDoc(collection(db, 'approved_receipts'), {
@@ -193,12 +205,13 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
         imageBase64: receipt.imageBase64,
         submittedAt: receipt.createdAt || serverTimestamp(),
         approvedAt: serverTimestamp(),
-        approvedBy: auth.currentUser?.email || 'Administrador',
+        approvedBy: currentUserEmail,
         matchedMemberName: member ? (member.displayName || member.name) : receipt.name,
         matchedMemberId: member ? member.id : null,
         referenceMonth: monthRefStr,
         isLatePreviousMonth,
-        status: 'homologated'
+        status: 'homologated',
+        history: auditLog
       });
 
       // 2. Registra também na coleção 'payments' com o mês de referência escolhido (mês atual ou mês anterior em atraso)
@@ -207,10 +220,12 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
         memberName: member ? (member.displayName || member.name) : receipt.name,
         amount: amountPaid,
         month: monthRefStr,
+        status: 'Pago',
         isLatePayment: isLatePreviousMonth,
         receiptURL: receipt.imageBase64,
         createdAt: serverTimestamp(),
-        homologatedBy: auth.currentUser?.email || 'Administrador'
+        homologatedBy: currentUserEmail,
+        history: auditLog
       });
 
       // 3. Se o administrador escolheu salvar no mês anterior (pagamento atrasado), atualiza também o snapshot do mês anterior
