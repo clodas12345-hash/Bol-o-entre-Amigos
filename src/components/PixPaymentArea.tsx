@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, isQuotaError } from '../lib/firebase';
+import { doc, onSnapshot, setDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { db, auth, isQuotaError } from '../lib/firebase';
 import { PixConfig, DEFAULT_PIX_CONFIG, generatePixPayload, generatePixQrCode } from '../lib/pix';
 import { useToast } from './NotificationManager';
 import { usePool } from '../lib/PoolContext';
@@ -342,25 +342,42 @@ export default function PixPaymentArea({
                             }
                           } catch {}
 
-                          const res = await fetch('/api/public/upload-receipt', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              name: senderName,
-                              phone: senderPhone,
-                              imageBase64: reader.result,
-                              mimeType: file.type
-                            })
+                          await addDoc(collection(db, 'pending_receipts'), {
+                            userId: auth.currentUser?.uid || 'guest',
+                            name: senderName,
+                            phone: senderPhone,
+                            contestNumber: null,
+                            referenceMonth: '',
+                            quotas: 1,
+                            amount: selectedAmount,
+                            imageBase64: String(reader.result || ''),
+                            mimeType: file.type || 'image/jpeg',
+                            createdAt: serverTimestamp(),
+                            status: 'aguardando_validacao'
                           });
-                          const data = await res.json();
-                          if (data.success) {
-                            addToast('Comprovante enviado com sucesso para a administração!', 'success');
-                            if (onClose) onClose();
-                          } else {
-                            addToast(data.message || 'Erro ao enviar comprovante.', 'error');
-                          }
+
+                          try {
+                            const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
+                            const adminSnap = await getDocs(qAdmin);
+                            for (const adminDoc of adminSnap.docs) {
+                              const adminData = adminDoc.data();
+                              await addDoc(collection(db, 'notifications'), {
+                                userId: adminData.uid || adminDoc.id,
+                                title: '💸 Novo Comprovante PIX Recebido',
+                                message: `${senderName} enviou o comprovante PIX (R$ ${selectedAmount.toFixed(2)})!`,
+                                type: 'payment',
+                                targetPath: '/contatos?tab=receipts',
+                                read: false,
+                                createdAt: serverTimestamp()
+                              });
+                            }
+                          } catch {}
+
+                          addToast('✅ Comprovante enviado com sucesso para a administração!', 'success');
+                          if (onClose) onClose();
                         } catch (err) {
-                          addToast('Erro na conexão ao enviar comprovante.', 'error');
+                          console.error('Erro ao enviar comprovante:', err);
+                          addToast('Erro ao enviar comprovante. Tente novamente.', 'error');
                         }
                       };
                     }}

@@ -351,6 +351,7 @@ export default function DetailedFinancialReport() {
                                   <button
                                     key={day}
                                     onClick={async () => {
+                                      setOpenChargeMenu(null);
                                       window.open(whatsappUrl, '_blank');
                                       try {
                                         const colName = m.collectionName || 'users';
@@ -358,7 +359,6 @@ export default function DetailedFinancialReport() {
                                           [`charge_history.${currentMonthKey}.d${day}`]: true
                                         });
                                         addToast(`Cobrança do dia ${day} registrada para ${formatFirstAndLastName(m.displayName || m.email)}!`, 'success');
-                                        setOpenChargeMenu(null);
                                       } catch (err) {
                                         console.error('Erro ao registrar cobrança:', err);
                                       }

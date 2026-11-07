@@ -1336,19 +1336,15 @@ export default function MembersList() {
                                       <button
                                         key={day}
                                         onClick={async () => {
+                                          setOpenChargeMenu(null);
                                           sendWhatsApp(member);
                                           try {
                                             const monthKey = new Date().toISOString().slice(0, 7);
                                             const colName = member.collectionName || 'members';
-                                            const existingHistory = member.charge_history || {};
-                                            const monthHistory = existingHistory[monthKey] || {};
-                                            
                                             await updateDoc(doc(db, colName, member.id), {
                                               [`charge_history.${monthKey}.d${day}`]: true
                                             });
-                                            
                                             addToast(`Cobrança do dia ${day} enviada e registrada!`, 'success');
-                                            setOpenChargeMenu(null);
                                           } catch (err) {
                                             console.error('Erro ao registrar cobrança:', err);
                                           }
