@@ -242,6 +242,63 @@ export default function PixReceiptReminderBanner({ user, userData }: PixReceiptR
     }
   }, [paymentState, activeUid, userName, activeContest, currentMonthStr, totalQuotaAmount]);
 
+  const handleConfirmPixSentWithoutFile = async () => {
+    setIsUploadingReceipt(true);
+    try {
+      const phoneToSend = userPhone || 'Via App';
+
+      await addDoc(collection(db, 'pending_receipts'), {
+        userId: activeUid,
+        name: userName,
+        phone: phoneToSend,
+        contestNumber: activeContest || null,
+        referenceMonth: currentMonthStr,
+        quotas: quotasCount,
+        amount: totalQuotaAmount,
+        imageBase64: '',
+        mimeType: 'text/plain',
+        note: 'Confirmado pelo membro (aguardando validação)',
+        createdAt: serverTimestamp(),
+        status: 'aguardando_validacao'
+      });
+
+      await addDoc(collection(db, 'payments'), {
+        userId: activeUid,
+        memberName: userName,
+        amount: totalQuotaAmount,
+        month: currentMonthStr,
+        contestNumber: activeContest || null,
+        status: 'aguardando_validacao',
+        createdAt: serverTimestamp()
+      });
+
+      try {
+        const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
+        const adminSnap = await getDocs(qAdmin);
+        for (const adminDoc of adminSnap.docs) {
+          const adminData = adminDoc.data();
+          await addDoc(collection(db, 'notifications'), {
+            userId: adminData.uid || adminDoc.id,
+            title: '💸 PIX Confirmado pelo Membro',
+            message: `${userName} confirmou o envio do PIX (${quotasCount} cota${quotasCount > 1 ? 's' : ''} - R$ ${totalQuotaAmount.toFixed(2)}) referente ao ${activeContest ? `Concurso #${activeContest}` : currentMonthStr}!`,
+            type: 'payment',
+            targetPath: '/contatos?tab=receipts',
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        }
+      } catch {}
+
+      syncPendingPaymentThreeDayReminders(false, userName, activeContest, totalQuotaAmount, activeUid);
+      addToast('✅ Confirmação de PIX enviada à administração com sucesso!', 'success');
+    } catch (err) {
+      console.error('Erro ao confirmar PIX:', err);
+      addToast('Erro ao enviar confirmação. Tente novamente.', 'error');
+    } finally {
+      setIsUploadingReceipt(false);
+    }
+  };
+
   const handleUploadReceiptFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -280,7 +337,7 @@ export default function PixReceiptReminderBanner({ user, userData }: PixReceiptR
               title: '💸 Novo Comprovante PIX Recebido',
               message: `${userName} enviou o comprovante PIX (${quotasCount} cota${quotasCount > 1 ? 's' : ''} - R$ ${totalQuotaAmount.toFixed(2)}) referente ao ${activeContest ? `Concurso #${activeContest}` : currentMonthStr}!`,
               type: 'payment',
-              targetPath: '/contatos',
+              targetPath: '/contatos?tab=receipts',
               read: false,
               createdAt: serverTimestamp()
             });
@@ -373,7 +430,7 @@ export default function PixReceiptReminderBanner({ user, userData }: PixReceiptR
                 </h3>
 
                 <p className="text-xs text-amber-50/95 leading-relaxed">
-                  Sua participação atual é de <strong>{quotasCount} cota{quotasCount > 1 ? 's' : ''}</strong> (Total: <strong className="underline">R$ {totalQuotaAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>). Realize o PIX ou anexe a foto do seu comprovante abaixo para atualizar seu status para <strong>Pago</strong>:
+                  Sua participação atual é de <strong>{quotasCount} cota{quotasCount > 1 ? 's' : ''}</strong> (Total: <strong className="underline">R$ {totalQuotaAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>). Confirme que fez o PIX, veja a chave ou anexe a foto do seu comprovante abaixo para atualizar seu status:
                 </p>
               </div>
             </div>
@@ -381,16 +438,26 @@ export default function PixReceiptReminderBanner({ user, userData }: PixReceiptR
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 md:self-center">
               <button
                 type="button"
+                onClick={handleConfirmPixSentWithoutFile}
+                disabled={isUploadingReceipt}
+                className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <span>✅</span>
+                <span>{isUploadingReceipt ? 'Enviando...' : 'Já Fiz o Pix! Avisar Admin'}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setShowPixModal(true)}
                 className="flex-1 sm:flex-initial bg-white hover:bg-amber-50 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
               >
                 <span>📱</span>
-                <span>Ver QR Code / Chave PIX</span>
+                <span>Ver QR Code</span>
               </button>
 
               <label className="flex-1 sm:flex-initial bg-slate-950 hover:bg-slate-900 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow-md border border-white/20 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
                 <span>📤</span>
-                <span>{isUploadingReceipt ? 'Enviando...' : 'Enviar Comprovante'}</span>
+                <span>Anexar Comprovante</span>
                 <input
                   type="file"
                   accept="image/*,.pdf"

@@ -1650,7 +1650,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             onOpenNewGame={onOpenNewGame}
             onDeleteGame={handleDeleteGame}
             onDeleteAllArchived={handleDeleteAllArchived}
-            onGoToToday={() => setGamesTab('today')}
+            onGoToToday={() => setGamesTab(todayGames.length > 0 ? 'today' : 'future')}
           />
         ) : (
           <>

@@ -294,9 +294,15 @@ export default function GameHistory({
     return `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
   }, []);
 
-  const currentMonthActiveCount = useMemo(() => {
-    return processedGames.filter(g => (g.isToday || g.isFuture) && g.monthStr === currentMonthStr).length;
+  const currentMonthTodayCount = useMemo(() => {
+    return processedGames.filter(g => g.isToday && g.monthStr === currentMonthStr).length;
   }, [processedGames, currentMonthStr]);
+
+  const currentMonthFutureCount = useMemo(() => {
+    return processedGames.filter(g => g.isFuture && !g.isToday && g.monthStr === currentMonthStr).length;
+  }, [processedGames, currentMonthStr]);
+
+  const currentMonthActiveCount = currentMonthTodayCount + currentMonthFutureCount;
 
   // Lista de anos disponíveis no histórico (inclui anos das apostas e anos anteriores recentes para fácil consulta)
   const availableYears = useMemo(() => {
@@ -833,7 +839,13 @@ export default function GameHistory({
                   </span>
                 </h4>
                 <p className="text-[11px] text-purple-800 mt-0.5">
-                  As apostas deste mês estão ativas na aba <strong>Hoje</strong> e serão arquivadas aqui após a apuração dos sorteios.
+                  {currentMonthTodayCount > 0 ? (
+                    <>As apostas deste mês estão ativas na aba <strong>Hoje ({currentMonthTodayCount})</strong> e serão arquivadas aqui após a apuração dos sorteios.</>
+                  ) : currentMonthFutureCount > 0 ? (
+                    <>As apostas deste mês estão cadastradas na aba <strong>Apostas Futuras ({currentMonthFutureCount})</strong> para os próximos sorteios.</>
+                  ) : (
+                    <>As apostas deste mês estão registradas e serão arquivadas aqui após a apuração dos sorteios.</>
+                  )}
                 </p>
               </div>
             </div>
@@ -843,7 +855,19 @@ export default function GameHistory({
                 onClick={onGoToToday}
                 className="px-3.5 py-2 bg-purple-900 hover:bg-purple-800 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95 w-full sm:w-auto justify-center"
               >
-                <span>🎯</span> Ver Jogos de Hoje ({currentMonthActiveCount})
+                {currentMonthTodayCount > 0 ? (
+                  <>
+                    <span>🎯</span> Ver Jogos de Hoje ({currentMonthTodayCount})
+                  </>
+                ) : currentMonthFutureCount > 0 ? (
+                  <>
+                    <span>⏳</span> Ver Apostas Futuras ({currentMonthFutureCount})
+                  </>
+                ) : (
+                  <>
+                    <span>🎯</span> Ver Apostas ({currentMonthActiveCount})
+                  </>
+                )}
               </button>
             )}
           </div>

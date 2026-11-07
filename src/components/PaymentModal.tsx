@@ -93,6 +93,10 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
       addToast('Informe o mês de referência.', 'error');
       return;
     }
+    if (isScheduledPix && !scheduledDate) {
+      addToast('Selecione a data de agendamento do PIX.', 'error');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -121,7 +125,13 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
         await updateDoc(doc(db, col, memberObj.id), { paymentStatus: 'Pago' });
       }
 
-      addToast(`Pagamento de R$ ${parsedAmount.toFixed(2)} registrado com sucesso!`, 'success');
+      if (isScheduledPix && scheduledDate) {
+        const [yyyy, mm, dd] = scheduledDate.split('-');
+        const formattedDateBR = `${dd}/${mm}/${yyyy}`;
+        addToast(`PIX agendado para ${formattedDateBR} (R$ ${parsedAmount.toFixed(2)}) registrado com sucesso!`, 'success');
+      } else {
+        addToast(`Pagamento de R$ ${parsedAmount.toFixed(2)} registrado com sucesso!`, 'success');
+      }
       onClose();
     } catch (err) {
       console.error('Erro ao salvar pagamento:', err);
