@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { collection, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useData } from '../lib/DataContext';
@@ -19,6 +19,8 @@ export default function ReceiptBatchManager() {
   const { addToast } = useToast();
 
   const [selectedMonthToDelete, setSelectedMonthToDelete] = useState<MonthReceiptGroup | null>(null);
+  const [selectedMonthForView, setSelectedMonthForView] = useState<MonthReceiptGroup | null>(null);
+  const [selectedReceiptForView, setSelectedReceiptForView] = useState<any | null>(null);
   const [isDeleting6Months, setIsDeleting6Months] = useState(false);
   const [isDeletingBatch, setIsDeletingBatch] = useState(false);
 
@@ -254,41 +256,88 @@ export default function ReceiptBatchManager() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
             {monthGroups.map(grp => (
-              <div
-                key={grp.monthKey}
-                className={`p-3 rounded-xl border transition flex items-center justify-between gap-2 shadow-3xs ${
-                  grp.isOlderThan6Months
-                    ? 'bg-amber-50/50 border-amber-200 hover:bg-amber-50'
-                    : 'bg-white border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-extrabold text-xs text-slate-900">
-                      Mês {grp.monthLabel}
-                    </span>
-                    {grp.isOlderThan6Months && (
-                      <span className="text-[9px] font-black bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-md uppercase">
-                        &gt; 6 Meses
+              <React.Fragment key={grp.monthKey}>
+                <div
+                  className={`p-3 rounded-xl border transition flex items-center justify-between gap-2 shadow-3xs ${
+                    grp.isOlderThan6Months
+                      ? 'bg-amber-50/50 border-amber-200 hover:bg-amber-50'
+                      : 'bg-white border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-extrabold text-xs text-slate-900">
+                        Mês {grp.monthLabel}
                       </span>
-                    )}
+                      {grp.isOlderThan6Months && (
+                        <span className="text-[9px] font-black bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-md uppercase">
+                          &gt; 6 Meses
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                      {grp.items.length} {grp.items.length === 1 ? 'comprovante' : 'comprovantes'} • R$ {grp.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                    {grp.items.length} {grp.items.length === 1 ? 'comprovante' : 'comprovantes'} • R$ {grp.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
+
+                  <div className="flex gap-1.5 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMonthForView(grp)}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-black transition cursor-pointer shrink-0 active:scale-95 flex items-center gap-1"
+                      title={`Visualizar comprovantes de ${grp.monthLabel}`}
+                    >
+                      <span>👁️</span> Visualizar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMonthToDelete(grp)}
+                      disabled={isDeletingBatch || isDeleting6Months}
+                      className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[11px] font-black transition cursor-pointer shrink-0 disabled:opacity-50 active:scale-95 flex items-center gap-1"
+                      title={`Excluir todos os comprovantes de ${grp.monthLabel}`}
+                    >
+                      <span>🗑️</span> Excluir Mês
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedMonthToDelete(grp)}
-                  disabled={isDeletingBatch || isDeleting6Months}
-                  className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[11px] font-black transition cursor-pointer shrink-0 disabled:opacity-50 active:scale-95 flex items-center gap-1"
-                  title={`Excluir todos os comprovantes de ${grp.monthLabel}`}
-                >
-                  <span>🗑️</span>
-                  <span>Excluir Mês</span>
-                </button>
-              </div>
+                {/* MODAL DE VISUALIZAÇÃO DOS COMPROVANTES DO MÊS */}
+                {selectedMonthForView && selectedMonthForView.monthKey === grp.monthKey && (
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-3xl w-full max-w-lg max-h-[85vh] overflow-hidden shadow-2xl border border-gray-100 flex flex-col">
+                      <div className="bg-gradient-to-r from-indigo-700 to-indigo-900 p-4 text-white flex justify-between items-center">
+                        <h3 className="font-black text-sm">Comprovantes: {grp.monthLabel}</h3>
+                        <button onClick={() => setSelectedMonthForView(null)} className="text-white/80 hover:text-white transition text-xl cursor-pointer">✕</button>
+                      </div>
+                      <div className="p-4 overflow-y-auto flex-1 space-y-3">
+                        {grp.items.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                            <div className="truncate">
+                              <p className="text-xs font-bold text-gray-900">{item.memberName || item.name || 'Sem nome'}</p>
+                              <p className="text-[10px] text-gray-500 font-medium">R$ {Number(item.amount || 0).toFixed(2)}</p>
+                            </div>
+                            <button
+                              onClick={() => setSelectedReceiptForView(item)}
+                              className="px-3 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold cursor-pointer hover:bg-blue-700"
+                            >
+                              Ver
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL DE VISUALIZAÇÃO DE IMAGEM ÚNICA */}
+                {selectedReceiptForView && (
+                  <div className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-4" onClick={() => setSelectedReceiptForView(null)}>
+                    <div className="bg-white p-2 rounded-2xl max-w-lg w-full flex flex-col shadow-2xl">
+                      <img src={selectedReceiptForView.receiptURL || selectedReceiptForView.imageBase64} alt="Comprovante" className="max-h-[75vh] object-contain rounded-xl" />
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
             ))}
           </div>
         )}

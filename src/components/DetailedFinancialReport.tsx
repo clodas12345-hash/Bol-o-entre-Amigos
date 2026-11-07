@@ -23,6 +23,7 @@ export default function DetailedFinancialReport() {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [showAllTime, setShowAllTime] = useState(false);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
 
   const { addToast } = useToast();
 
@@ -142,6 +143,9 @@ export default function DetailedFinancialReport() {
         ? allMemberPayments 
         : allMemberPayments.filter(p => p.month === monthKey);
 
+      // Aplica filtro de pendentes se ativado (apenas participantes sem pagamento no período)
+      if (showPendingOnly && filteredPayments.length > 0) return false;
+
       // Se possui pagamento registrado para este mês ou no histórico total, sempre exibe!
       if (filteredPayments.length > 0) return true;
 
@@ -237,6 +241,7 @@ export default function DetailedFinancialReport() {
         <div className="flex items-center gap-3">
           <h3 className="font-black text-gray-900 text-sm uppercase tracking-tight">Extrato Financeiro</h3>
           <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAllTime(!showAllTime)}
             className={`px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all border cursor-pointer ${
@@ -247,6 +252,17 @@ export default function DetailedFinancialReport() {
           >
             {showAllTime ? '♾️ Tudo' : '📅 Mensal'}
           </button>
+          <button
+            onClick={() => setShowPendingOnly(!showPendingOnly)}
+            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all border cursor-pointer ${
+              showPendingOnly 
+                ? 'bg-amber-600 text-white border-amber-500' 
+                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            {showPendingOnly ? '⏳ Apenas Pendentes' : '👤 Todos'}
+          </button>
+        </div>
         </div>
 
         {!showAllTime && (

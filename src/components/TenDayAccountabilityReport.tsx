@@ -258,174 +258,179 @@ export default function TenDayAccountabilityReport() {
   }
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 text-slate-100 shadow-xl space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
-          <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400">
-            <span>📈</span> Prestação de Contas (Decêndio / 10 Dias)
-          </h2>
-          <p className="text-sm text-slate-400">
-            Relatório automatizado e interconectado com pagamentos, apostas e prêmios da nuvem.
-          </p>
-        </div>
+    <details className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 text-slate-100 shadow-xl group">
+      <summary className="cursor-pointer list-none flex items-center justify-between outline-none">
+        <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400">
+          <span>📈</span> Prestação de Contas (Decêndio / 10 Dias)
+        </h2>
+        <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+      </summary>
+      <div className="space-y-6 pt-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <p className="text-sm text-slate-400">
+              Relatório automatizado e interconectado com pagamentos, apostas e prêmios da nuvem.
+            </p>
+          </div>
 
-        {/* Filtros de Data e Período */}
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={selectedDecendio}
-            onChange={(e) => setSelectedDecendio(e.target.value as any)}
-            className="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-          >
-            <option value="1">1º Decêndio (Dias 01 a 10)</option>
-            <option value="2">2º Decêndio (Dias 11 a 20)</option>
-            <option value="3">3º Decêndio (Dias 21 ao Fim)</option>
-            <option value="all">Mês Inteiro</option>
-          </select>
+          {/* Filtros de Data e Período */}
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={selectedDecendio}
+              onChange={(e) => setSelectedDecendio(e.target.value as any)}
+              className="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+            >
+              <option value="1">1º Decêndio (Dias 01 a 10)</option>
+              <option value="2">2º Decêndio (Dias 11 a 20)</option>
+              <option value="3">3º Decêndio (Dias 21 ao Fim)</option>
+              <option value="all">Mês Inteiro</option>
+            </select>
 
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-          >
-            <option value="01">Janeiro</option>
-            <option value="02">Fevereiro</option>
-            <option value="03">Março</option>
-            <option value="04">Abril</option>
-            <option value="05">Maio</option>
-            <option value="06">Junho</option>
-            <option value="07">Julho</option>
-            <option value="08">Agosto</option>
-            <option value="09">Setembro</option>
-            <option value="10">Outubro</option>
-            <option value="11">Novembro</option>
-            <option value="12">Dezembro</option>
-          </select>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+            >
+              <option value="01">Janeiro</option>
+              <option value="02">Fevereiro</option>
+              <option value="03">Março</option>
+              <option value="04">Abril</option>
+              <option value="05">Maio</option>
+              <option value="06">Junho</option>
+              <option value="07">Julho</option>
+              <option value="08">Agosto</option>
+              <option value="09">Setembro</option>
+              <option value="10">Outubro</option>
+              <option value="11">Novembro</option>
+              <option value="12">Dezembro</option>
+            </select>
 
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-          >
-            <option value="2025">2025</option>
-            <option value="2026">2026</option>
-            <option value="2027">2027</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Período Ativo Badge */}
-      <div className="bg-slate-800/60 border border-emerald-500/30 rounded-xl p-3 flex items-center justify-between text-sm">
-        <span className="text-emerald-300 font-medium">Período Selecionado:</span>
-        <span className="bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full font-semibold">
-          {dateRange.label} ({dateRange.startDate.toLocaleDateString()} até {dateRange.endDate.toLocaleDateString()})
-        </span>
-      </div>
-
-      {/* Cards de Resumo Interconectado */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Arrecadado no Ciclo</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">R$ {totalArrecadadoEfetivo.toFixed(2)}</p>
-          <p className="text-xs text-slate-500 mt-1">{filteredPayments.length} pagamentos registrados</p>
-        </div>
-
-        <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Investido em Jogos</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">R$ {totalGastoApostas.toFixed(2)}</p>
-          <p className="text-xs text-slate-500 mt-1">{filteredGames.length} bilhetes no período</p>
-        </div>
-
-        <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Prêmios do Período</p>
-          <p className="text-2xl font-bold text-blue-400 mt-1">R$ {totalPremiosPeriodo.toFixed(2)}</p>
-          <p className="text-xs text-slate-500 mt-1">Baseado nos sorteios oficiais</p>
-        </div>
-
-        <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Saldo do Caixa (Decêndio)</p>
-          <p className={`text-2xl font-bold mt-1 ${saldoCaixaPeriodo >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            R$ {saldoCaixaPeriodo.toFixed(2)}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">Arrecadação - Gastos + Prêmios</p>
-        </div>
-      </div>
-
-      {/* Detalhamento e Botões de Compartilhamento */}
-      <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-4 space-y-4">
-        <h3 className="font-semibold text-slate-200 flex items-center gap-2">
-          <span>📋</span> Prévia da Mensagem para o WhatsApp (Pronta para Envio)
-        </h3>
-
-        <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs text-slate-300 whitespace-pre-wrap border border-slate-800 max-h-60 overflow-y-auto">
-          {generateWhatsAppReportText()}
-        </div>
-
-        <div className="flex flex-wrap gap-3 pt-2">
-          <button
-            onClick={copyToClipboard}
-            className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 py-2.5 px-4 rounded-xl font-medium transition flex items-center justify-center gap-2"
-          >
-            <span>📋</span> Copiar Relatório
-          </button>
-
-          <button
-            onClick={shareOnWhatsApp}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 px-4 rounded-xl font-medium transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/30"
-          >
-            <span>💬</span> Enviar no WhatsApp
-          </button>
-        </div>
-      </div>
-
-      {/* Lista de Membros e Status no Ciclo */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
-          <h4 className="font-semibold text-slate-200 flex items-center justify-between">
-            <span>👥 Participantes & Pagamentos ({members.length})</span>
-            <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full">
-              {paidMembersCount} Pagos
-            </span>
-          </h4>
-          <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-            {members.slice(0, 15).map(m => (
-              <div key={m.id} className="flex items-center justify-between text-sm bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                <span className="font-medium text-slate-200">{formatFirstAndLastName(m.displayName || m.email || 'Participante')}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                  m.paymentStatus === 'Pago' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
-                }`}>
-                  {m.paymentStatus || 'Pendente'}
-                </span>
-              </div>
-            ))}
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+            >
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+            </select>
           </div>
         </div>
 
-        <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
-          <h4 className="font-semibold text-slate-200 flex items-center justify-between">
-            <span>🎯 Jogos Registrados no Período</span>
-            <span className="text-xs bg-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full">
-              {filteredGames.length} Jogos
-            </span>
-          </h4>
-          <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-            {filteredGames.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">Nenhum jogo cadastrado neste decêndio.</p>
-            ) : (
-              filteredGames.map(g => (
-                <div key={g.id} className="flex items-center justify-between text-sm bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                  <div>
-                    <p className="font-medium text-slate-200">{g.contest || 'Concurso Bolão'}</p>
-                    <p className="text-xs text-slate-400">{g.date ? new Date(g.date.seconds ? g.date.seconds * 1000 : g.date).toLocaleDateString() : 'Data recente'}</p>
-                  </div>
-                  <span className="text-emerald-400 font-bold text-xs">
-                    R$ {getCorrectGameCost(g, isMegaSena).toFixed(2)}
+        {/* Período Ativo Badge */}
+        <div className="bg-slate-800/60 border border-emerald-500/30 rounded-xl p-3 flex items-center justify-between text-sm">
+          <span className="text-emerald-300 font-medium">Período Selecionado:</span>
+          <span className="bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full font-semibold">
+            {dateRange.label} ({dateRange.startDate.toLocaleDateString()} até {dateRange.endDate.toLocaleDateString()})
+          </span>
+        </div>
+
+        {/* Cards de Resumo Interconectado */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Arrecadado no Ciclo</p>
+            <p className="text-2xl font-bold text-emerald-400 mt-1">R$ {totalArrecadadoEfetivo.toFixed(2)}</p>
+            <p className="text-xs text-slate-500 mt-1">{filteredPayments.length} pagamentos registrados</p>
+          </div>
+
+          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Investido em Jogos</p>
+            <p className="text-2xl font-bold text-amber-400 mt-1">R$ {totalGastoApostas.toFixed(2)}</p>
+            <p className="text-xs text-slate-500 mt-1">{filteredGames.length} bilhetes no período</p>
+          </div>
+
+          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Prêmios do Período</p>
+            <p className="text-2xl font-bold text-blue-400 mt-1">R$ {totalPremiosPeriodo.toFixed(2)}</p>
+            <p className="text-xs text-slate-500 mt-1">Baseado nos sorteios oficiais</p>
+          </div>
+
+          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-medium">Saldo do Caixa (Decêndio)</p>
+            <p className={`text-2xl font-bold mt-1 ${saldoCaixaPeriodo >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              R$ {saldoCaixaPeriodo.toFixed(2)}
+            </p>
+            <p className="text-xs text-slate-500 mt-1">Arrecadação - Gastos + Prêmios</p>
+          </div>
+        </div>
+
+        {/* Detalhamento e Botões de Compartilhamento */}
+        <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-4 space-y-4">
+          <h3 className="font-semibold text-slate-200 flex items-center gap-2">
+            <span>📋</span> Prévia da Mensagem para o WhatsApp (Pronta para Envio)
+          </h3>
+
+          <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs text-slate-300 whitespace-pre-wrap border border-slate-800 max-h-60 overflow-y-auto">
+            {generateWhatsAppReportText()}
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              onClick={copyToClipboard}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 py-2.5 px-4 rounded-xl font-medium transition flex items-center justify-center gap-2"
+            >
+              <span>📋</span> Copiar Relatório
+            </button>
+
+            <button
+              onClick={shareOnWhatsApp}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 px-4 rounded-xl font-medium transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/30"
+            >
+              <span>💬</span> Enviar no WhatsApp
+            </button>
+          </div>
+        </div>
+
+        {/* Lista de Membros e Status no Ciclo */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
+            <h4 className="font-semibold text-slate-200 flex items-center justify-between">
+              <span>👥 Participantes & Pagamentos ({members.length})</span>
+              <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full">
+                {paidMembersCount} Pagos
+              </span>
+            </h4>
+            <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+              {members.slice(0, 15).map(m => (
+                <div key={m.id} className="flex items-center justify-between text-sm bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                  <span className="font-medium text-slate-200">{formatFirstAndLastName(m.displayName || m.email || 'Participante')}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    m.paymentStatus === 'Pago' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    {m.paymentStatus || 'Pendente'}
                   </span>
                 </div>
-              ))
-            )}
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
+            <h4 className="font-semibold text-slate-200 flex items-center justify-between">
+              <span>🎯 Jogos Registrados no Período</span>
+              <span className="text-xs bg-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full">
+                {filteredGames.length} Jogos
+              </span>
+            </h4>
+            <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+              {filteredGames.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">Nenhum jogo cadastrado neste decêndio.</p>
+              ) : (
+                filteredGames.map(g => (
+                  <div key={g.id} className="flex items-center justify-between text-sm bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                    <div>
+                      <p className="font-medium text-slate-200">{g.contest || 'Concurso Bolão'}</p>
+                      <p className="text-xs text-slate-400">{g.date ? new Date(g.date.seconds ? g.date.seconds * 1000 : g.date).toLocaleDateString() : 'Data recente'}</p>
+                    </div>
+                    <span className="text-emerald-400 font-bold text-xs">
+                      R$ {getCorrectGameCost(g, isMegaSena).toFixed(2)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </details>
   );
 }
