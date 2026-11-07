@@ -3,6 +3,7 @@ import { collection, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, getDocs,
 import { db, auth } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { normalizeBrazilianPhoneDigits, formatFirstAndLastName } from '../lib/formatters';
+import ReceiptBatchManager from './ReceiptBatchManager';
 
 interface ReceiptsListProps {
   onMemberUpdated?: () => void;
@@ -451,6 +452,9 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
           </div>
         </div>
       )}
+
+      {/* GERENCIADOR E LIMPEZA DE COMPROVANTES EM LOTE POR MÊS */}
+      <ReceiptBatchManager />
 
       <div className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white p-4 rounded-2xl shadow-md">
         <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">

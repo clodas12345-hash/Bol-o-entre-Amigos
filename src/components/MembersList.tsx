@@ -1235,23 +1235,47 @@ export default function MembersList() {
                         </td>
 
                         <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (canTogglePayment) togglePaymentStatus(member);
-                            }}
-                            disabled={!canTogglePayment}
-                            className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
-                              canTogglePayment ? 'cursor-pointer' : 'cursor-default'
-                            } ${
-                              isPaid
-                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
-                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                            }`}
-                            title={canTogglePayment ? "Alterar status de pagamento" : "Status de pagamento"}
-                          >
-                            {member.paymentStatus || 'Pendente'}
-                          </button>
+                          {(() => {
+                            const chargeHistory = member.charge_history?.[new Date().toISOString().slice(0, 7)] || {};
+                            const days = ['02', '07', '12'];
+                            
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="flex justify-center gap-0.5 mb-1">
+                                  {days.map(d => {
+                                    const isSent = chargeHistory[`d${d}`] === true;
+                                    const colorClass = (isPaid || isSent) ? 'bg-emerald-500' : 'bg-blue-500';
+                                    return (
+                                      <div 
+                                        key={d} 
+                                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[7px] text-white font-black shadow-xs ${colorClass}`}
+                                        title={isPaid ? 'Pago' : isSent ? `Enviado dia ${d}` : `Pendente dia ${d}`}
+                                      >
+                                        {d}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (canTogglePayment) togglePaymentStatus(member);
+                                  }}
+                                  disabled={!canTogglePayment}
+                                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                                    canTogglePayment ? 'cursor-pointer' : 'cursor-default'
+                                  } ${
+                                    isPaid
+                                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
+                                      : 'bg-red-500 text-white hover:bg-red-600 border border-red-600'
+                                  }`}
+                                  title={canTogglePayment ? "Alterar status de pagamento" : "Status de pagamento"}
+                                >
+                                  {member.paymentStatus || 'Pendente'}
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         <td className="p-3 text-center font-bold">
@@ -1277,14 +1301,46 @@ export default function MembersList() {
                               </button>
                             )}
                             {canSendReminder && (
-                              <button
-                                type="button"
-                                onClick={() => sendWhatsApp(member)}
-                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                                title="Cobrar via WhatsApp"
-                              >
-                                💬
-                              </button>
+                              <div className="relative group">
+                                <button
+                                  type="button"
+                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                  title="Opções de Cobrança"
+                                >
+                                  💬
+                                </button>
+                                {/* Menu de opções de cobrança */}
+                                <div className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 hidden group-hover:block z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                                  <div className="p-2 bg-gray-50 text-[10px] font-black text-gray-500 uppercase text-center border-b">Escolha o dia:</div>
+                                  {['02', '07', '12'].map(day => (
+                                    <button
+                                      key={day}
+                                      onClick={async () => {
+                                        // 1. Abre WhatsApp
+                                        sendWhatsApp(member);
+                                        // 2. Registra no Firestore
+                                        try {
+                                          const monthKey = new Date().toISOString().slice(0, 7);
+                                          const colName = member.collectionName || 'members';
+                                          const existingHistory = member.charge_history || {};
+                                          const monthHistory = existingHistory[monthKey] || {};
+                                          
+                                          await updateDoc(doc(db, colName, member.id), {
+                                            [`charge_history.${monthKey}.d${day}`]: true
+                                          });
+                                          
+                                          addToast(`Cobrança do dia ${day} enviada e registrada!`, 'success');
+                                        } catch (err) {
+                                          console.error('Erro ao registrar cobrança:', err);
+                                        }
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition flex items-center gap-2"
+                                    >
+                                      <span>📅</span> Dia {day}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
                             )}
                             {canDeleteMember && (
                               <button

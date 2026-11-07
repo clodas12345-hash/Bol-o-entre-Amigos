@@ -657,16 +657,26 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
             badgeColor: 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold'
           }
         : resDrawn.length === 0
-        ? {
-            hits: 0,
-            prizeAmount: 0,
-            isWinner: false,
-            hitsText: contestNumber ? `Concurso #${contestNumber} Não Apurado` : 'Aguardando Sorteio',
-            statusText: dateInfo.isToday ? 'Aposta do Dia' : 'Pendente',
-            badgeColor: dateInfo.isToday
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold'
-              : 'bg-amber-50 text-amber-800 border border-amber-200'
-          }
+        ? (Number(game.prizeAmount || game.customPrize || game.prize || 0) > 0
+            ? {
+                hits: Number(game.hits || 11),
+                prizeAmount: Number(game.prizeAmount || game.customPrize || game.prize || 0),
+                isWinner: true,
+                hitsText: `${Number(game.hits || 11)} Acertos`,
+                statusText: `🎉 ${Number(game.hits || 11)} Acertos (R$ ${Number(game.prizeAmount || game.customPrize || game.prize || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
+                badgeColor: 'bg-emerald-600 text-white font-black shadow-xs'
+              }
+            : {
+                hits: 0,
+                prizeAmount: 0,
+                isWinner: false,
+                hitsText: contestNumber ? `Concurso #${contestNumber} Não Apurado` : 'Aguardando Sorteio',
+                statusText: dateInfo.isToday ? 'Aposta do Dia' : 'Pendente',
+                badgeColor: dateInfo.isToday
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200'
+              }
+          )
         : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
 
       return {

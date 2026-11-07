@@ -38,6 +38,7 @@ import MemberBetSubmission from './components/MemberBetSubmission';
 import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import DrawCalendarModal from './components/DrawCalendarModal';
+import ChargeReminderPopup from './components/ChargeReminderPopup';
 import { getAdjustedActiveContestInfo, formatDateBR } from './lib/drawCalendar';
 import { 
   scheduleUpcomingDrawAlerts, 
@@ -1309,6 +1310,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         )}
 
         <BackgroundUploadStatus />
+        <ChargeReminderPopup isAdmin={isAdmin} />
         </div>
       </main>
 

@@ -239,12 +239,25 @@ export default function GameHistory({
         ? game.numbers.map((n: any) => Number(n)).sort((a: number, b: number) => a - b)
         : [];
 
-      const isFutureContestTitle = !isPast && String(game.contest || '').toLowerCase().includes('futuro');
-      const isPendingFuture = isFuture || isFutureContestTitle || !targetResult?.numbers?.length;
+      const savedPrize = Number(game.prizeAmount || game.customPrize || game.prize || 0);
+      const savedHits = Number(game.hits || 0);
 
-      const prizeInfo = (isPendingFuture || !targetResult)
-        ? { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Apuração', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
-        : calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult);
+      const prizeInfo = targetResult && targetResult.numbers?.length > 0
+        ? calculateGamePrize(gameNumbers, resDrawn, game.customPrize, targetResult)
+        : (savedPrize > 0
+            ? {
+                hits: savedHits || 11,
+                prizeAmount: savedPrize,
+                isWinner: true,
+                badgeColor: 'bg-emerald-600 text-white font-black shadow-xs',
+                hitsText: `${savedHits || 11} Acertos`,
+                statusText: `🎉 ${savedHits || 11} Acertos (R$ ${savedPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
+                matchedNumbers: [],
+                missedGameNumbers: gameNumbers,
+                missingDrawnNumbers: []
+              }
+            : { hits: 0, prizeAmount: 0, isWinner: false, hitsText: 'Aguardando Sorteio', statusText: 'Aguardando Apuração', badgeColor: 'bg-blue-50 text-blue-800 border border-blue-200' }
+          );
 
       const derivedMonth = !isNaN(gDate.getTime())
         ? `${String(gDate.getMonth() + 1).padStart(2, '0')}/${gDate.getFullYear()}`

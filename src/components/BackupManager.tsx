@@ -18,6 +18,8 @@ import {
 import { sendAppNotification } from '../lib/notifications';
 import { downloadOrShareFile } from '../lib/fileDownloadHelper';
 import { formatAnyDateBR } from '../lib/formatters';
+import { useData } from '../lib/DataContext';
+import ReceiptBatchManager from './ReceiptBatchManager';
 
 interface CollectionStat {
   name: string;
@@ -59,6 +61,7 @@ export default function BackupManager() {
   const [isAutoBackingUp, setIsAutoBackingUp] = useState(false);
   
   const { addToast } = useToast();
+  const { capacityStatus } = useData();
   const isAdmin = getIsAdmin();
 
   useEffect(() => {
@@ -907,6 +910,68 @@ export default function BackupManager() {
           </span>
         </div>
       </div>
+
+      {/* CARD: MONITOR DE CAPACIDADE DE ARMAZENAMENTO (LIMITE DE 10.000) */}
+      <div className={`p-4 rounded-2xl border transition shadow-2xs space-y-3 ${
+        capacityStatus?.isNearLimit
+          ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+          : 'bg-slate-50 border-slate-200 text-slate-900'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg p-1.5 bg-white rounded-xl shadow-3xs">📊</span>
+            <div>
+              <h4 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
+                Capacidade de Armazenamento da Nuvem
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                  capacityStatus?.isNearLimit ? 'bg-amber-200 text-amber-900 animate-pulse' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {capacityStatus?.isNearLimit ? '⚠️ Próximo do Limite' : '🟢 Limite Expandido para 10.000'}
+                </span>
+              </h4>
+              <p className="text-[11px] text-slate-600 mt-0.5">
+                Monitor em tempo real do limite ativado de <strong>10.000 registros</strong> por coleção no Firebase Firestore.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Barras de Progresso por Coleção */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-1">
+          {capacityStatus?.collections.map(col => {
+            const isAlert = col.percentage >= 80;
+            return (
+              <div key={col.key} className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-3xs space-y-1">
+                <div className="flex justify-between items-center font-bold text-[11px]">
+                  <span className="text-slate-800">{col.name}</span>
+                  <span className={`font-black ${isAlert ? 'text-amber-600' : 'text-slate-600'}`}>
+                    {col.count.toLocaleString('pt-BR')} / 10.000 ({col.percentage}%)
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                  <div
+                    className={`h-full transition-all duration-500 rounded-full ${
+                      isAlert ? 'bg-amber-500' : 'bg-indigo-600'
+                    }`}
+                    style={{ width: `${Math.min(100, col.percentage)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Lembrete Informativo */}
+        <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-xl p-2.5 flex items-center gap-2 text-[11px] text-indigo-950 font-semibold">
+          <span className="text-base shrink-0">💡</span>
+          <span>
+            <strong>Lembrete de Alerta Automático:</strong> Quando qualquer coleção atingir 80% de ocupação (8.000 registros), o aplicativo mostrará um lembrete automático para você solicitar o aumento do limite direto pelo chat com o assistente!
+          </span>
+        </div>
+      </div>
+
+      {/* GERENCIADOR E EXCLUSÃO DE COMPROVANTES EM LOTE POR MÊS */}
+      <ReceiptBatchManager />
 
       {/* CARD: BACKUP EM PDF COM ESCOLHA DE PERÍODO */}
       <div className="bg-gradient-to-br from-indigo-50/90 via-blue-50/70 to-slate-50 border border-blue-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xs">

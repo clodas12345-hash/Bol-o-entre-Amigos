@@ -239,20 +239,44 @@ export default function DetailedFinancialReport() {
                       )}
                     </td>
                     <td className="p-2.5 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex flex-col items-center gap-2">
                         {can('members_toggle_payment') ? (
-                          <button
-                            onClick={() => togglePaymentStatus(m)}
-                            disabled={isUpdatingStatus === m.id}
-                            title="Clique para alternar entre Pago e Pendente"
-                            className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition shadow-2xs ${
-                              isPaid
-                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
-                                : 'bg-red-500 hover:bg-red-600 text-white'
-                            }`}
-                          >
-                            {isPaid ? '✓ Pago' : 'Pendente'}
-                          </button>
+                          (() => {
+                            const chargeHistory = m.charge_history?.[new Date().toISOString().slice(0, 7)] || {};
+                            const days = ['02', '07', '12'];
+                            
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="flex gap-1">
+                                  {days.map(d => {
+                                    const isSent = chargeHistory[`d${d}`] === true;
+                                    const colorClass = (isPaid || isSent) ? 'bg-emerald-500' : 'bg-blue-500';
+                                    return (
+                                      <div 
+                                        key={d} 
+                                        className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] text-white font-black shadow-xs ${colorClass}`}
+                                        title={isPaid ? 'Pago' : isSent ? `Enviado dia ${d}` : `Pendente dia ${d}`}
+                                      >
+                                        {d}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <button
+                                  onClick={() => togglePaymentStatus(m)}
+                                  disabled={isUpdatingStatus === m.id}
+                                  title="Clique para alternar entre Pago e Pendente"
+                                  className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-extrabold cursor-pointer transition shadow-2xs ${
+                                    isPaid
+                                      ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                      : 'bg-red-500 hover:bg-red-600 text-white'
+                                  }`}
+                                >
+                                  {isPaid ? '✓ Pago' : 'Pendente'}
+                                </button>
+                              </div>
+                            );
+                          })()
                         ) : (
                           <span
                             className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${
@@ -266,15 +290,54 @@ export default function DetailedFinancialReport() {
                         )}
 
                         {!isPaid && can('members_send_reminder') && (
-                          <a
-                            href={whatsappUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-xs font-bold transition shadow-2xs flex items-center gap-1"
-                            title="Enviar cobrança via WhatsApp com chave PIX e valor das cotas"
-                          >
-                            💬 Cobrar
-                          </a>
+                          <div className="relative group">
+                            <button
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                              title="Opções de cobrança"
+                            >
+                              💬 Cobrar ▼
+                            </button>
+                            <div className="absolute right-0 bottom-full mb-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 hidden group-hover:block z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                              <div className="p-2 bg-gray-50 text-[10px] font-black text-gray-500 uppercase text-center border-b">Escolha o dia:</div>
+                              {['02', '07', '12'].map(day => (
+                                <button
+                                  key={day}
+                                  onClick={async () => {
+                                    window.open(whatsappUrl, '_blank');
+                                    try {
+                                      const monthKey = new Date().toISOString().slice(0, 7);
+                                      const colName = m.collectionName || 'users';
+                                      const existingHistory = m.charge_history || {};
+                                      const monthHistory = existingHistory[monthKey] || {};
+                                      
+                                      await updateDoc(doc(db, colName, m.id), {
+                                        [`charge_history.${monthKey}.d${day}`]: true
+                                      });
+                                      
+                                      setMembers(prev => prev.map(member => {
+                                        if (member.id === m.id) {
+                                          return {
+                                            ...member,
+                                            charge_history: {
+                                              ...existingHistory,
+                                              [monthKey]: { ...monthHistory, [`d${day}`]: true }
+                                            }
+                                          };
+                                        }
+                                        return member;
+                                      }));
+                                      addToast(`Cobrança do dia ${day} registrada para ${formatFirstAndLastName(m.displayName || m.email)}!`, 'success');
+                                    } catch (err) {
+                                      console.error('Erro ao registrar cobrança:', err);
+                                    }
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition flex items-center gap-2"
+                                >
+                                  <span>📅</span> Dia {day}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </td>

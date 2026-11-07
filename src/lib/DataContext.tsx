@@ -5,6 +5,21 @@ import { usePool } from './PoolContext';
 import { usePermissions } from './PermissionsContext';
 import { useToast } from '../components/NotificationManager';
 
+export interface CollectionCapacity {
+  key: string;
+  name: string;
+  count: number;
+  maxLimit: number;
+  percentage: number;
+}
+
+export interface CapacityStatus {
+  isNearLimit: boolean;
+  maxLimit: number;
+  collections: CollectionCapacity[];
+  warningMessage: string | null;
+}
+
 interface DataContextType {
   games: any[];
   members: any[];
@@ -15,7 +30,10 @@ interface DataContextType {
   latestMegasena: any | null;
   isSyncing: boolean;
   gamesReady: boolean;
+  capacityStatus: CapacityStatus;
 }
+
+const MAX_STORAGE_LIMIT = 10000;
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
@@ -59,13 +77,12 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
   const { isAdmin } = usePermissions();
   const { addToast } = useToast();
 
-  // 1. Monitoramento de JOGOS (Geral ou por Pool)
+  // 1. Monitoramento de JOGOS (Geral ou por Pool) - LIMITE 10.000
   useEffect(() => {
     if (!userId) return;
     
     setIsSyncing(true);
-    // Busca até 5000 jogos para garantir histórico completo no APK
-    const qGames = query(collection(db, 'games'), limit(5000));
+    const qGames = query(collection(db, 'games'), limit(MAX_STORAGE_LIMIT));
     
     const unsubGames = onSnapshot(qGames, (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -73,9 +90,9 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
       setGamesReady(true);
       setIsSyncing(false);
       
-      // Cache local para persistência no APK (Primeiros 1000 itens)
+      // Cache local para persistência no APK (Até 2500 itens)
       try {
-        localStorage.setItem('bolao_cache_games', JSON.stringify(list.slice(0, 1000)));
+        localStorage.setItem('bolao_cache_games', JSON.stringify(list.slice(0, 2500)));
       } catch {}
     }, (err) => {
       console.warn('[Sync] Erro ao sincronizar jogos:', err);
@@ -128,11 +145,11 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
     };
   }, [userId]);
 
-  // 3. Monitoramento de RESULTADOS (Lotofácil e Mega-Sena)
+  // 3. Monitoramento de RESULTADOS (Lotofácil e Mega-Sena) - LIMITE 10.000
   useEffect(() => {
     if (!userId) return;
 
-    const qLoto = query(collection(db, 'lotofacil_results'), orderBy('contest', 'desc'), limit(150));
+    const qLoto = query(collection(db, 'lotofacil_results'), orderBy('contest', 'desc'), limit(MAX_STORAGE_LIMIT));
     const unsubLoto = onSnapshot(qLoto, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setLotofacilResults(list);
@@ -144,7 +161,7 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
       } catch {}
     });
 
-    const qMega = query(collection(db, 'megasena_results'), orderBy('contest', 'desc'), limit(150));
+    const qMega = query(collection(db, 'megasena_results'), orderBy('contest', 'desc'), limit(MAX_STORAGE_LIMIT));
     const unsubMega = onSnapshot(qMega, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setMegasenaResults(list);
@@ -159,11 +176,11 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
     };
   }, [userId]);
 
-  // 4. Monitoramento de PAGAMENTOS
+  // 4. Monitoramento de PAGAMENTOS - LIMITE 10.000
   useEffect(() => {
     if (!userId) return;
 
-    const qPayments = query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(1000));
+    const qPayments = query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(MAX_STORAGE_LIMIT));
     const unsubPayments = onSnapshot(qPayments, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setPayments(list);
@@ -180,6 +197,45 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
   const latestLotofacil = useMemo(() => lotofacilResults[0] || null, [lotofacilResults]);
   const latestMegasena = useMemo(() => megasenaResults[0] || null, [megasenaResults]);
 
+  // Cálculo do Status de Capacidade (Monitor de Limite de 10.000)
+  const capacityStatus: CapacityStatus = useMemo(() => {
+    const collections: CollectionCapacity[] = [
+      { key: 'games', name: 'Jogos e Apostas', count: games.length, maxLimit: MAX_STORAGE_LIMIT, percentage: Math.round((games.length / MAX_STORAGE_LIMIT) * 100) },
+      { key: 'lotofacil', name: 'Resultados Lotofácil', count: lotofacilResults.length, maxLimit: MAX_STORAGE_LIMIT, percentage: Math.round((lotofacilResults.length / MAX_STORAGE_LIMIT) * 100) },
+      { key: 'megasena', name: 'Resultados Mega-Sena', count: megasenaResults.length, maxLimit: MAX_STORAGE_LIMIT, percentage: Math.round((megasenaResults.length / MAX_STORAGE_LIMIT) * 100) },
+      { key: 'payments', name: 'Comprovantes e Pagamentos', count: payments.length, maxLimit: MAX_STORAGE_LIMIT, percentage: Math.round((payments.length / MAX_STORAGE_LIMIT) * 100) },
+    ];
+
+    const nearLimitList = collections.filter(c => c.percentage >= 80);
+    const isNearLimit = nearLimitList.length > 0;
+
+    let warningMessage: string | null = null;
+    if (isNearLimit) {
+      const highest = nearLimitList.sort((a, b) => b.percentage - a.percentage)[0];
+      warningMessage = `⚠️ Alerta de Capacidade: A coleção de "${highest.name}" atingiu ${highest.percentage}% da capacidade (${highest.count} de 10.000). Quando estiver enchendo, solicite no chat para liberar mais limite de armazenamento!`;
+    }
+
+    return {
+      isNearLimit,
+      maxLimit: MAX_STORAGE_LIMIT,
+      collections,
+      warningMessage
+    };
+  }, [games.length, lotofacilResults.length, megasenaResults.length, payments.length]);
+
+  // Alerta via Toast para Administradores quando atinge >= 80% do limite de 10k
+  useEffect(() => {
+    if (!isAdmin || !capacityStatus.isNearLimit || !capacityStatus.warningMessage) return;
+
+    const lastNotified = localStorage.getItem('bolao_capacity_warning_notified');
+    const todayStr = new Date().toDateString();
+
+    if (lastNotified !== todayStr) {
+      addToast(capacityStatus.warningMessage, 'warning');
+      localStorage.setItem('bolao_capacity_warning_notified', todayStr);
+    }
+  }, [isAdmin, capacityStatus]);
+
   const value = {
     games,
     members,
@@ -189,7 +245,8 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
     latestLotofacil,
     latestMegasena,
     isSyncing,
-    gamesReady
+    gamesReady,
+    capacityStatus
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

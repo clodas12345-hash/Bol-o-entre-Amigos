@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 interface Toast { id: string; message: string; type: ToastType; }
 
 interface PushBannerItem {
@@ -108,7 +108,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`p-4 rounded shadow text-white ${toast.type === 'success' ? 'bg-green-500' : toast.type === 'error' ? 'bg-red-500' : 'bg-blue-500'}`}>
+          <div key={toast.id} className={`p-4 rounded-xl shadow-lg text-white font-bold text-xs max-w-sm border ${toast.type === 'success' ? 'bg-emerald-600 border-emerald-700' : toast.type === 'error' ? 'bg-red-600 border-red-700' : toast.type === 'warning' ? 'bg-amber-600 border-amber-700' : 'bg-blue-600 border-blue-700'}`}>
             {toast.message}
           </div>
         ))}

@@ -203,8 +203,8 @@ export const getExistingSignatures = async (poolId?: string): Promise<Set<string
       // Filtra por poolId para reduzir drasticamente o número de documentos lidos e aumentar a velocidade
       q = query(collection(db, 'games'), where('poolId', '==', poolId));
     } else {
-      // Fallback para todos os jogos se poolId não for fornecido (limitado para evitar travamentos)
-      q = query(collection(db, 'games'), limit(5000));
+      // Fallback para todos os jogos se poolId não for fornecido (limitado a 10.000)
+      q = query(collection(db, 'games'), limit(10000));
     }
     
     const snap = await getDocs(q);
