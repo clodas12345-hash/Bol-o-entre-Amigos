@@ -78,6 +78,14 @@ export default function MembersList() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts'>('all');
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'receipts' && isAdminOrCounselor) {
+      setMemberFilterTab('receipts');
+    }
+  }, [isAdminOrCounselor]);
+
   // Campos do formulário de novo membro
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newPhone, setNewPhone] = useState('');

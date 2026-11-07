@@ -39,6 +39,7 @@ import HowToUseModal from './components/HowToUseModal';
 import DrawAlertsConfig from './components/DrawAlertsConfig';
 import DrawCalendarModal from './components/DrawCalendarModal';
 import ChargeReminderPopup from './components/ChargeReminderPopup';
+import NewReceiptPopup from './components/NewReceiptPopup';
 import CloudHistoryLimitBanner from './components/CloudHistoryLimitBanner';
 import ReceiptCleanupReminderBanner from './components/ReceiptCleanupReminderBanner';
 import { getAdjustedActiveContestInfo, formatDateBR } from './lib/drawCalendar';
@@ -1313,6 +1314,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
 
         <BackgroundUploadStatus />
         <ChargeReminderPopup isAdmin={isAdmin} />
+        <NewReceiptPopup />
         </div>
       </main>
 

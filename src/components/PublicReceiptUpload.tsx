@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { compressImage, getBase64Size } from '../lib/imageUtils';
+import { triggerNewReceiptNotification } from '../lib/autoNotificationService';
 import logoImg from '../assets/images/bolao_logo_app.png';
 
 export default function PublicReceiptUpload() {
@@ -100,20 +101,7 @@ export default function PublicReceiptUpload() {
 
       // 4. Notificações para Administradores
       try {
-        const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
-        const adminSnap = await getDocs(qAdmin);
-        for (const adminDoc of adminSnap.docs) {
-          const adminData = adminDoc.data();
-          await addDoc(collection(db, 'notifications'), {
-            userId: adminData.uid || adminDoc.id,
-            title: '💸 Novo Comprovante PIX Enviado',
-            message: `${cleanName} (${cleanPhone}) enviou um comprovante de pagamento pelo link!`,
-            type: 'payment',
-            targetPath: '/contatos',
-            read: false,
-            createdAt: serverTimestamp()
-          });
-        }
+        await triggerNewReceiptNotification(cleanName, cleanPhone);
       } catch (notifErr) {
         console.warn('Erro ao notificar admin:', notifErr);
       }

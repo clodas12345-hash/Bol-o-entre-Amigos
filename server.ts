@@ -1027,9 +1027,10 @@ app.post('/api/public/upload-receipt', async (req, res) => {
         const adminData = adminDoc.data();
         await addDoc(collection(db, 'notifications'), {
           userId: adminData.uid || adminDoc.id,
-          title: '💸 Novo Comprovante PIX Enviado',
-          message: `${name || 'Participante'} (${phone || 'Via App'}) enviou um comprovante de pagamento!`,
+          title: '💸 Novo Comprovante PIX',
+          message: `${name || 'Participante'} (${phone || 'Via App'}) enviou um comprovante. Clique para validar!`,
           type: 'payment',
+          targetPath: '/contatos?tab=receipts',
           read: false,
           createdAt: serverTimestamp()
         });

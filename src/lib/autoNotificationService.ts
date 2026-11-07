@@ -280,3 +280,32 @@ export async function checkScheduledPix() {
     console.warn('[Auto Pix Check] Falha na verificação de Pix:', err);
   }
 }
+
+/**
+ * Dispara notificações para administradores sobre um novo comprovante enviado.
+ */
+export async function triggerNewReceiptNotification(senderName: string, senderPhone: string) {
+  try {
+    const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
+    const adminSnap = await getDocs(qAdmin);
+    
+    for (const adminDoc of adminSnap.docs) {
+      const adminData = adminDoc.data();
+      const adminId = adminData.uid || adminDoc.id;
+
+      // 1. Notificação interna do App para cada administrador
+      await addDoc(collection(db, 'notifications'), {
+        userId: adminId,
+        title: '💸 Novo Comprovante PIX',
+        message: `${senderName} (${senderPhone}) enviou um comprovante. Clique para validar!`,
+        type: 'payment',
+        targetPath: '/contatos?tab=receipts', // Aba onde os comprovantes são validados
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }
+    console.log(`[Auto Notification] Documentos de notificação criados para ${adminSnap.size} admins.`);
+  } catch (err) {
+    console.warn('[Auto Notification] Erro ao notificar admins sobre comprovante:', err);
+  }
+}
