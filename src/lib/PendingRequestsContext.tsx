@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, isNativeApk } from './firebase';
 
 export interface PendingMember {
   id: string;
@@ -38,6 +38,13 @@ export function PendingRequestsProvider({ children }: { children: ReactNode }) {
 
   // Escuta em tempo real coleções 'users' e 'members'
   useEffect(() => {
+    if (!isNativeApk) {
+      setUsersList([]);
+      setMembersList([]);
+      setLoading(false);
+      return;
+    }
+
     let unsubUsers = () => {};
     let unsubMembers = () => {};
 

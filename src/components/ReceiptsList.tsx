@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, getDocs, addDoc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isNativeApk } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { normalizeBrazilianPhoneDigits, formatFirstAndLastName } from '../lib/formatters';
 import ReceiptBatchManager from './ReceiptBatchManager';
@@ -84,6 +84,11 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
   };
 
   useEffect(() => {
+    if (!isNativeApk) {
+      setReceipts([]);
+      return;
+    }
+
     const unsubReceipts = onSnapshot(collection(db, 'pending_receipts'), (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       // Ordena por nome crescente (A-Z)

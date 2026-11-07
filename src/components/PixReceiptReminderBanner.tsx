@@ -10,7 +10,7 @@ import {
   getDocs,
   serverTimestamp
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isNativeApk } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from '../lib/formatters';
@@ -76,7 +76,7 @@ export default function PixReceiptReminderBanner({ user, userData }: PixReceiptR
 
   // Escuta status atualizado do membro em 'members' e 'users'
   useEffect(() => {
-    if (!activeUid) return;
+    if (!isNativeApk || !activeUid) return;
 
     let unsubUser = () => {};
     let unsubMember = () => {};
@@ -105,7 +105,7 @@ export default function PixReceiptReminderBanner({ user, userData }: PixReceiptR
 
   // Escuta comprovantes enviados em análise (pending_receipts) e pagamentos aprovados (payments)
   useEffect(() => {
-    if (!activeUid) return;
+    if (!isNativeApk || !activeUid) return;
 
     const unsubPending = onSnapshot(
       collection(db, 'pending_receipts'),

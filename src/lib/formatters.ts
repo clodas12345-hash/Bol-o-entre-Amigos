@@ -155,16 +155,26 @@ export function formatAnyDateBR(dateVal: any): string {
 }
 
 export function getAppPublicUrl(): string {
-  // Ajustado conforme solicitação: links de retorno devem usar DEV e nunca PRE
-  const PUBLIC_SHARED_URL = 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
-  if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
-    // Força o uso do subdomínio ais-dev conforme instrução
-    if (window.location.origin.includes('ais-pre-')) {
-      return window.location.origin.replace('ais-pre-', 'ais-dev-');
+  // Ajustado conforme solicitação: o link de retorno deve ter DEV e NUNCA PRE, salvo na memória
+  const DEFAULT_DEV_URL = 'https://ais-dev-huai57g7b5d2yat2qnjukg-473118395752.us-west2.run.app';
+  try {
+    if (typeof window !== 'undefined') {
+      let origin = window.location.origin || '';
+      if (origin.includes('ais-pre-')) {
+        origin = origin.replace('ais-pre-', 'ais-dev-');
+      }
+      if (origin.includes('.run.app') && !origin.includes('localhost')) {
+        localStorage.setItem('bolao_app_public_url', origin);
+        return origin;
+      }
+      const saved = localStorage.getItem('bolao_app_public_url');
+      if (saved) {
+        return saved.replace('ais-pre-', 'ais-dev-');
+      }
+      localStorage.setItem('bolao_app_public_url', DEFAULT_DEV_URL);
     }
-    return window.location.origin;
-  }
-  return PUBLIC_SHARED_URL;
+  } catch {}
+  return DEFAULT_DEV_URL;
 }
 
 export function getVisitorPortalUrl(): string {
@@ -359,9 +369,10 @@ export function calculatePendingMonths(member: any): string[] {
   const currentYear = now.getFullYear();
   
   // Se está pendente, o mês atual é garantidamente uma pendência
-  const isCurrentMonthPending = member.paymentStatus !== 'Pago';
+  const isCurrentMonthPending = member.paymentStatus !== 'Pago' && member.isPaidInSelectedMonth !== true;
+  const lastPaid = member.lastPaidMonth || member.lastPayment?.month;
   
-  if (!member.lastPaidMonth) {
+  if (!lastPaid) {
     if (isCurrentMonthPending) {
       pending.push(`${String(currentMonth).padStart(2, '0')}/${currentYear}`);
     }
@@ -369,7 +380,7 @@ export function calculatePendingMonths(member: any): string[] {
   }
 
   try {
-    const [lastM, lastY] = member.lastPaidMonth.split('/').map(Number);
+    const [lastM, lastY] = lastPaid.split('/').map(Number);
     let iterM = lastM;
     let iterY = lastY;
 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, isQuotaError } from './firebase';
+import { db, isQuotaError, isNativeApk } from './firebase';
 
 export interface Pool {
   id: string;
@@ -68,6 +68,13 @@ export function PoolProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isNativeApk) {
+      setPools([DEFAULT_POOL]);
+      setActivePoolId(DEFAULT_POOL.id);
+      setLoading(false);
+      return;
+    }
+
     const q = query(collection(db, 'pools'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const poolsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pool));

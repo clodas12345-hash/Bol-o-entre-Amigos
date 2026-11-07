@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy, doc, limit, writeBatch, updateDoc } from 'firebase/firestore';
-import { db, auth, isQuotaError } from '../lib/firebase';
+import { db, auth, isQuotaError, isNativeApk } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
 import { getUserNotificationPreferences, UserNotificationPreferences, resolveNotificationTargetPath, sendAppNotification, personalizeNotificationText } from '../lib/notifications';
 import { formatAnyDateBR } from '../lib/formatters';
@@ -11,6 +11,10 @@ export default function NotificationBell() {
   const navigate = useNavigate();
   const initialLoadDoneRef = useRef(false);
   const [notifications, setNotifications] = useState<any[]>(() => {
+    if (!isNativeApk) {
+      try { localStorage.removeItem('bolao_cache_notifications'); } catch {}
+      return [];
+    }
     try {
       const cached = localStorage.getItem('bolao_cache_notifications');
       return cached ? JSON.parse(cached) : [];
@@ -44,7 +48,7 @@ export default function NotificationBell() {
   }, [activeUid]);
 
   useEffect(() => {
-    if (!activeUid) return;
+    if (!isNativeApk || !activeUid) return;
     initialLoadDoneRef.current = false;
 
     // Listen for notifications for this user OR broadcast to 'all'

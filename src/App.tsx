@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth, db, isAIStudioPreview } from './lib/firebase';
+import { auth, db, isNativeApk, isAIStudioPreview } from './lib/firebase';
 import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, deleteDoc, onSnapshot, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import PaymentModal from './components/PaymentModal';
@@ -480,7 +480,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   }, [currentContest, activePool?.currentContest, isMegaSena]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!isNativeApk || !user) return;
     const lastRead = localStorage.getItem(`bolao_last_read_chat_${user.uid}`);
     const lastReadDate = lastRead ? new Date(lastRead) : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -655,7 +655,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   // Redireciona quando o usuário toca em uma notificação nativa (Android/iOS) ou Web
   useEffect(() => {
     const handleNavigateEvent = (e: any) => {
-      const targetPath = e?.detail?.path;
+      const targetPath = typeof e?.detail === 'string' ? e.detail : e?.detail?.path;
       if (targetPath) {
         if (targetPath === '/chat' && user?.uid) {
           localStorage.setItem(`bolao_last_read_chat_${user.uid}`, new Date().toISOString());
@@ -677,6 +677,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   }, [navigate, user?.uid]);
 
   useEffect(() => {
+    if (!isNativeApk) return;
     const q = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(1));
     const unsub = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
@@ -841,8 +842,9 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
       className="h-dvh overflow-hidden flex flex-col bg-gray-50 text-gray-800 selection:bg-blue-600 selection:text-white"
     >
       {isAIStudioPreview && (
-        <div className="bg-amber-600 text-white text-[11px] font-medium px-3 py-1 text-center shrink-0 flex items-center justify-center gap-2 z-50">
-          <span>⚠️ Modo Preview Web: Banco de dados desconectado (Ativo no APK e Links de Convidados/Participantes).</span>
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white text-[11px] sm:text-xs font-semibold px-3 py-1.5 text-center shrink-0 flex items-center justify-center gap-2 z-50 border-b border-indigo-500/30 shadow-xs">
+          <span className="text-amber-400 font-bold">🔒 Regra Ativa:</span>
+          <span className="text-gray-200">Preview 100% desconectado da nuvem e sem dados locais. Banco oficial ativo exclusivamente no APK.</span>
         </div>
       )}
       {!hideHeader && (
@@ -1456,6 +1458,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isNativeApk) return;
     if (!phoneUser?.sessionUser?.uid) return;
     const phoneUid = phoneUser.sessionUser.uid;
 
@@ -1600,6 +1603,19 @@ export default function App() {
       unsubUserRealtime(); // Cancela listener anterior se houver
 
       if (currentUser) {
+        if (!isNativeApk) {
+          const isAdminEmail = currentUser.email === 'clodas12345@gmail.com';
+          setUserData({
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName || 'Participante (Preview)',
+            role: isAdminEmail ? 'admin' : 'participante',
+            approved: true
+          });
+          setLoading(false);
+          return;
+        }
+
         const userDocRef = doc(db, 'users', currentUser.uid);
         const memberDocRef = doc(db, 'members', currentUser.uid);
 

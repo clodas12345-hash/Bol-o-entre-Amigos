@@ -457,6 +457,13 @@ export function resolveNotificationTargetPath(input?: {
   }
 
   if (
+    titleLower.includes('comprovante') ||
+    bodyLower.includes('comprovante')
+  ) {
+    return '/contatos?tab=receipts';
+  }
+
+  if (
     type === 'payment' ||
     titleLower.includes('cota') ||
     titleLower.includes('pagamento') ||

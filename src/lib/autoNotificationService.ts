@@ -286,25 +286,54 @@ export async function checkScheduledPix() {
  */
 export async function triggerNewReceiptNotification(senderName: string, senderPhone: string) {
   try {
-    const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
-    const adminSnap = await getDocs(qAdmin);
+    // Busca administradores em ambas as coleções
+    const [usersSnap, membersSnap] = await Promise.all([
+      getDocs(query(collection(db, 'users'), where('role', '==', 'admin'))),
+      getDocs(query(collection(db, 'members'), where('role', '==', 'admin')))
+    ]);
     
-    for (const adminDoc of adminSnap.docs) {
-      const adminData = adminDoc.data();
-      const adminId = adminData.uid || adminDoc.id;
+    const adminIds = new Set<string>();
+    
+    // Adiciona o admin principal (clodas12345@gmail.com) caso ele tenha um documento
+    const mainAdminSnap = await getDocs(query(collection(db, 'users'), where('email', '==', 'clodas12345@gmail.com')));
+    mainAdminSnap.docs.forEach(d => adminIds.add(d.id));
 
-      // 1. Notificação interna do App para cada administrador
+    usersSnap.docs.forEach(d => adminIds.add(d.id));
+    membersSnap.docs.forEach(d => adminIds.add(d.id));
+
+    // Se nenhum admin for encontrado pelo campo 'role', garante notificação para o UID do clodas se ele for conhecido
+    // ou tenta encontrar pelo e-mail se o set estiver vazio
+    if (adminIds.size === 0) {
+      console.warn('[Auto Notification] Nenhum admin encontrado por papel. Tentando encontrar por e-mail fixo.');
+    }
+
+    for (const adminId of adminIds) {
       await addDoc(collection(db, 'notifications'), {
         userId: adminId,
         title: '💸 Novo Comprovante PIX',
         message: `${senderName} (${senderPhone}) enviou um comprovante. Clique para validar!`,
         type: 'payment',
-        targetPath: '/contatos?tab=receipts', // Aba onde os comprovantes são validados
+        targetPath: '/contatos?tab=receipts',
         read: false,
         createdAt: serverTimestamp()
       });
     }
-    console.log(`[Auto Notification] Documentos de notificação criados para ${adminSnap.size} admins.`);
+
+    // Caso o set ainda esteja vazio (nenhum usuário cadastrado como admin no banco), 
+    // registramos um broadcast 'all' temporário para que o admin veja ao logar
+    if (adminIds.size === 0) {
+      await addDoc(collection(db, 'notifications'), {
+        userId: 'all',
+        title: '💸 Novo Comprovante PIX (Geral)',
+        message: `${senderName} enviou um comprovante.`,
+        type: 'payment',
+        targetPath: '/contatos?tab=receipts',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }
+
+    console.log(`[Auto Notification] Notificações de comprovante registradas para ${adminIds.size || 'todos'} admins.`);
   } catch (err) {
     console.warn('[Auto Notification] Erro ao notificar admins sobre comprovante:', err);
   }

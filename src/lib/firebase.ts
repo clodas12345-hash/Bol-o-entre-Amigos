@@ -3,11 +3,14 @@ import { getAuth } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, disableNetwork } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from './firebaseConfig';
+import { Capacitor } from '@capacitor/core';
 
-export const isAIStudioPreview = typeof window !== 'undefined' && (
-  window.location.hostname.includes('ais-dev') || 
-  window.location.hostname.includes('ais-pre')
-);
+// REGRA ESTRITA DE AMBIENTE:
+// Apenas o APK nativo e o servidor backend Node.js conectam ao Cloud Firestore.
+// O Preview Web (navegador / AI Studio) nunca conecta à nuvem nem carrega dados locais.
+export const isServer = typeof window === 'undefined';
+export const isNativeApk = !isServer && Capacitor.isNativePlatform();
+export const isAIStudioPreview = !isServer && !isNativeApk;
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -19,9 +22,14 @@ const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestor
 let dbInstance;
 try {
   let cacheSettings;
-  try {
-    cacheSettings = persistentLocalCache({ tabManager: persistentMultipleTabManager() });
-  } catch (e) {
+  if (isNativeApk) {
+    try {
+      cacheSettings = persistentLocalCache({ tabManager: persistentMultipleTabManager() });
+    } catch (e) {
+      cacheSettings = memoryLocalCache();
+    }
+  } else {
+    // No Preview Web ou Servidor Node: memória volátil
     cacheSettings = memoryLocalCache();
   }
 
@@ -32,21 +40,15 @@ try {
     : initializeFirestore(app, {
         localCache: cacheSettings,
       });
-} catch (err) {
-  console.warn('Firestore already initialized or failed to initialize with settings, falling back to getFirestore:', err);
-  dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
-}
 
-// Disconnect database network in AI Studio preview as requested ("dados não deve tah ligado aqui no preview")
-// We only disconnect on the 'ais-pre' (Shared) domain and NEVER on public pages like upload-receipt or visitante.
-if (isAIStudioPreview && typeof window !== 'undefined') {
-  const isPublicPage = window.location.pathname.includes('/upload-receipt') || 
-                       window.location.pathname.includes('/visitante') ||
-                       window.location.search.includes('comprovante=1');
-  
-  const isSharedPreview = window.location.hostname.includes('ais-pre');
-  
-  if (isSharedPreview && !isPublicPage) {
+  // Apenas no Preview Web do AI Studio: desativa a rede do Firestore para isolamento absoluto
+  if (isAIStudioPreview) {
+    disableNetwork(dbInstance).catch(() => {});
+  }
+} catch (err) {
+  console.warn('Firestore initialized with fallback:', err);
+  dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  if (isAIStudioPreview) {
     disableNetwork(dbInstance).catch(() => {});
   }
 }

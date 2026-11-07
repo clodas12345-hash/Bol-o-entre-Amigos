@@ -1,5 +1,5 @@
 import { collection, addDoc, getDocs, query, orderBy, limit, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, isNativeApk } from './firebase';
 
 export type ErrorCategory = 'API' | 'Camera' | 'Database' | 'System';
 
@@ -196,6 +196,10 @@ export function subscribeSystemErrors(
   // Retorna do cache local de imediato
   const initialLocal = getLocalErrorLogs();
   onUpdate(initialLocal);
+
+  if (!isNativeApk) {
+    return () => {};
+  }
 
   try {
     const q = query(

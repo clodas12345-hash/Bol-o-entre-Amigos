@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
-import { db, isQuotaError } from './firebase';
+import { db, isQuotaError, isNativeApk } from './firebase';
 import { usePool } from './PoolContext';
 import { usePermissions } from './PermissionsContext';
 import { useToast } from '../components/NotificationManager';
@@ -39,24 +39,42 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children, userId }: { children: React.ReactNode; userId?: string }) {
   const [games, setGames] = useState<any[]>(() => {
+    if (!isNativeApk) {
+      // Regra estrita: Preview nunca acessa banco nem dados locais.
+      try {
+        localStorage.removeItem('bolao_cache_games');
+        localStorage.removeItem('bolao_cache_members');
+        localStorage.removeItem('bolao_cache_results_lotofacil');
+        localStorage.removeItem('bolao_cache_results_megasena');
+        localStorage.removeItem('bolao_cache_payments');
+        localStorage.removeItem('bolao_cache_latest_result');
+      } catch {}
+      return [];
+    }
     try {
       const cached = localStorage.getItem('bolao_cache_games');
       return cached ? JSON.parse(cached) : [];
     } catch { return []; }
   });
+
   const [members, setMembers] = useState<any[]>(() => {
+    if (!isNativeApk) return [];
     try {
       const cached = localStorage.getItem('bolao_cache_members');
       return cached ? JSON.parse(cached) : [];
     } catch { return []; }
   });
+
   const [lotofacilResults, setLotofacilResults] = useState<any[]>(() => {
+    if (!isNativeApk) return [];
     try {
       const cached = localStorage.getItem('bolao_cache_results_lotofacil');
       return cached ? JSON.parse(cached) : [];
     } catch { return []; }
   });
+
   const [megasenaResults, setMegasenaResults] = useState<any[]>(() => {
+    if (!isNativeApk) return [];
     try {
       const cached = localStorage.getItem('bolao_cache_results_megasena');
       return cached ? JSON.parse(cached) : [];
@@ -64,6 +82,7 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
   });
 
   const [payments, setPayments] = useState<any[]>(() => {
+    if (!isNativeApk) return [];
     try {
       const cached = localStorage.getItem('bolao_cache_payments');
       return cached ? JSON.parse(cached) : [];
@@ -79,6 +98,12 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
 
   // 1. Monitoramento de JOGOS (Geral ou por Pool) - LIMITE 10.000
   useEffect(() => {
+    if (!isNativeApk) {
+      setGames([]);
+      setGamesReady(true);
+      setIsSyncing(false);
+      return;
+    }
     if (!userId) return;
     
     setIsSyncing(true);
@@ -104,6 +129,10 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
 
   // 2. Monitoramento de MEMBROS e USUÁRIOS
   useEffect(() => {
+    if (!isNativeApk) {
+      setMembers([]);
+      return;
+    }
     if (!userId) return;
 
     let usersData: any[] = [];
@@ -147,6 +176,11 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
 
   // 3. Monitoramento de RESULTADOS (Lotofácil e Mega-Sena) - LIMITE 10.000
   useEffect(() => {
+    if (!isNativeApk) {
+      setLotofacilResults([]);
+      setMegasenaResults([]);
+      return;
+    }
     if (!userId) return;
 
     const qLoto = query(collection(db, 'lotofacil_results'), orderBy('contest', 'desc'), limit(MAX_STORAGE_LIMIT));
@@ -178,6 +212,10 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
 
   // 4. Monitoramento de PAGAMENTOS - LIMITE 10.000
   useEffect(() => {
+    if (!isNativeApk) {
+      setPayments([]);
+      return;
+    }
     if (!userId) return;
 
     const qPayments = query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(MAX_STORAGE_LIMIT));

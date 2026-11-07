@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, isNativeApk } from './firebase';
 import {
   RoleType,
   PermissionKey,
@@ -133,6 +133,11 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   // Escuta permissões do Firestore em tempo real
   useEffect(() => {
+    if (!isNativeApk) {
+      setLoading(false);
+      return;
+    }
+
     const unsub = onSnapshot(doc(db, 'settings', 'permissions'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();

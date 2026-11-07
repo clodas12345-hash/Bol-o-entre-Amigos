@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, isNativeApk } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { compressImage, getBase64Size } from '../lib/imageUtils';
@@ -55,7 +55,6 @@ export default function PublicReceiptUpload() {
           mimeType = 'image/jpeg';
         } catch (compressErr) {
           console.warn('Falha na compressão, tentando envio direto:', compressErr);
-          // Fallback para leitura direta se falhar compressão
           const reader = new FileReader();
           base64Data = await new Promise((resolve) => {
             reader.onloadend = () => resolve(String(reader.result || ''));
@@ -63,7 +62,6 @@ export default function PublicReceiptUpload() {
           });
         }
       } else {
-        // Para PDF ou outros tipos suportados
         const reader = new FileReader();
         base64Data = await new Promise((resolve) => {
           reader.onloadend = () => resolve(String(reader.result || ''));
@@ -82,28 +80,62 @@ export default function PublicReceiptUpload() {
       const cleanName = name.trim();
       const cleanPhone = phone.trim();
 
-      // 3. Envio para o Firestore com timeout de segurança
-      const uploadPromise = addDoc(collection(db, 'pending_receipts'), {
-        name: cleanName,
-        phone: cleanPhone,
-        imageBase64: base64Data,
-        mimeType: mimeType,
-        createdAt: serverTimestamp(),
-        status: 'pending'
-      });
-
-      // Timeout de 30 segundos para garantir sucesso em arquivos maiores ou redes instáveis
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 30000)
-      );
-
-      await Promise.race([uploadPromise, timeoutPromise]);
-
-      // 4. Notificações para Administradores
+      // 3. Envio de alta velocidade via API do servidor (evita bloqueios ou timeouts no navegador)
+      let savedSuccessfully = false;
       try {
-        await triggerNewReceiptNotification(cleanName, cleanPhone);
-      } catch (notifErr) {
-        console.warn('Erro ao notificar admin:', notifErr);
+        const apiController = new AbortController();
+        const apiTimeout = setTimeout(() => apiController.abort(), 12000);
+
+        const res = await fetch('/api/public/upload-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: cleanName,
+            phone: cleanPhone,
+            imageBase64: base64Data,
+            mimeType: mimeType
+          }),
+          signal: apiController.signal
+        });
+        clearTimeout(apiTimeout);
+
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.success) {
+            savedSuccessfully = true;
+          }
+        }
+      } catch (apiErr) {
+        console.warn('Envio via API falhou, tentando fallback direto:', apiErr);
+      }
+
+      // Fallback para Firestore direto se estiver rodando no APK nativo ou se API falhar
+      if (!savedSuccessfully && isNativeApk) {
+        const uploadPromise = addDoc(collection(db, 'pending_receipts'), {
+          name: cleanName,
+          phone: cleanPhone,
+          imageBase64: base64Data,
+          mimeType: mimeType,
+          createdAt: serverTimestamp(),
+          status: 'pending'
+        });
+
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('TIMEOUT')), 15000)
+        );
+
+        await Promise.race([uploadPromise, timeoutPromise]);
+
+        try {
+          await triggerNewReceiptNotification(cleanName, cleanPhone);
+        } catch (notifErr) {
+          console.warn('Erro ao notificar admin:', notifErr);
+        }
+        savedSuccessfully = true;
+      }
+
+      if (!savedSuccessfully) {
+        throw new Error('Falha no salvamento do comprovante');
       }
 
       setSubmittedSuccess(true);
@@ -111,8 +143,8 @@ export default function PublicReceiptUpload() {
       setFile(null);
     } catch (err: any) {
       console.error('Erro ao enviar comprovante:', err);
-      if (err.message === 'TIMEOUT') {
-        addToast('O envio está demorando muito. Verifique sua conexão e tente novamente.', 'error');
+      if (err.name === 'AbortError' || err.message === 'TIMEOUT') {
+        addToast('O envio demorou mais que o esperado. Verifique sua conexão e tente novamente.', 'error');
       } else if (err.code === 'permission-denied') {
         addToast('Erro de permissão no servidor. Contate o administrador.', 'error');
       } else {

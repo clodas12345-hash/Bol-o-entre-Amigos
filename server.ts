@@ -1021,14 +1021,39 @@ app.post('/api/public/upload-receipt', async (req, res) => {
     });
 
     try {
-      const qAdmin = query(collection(db, 'users'), where('role', '==', 'admin'));
-      const adminSnap = await getDocs(qAdmin);
-      for (const adminDoc of adminSnap.docs) {
-        const adminData = adminDoc.data();
+      // Busca administradores em ambas as coleções
+      const [usersSnap, membersSnap] = await Promise.all([
+        getDocs(query(collection(db, 'users'), where('role', '==', 'admin'))),
+        getDocs(query(collection(db, 'members'), where('role', '==', 'admin')))
+      ]);
+      
+      const adminIds = new Set<string>();
+      
+      // Adiciona o admin principal pelo e-mail caso ele tenha um documento
+      const mainAdminSnap = await getDocs(query(collection(db, 'users'), where('email', '==', 'clodas12345@gmail.com')));
+      mainAdminSnap.docs.forEach(d => adminIds.add(d.id));
+
+      usersSnap.docs.forEach(d => adminIds.add(d.id));
+      membersSnap.docs.forEach(d => adminIds.add(d.id));
+
+      for (const adminId of adminIds) {
         await addDoc(collection(db, 'notifications'), {
-          userId: adminData.uid || adminDoc.id,
+          userId: adminId,
           title: '💸 Novo Comprovante PIX',
           message: `${name || 'Participante'} (${phone || 'Via App'}) enviou um comprovante. Clique para validar!`,
+          type: 'payment',
+          targetPath: '/contatos?tab=receipts',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      // Se nenhum admin for encontrado, usa broadcast geral 'all'
+      if (adminIds.size === 0) {
+        await addDoc(collection(db, 'notifications'), {
+          userId: 'all',
+          title: '💸 Novo Comprovante PIX',
+          message: `${name || 'Participante'} enviou um comprovante para validação!`,
           type: 'payment',
           targetPath: '/contatos?tab=receipts',
           read: false,

@@ -3,7 +3,7 @@ import { collection, getDocs, getDoc, setDoc, doc, updateDoc, deleteDoc, addDoc,
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { formatFirstAndLastName, getWhatsAppCobrarUrl, formatPhoneDisplay, normalizeBrazilianPhoneDigits, calculatePendingMonths } from '../lib/formatters';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { usePool } from '../lib/PoolContext';
 import { useResponsiveLayout } from '../lib/formatters';
 import { usePermissions } from '../lib/PermissionsContext';
@@ -49,6 +49,7 @@ export default function MembersList() {
   const canSendReminder = isAdminOrCounselor && can('members_send_reminder');
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { members: syncMembers } = useData();
   const [localMembers, setLocalMembersState] = useState<any[]>(getLocalMembers());
   
@@ -79,12 +80,12 @@ export default function MembersList() {
   const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts'>('all');
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     const tab = params.get('tab');
     if (tab === 'receipts' && isAdminOrCounselor) {
       setMemberFilterTab('receipts');
     }
-  }, [isAdminOrCounselor]);
+  }, [location.search, isAdminOrCounselor]);
 
   // Campos do formulário de novo membro
   const [newDisplayName, setNewDisplayName] = useState('');

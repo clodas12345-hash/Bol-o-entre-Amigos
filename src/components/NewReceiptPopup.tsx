@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isNativeApk } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { usePermissions } from '../lib/PermissionsContext';
 
@@ -12,7 +12,7 @@ export default function NewReceiptPopup() {
   const isMod = isAdmin || isCounselor;
 
   useEffect(() => {
-    if (!isMod) return;
+    if (!isNativeApk || !isMod) return;
 
     // Monitora novos comprovantes pendentes em tempo real
     const q = query(
