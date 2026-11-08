@@ -264,7 +264,7 @@ export default function DetailedFinancialReport() {
     });
 
   return (
-    <div className="p-4 sm:p-5 bg-white">
+    <div className="p-1 sm:p-2 bg-white w-full">
       {/* Modal Chave PIX & QR Code */}
       {showPixModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
@@ -368,18 +368,18 @@ export default function DetailedFinancialReport() {
       </div>
 
       <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-inner relative">
-        <table className="min-w-[780px] w-full border-separate border-spacing-0 text-xs sm:text-sm">
+        <table className="min-w-[700px] w-full border-separate border-spacing-0 text-xs sm:text-sm">
           <thead>
             <tr className="bg-gray-100 text-gray-700 font-bold border-b border-gray-200">
-              <th className="p-3 text-left sticky left-0 bg-gray-100 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-200 min-w-[190px] whitespace-nowrap text-gray-800">
+              <th className="py-2.5 px-2 text-left sticky left-0 bg-gray-100 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-200 min-w-[130px] sm:min-w-[145px] whitespace-nowrap text-gray-800">
                 Participante
               </th>
-              <th className="p-3 text-center min-w-[90px] whitespace-nowrap border-b border-gray-200">Cotas</th>
-              <th className="p-3 text-center min-w-[90px] whitespace-nowrap border-b border-gray-200">Aportes</th>
-              <th className="p-3 text-center min-w-[130px] whitespace-nowrap border-b border-gray-200">Total Investido</th>
-              <th className="p-3 text-center min-w-[110px] whitespace-nowrap border-b border-gray-200">Último Mês</th>
-              <th className="p-3 text-center min-w-[120px] whitespace-nowrap border-b border-gray-200">Comprovante</th>
-              <th className="p-3 text-center min-w-[150px] whitespace-nowrap border-b border-gray-200">Status / Ação</th>
+              <th className="p-3 text-center min-w-[80px] whitespace-nowrap border-b border-gray-200">Cotas</th>
+              <th className="p-3 text-center min-w-[80px] whitespace-nowrap border-b border-gray-200">Aportes</th>
+              <th className="p-3 text-center min-w-[120px] whitespace-nowrap border-b border-gray-200">Total Investido</th>
+              <th className="p-3 text-center min-w-[100px] whitespace-nowrap border-b border-gray-200">Último Mês</th>
+              <th className="p-3 text-center min-w-[110px] whitespace-nowrap border-b border-gray-200">Comprovante</th>
+              <th className="p-3 text-center min-w-[140px] whitespace-nowrap border-b border-gray-200">Status / Ação</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -399,7 +399,7 @@ export default function DetailedFinancialReport() {
 
                 return (
                   <tr key={m.id} className={`${isOdd ? 'bg-slate-50' : 'bg-white'} hover:bg-slate-100/80 transition group`}>
-                    <td className={`p-3 font-medium text-gray-800 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-150 min-w-[190px] whitespace-nowrap ${isOdd ? 'bg-slate-50 group-hover:bg-slate-100' : 'bg-white group-hover:bg-slate-100'}`}>
+                    <td className={`py-2.5 px-2 font-medium text-gray-800 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-150 min-w-[130px] sm:min-w-[145px] whitespace-nowrap ${isOdd ? 'bg-slate-50 group-hover:bg-slate-100' : 'bg-white group-hover:bg-slate-100'}`}>
                       <div className="font-black text-gray-900 text-xs sm:text-sm tracking-tight">{formatFirstAndLastName(m.displayName || m.email)}</div>
                       {m.phone && <span className="text-[10px] text-gray-400 font-mono block mt-0.5">{m.phone}</span>}
                     </td>

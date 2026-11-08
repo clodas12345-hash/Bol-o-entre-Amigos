@@ -1098,7 +1098,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
             : 'overflow-y-auto overscroll-y-contain'
         }`}
       >
-        <div className={isChatPage ? 'flex-1 flex flex-col min-h-0 w-full' : 'max-w-4xl w-full mx-auto px-2.5 py-3 sm:p-5 overflow-x-hidden'}>
+        <div className={isChatPage ? 'flex-1 flex flex-col min-h-0 w-full' : 'w-full mx-auto px-1 py-1 sm:px-2 sm:py-2 overflow-x-hidden'}>
         {/* Banner de Permissão de Notificação (Android 13+ / Samsung One UI) */}
         {showPermissionBanner && !isChatPage && (
           <div className="mb-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border border-amber-400/40">
