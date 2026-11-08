@@ -217,11 +217,13 @@ export function getVisitorPortalUrl(): string {
   return `${base}/visitante?view=true`;
 }
 
-export function getReceiptUploadUrl(name?: string, phone?: string): string {
+export function getReceiptUploadUrl(name?: string | null, phone?: string | null): string {
   const base = getAppPublicUrl().replace(/\/$/, '');
   const params = new URLSearchParams();
-  if (name && name.trim()) params.set('nome', name.trim());
-  if (phone && phone.trim()) params.set('tel', phone.trim());
+  const safeName = String(name || '').trim();
+  const safePhone = String(phone || '').trim();
+  if (safeName) params.set('nome', safeName);
+  if (safePhone) params.set('tel', safePhone);
   const queryString = params.toString();
   return `${base}/upload-receipt${queryString ? '?' + queryString : ''}`;
 }
@@ -247,13 +249,14 @@ export function buildWhatsAppUrl(phone: string | null | undefined, message: stri
  */
 export function getWhatsAppCobrarUrl(
   phone: string | null | undefined,
-  name: string,
+  name?: string | null,
   quotas = 1,
   unitPrice = 20.00,
   pixKey = '11953292570',
   pendingMonths: string[] = []
 ): string {
-  const firstName = name.trim().split(' ')[0] || 'Participante';
+  const safeName = String(name || '').trim();
+  const firstName = (safeName ? safeName.split(' ')[0] : 'Participante') || 'Participante';
   const totalQuotasToCharge = pendingMonths.length > 0 ? pendingMonths.length * quotas : quotas;
   const totalAmount = (totalQuotasToCharge * unitPrice).toFixed(2).replace('.', ',');
   
@@ -264,7 +267,7 @@ export function getWhatsAppCobrarUrl(
     quotasText = quotas > 1 ? `${quotas} cotas (R$ ${totalAmount})` : `1 cota (R$ ${totalAmount})`;
   }
 
-  const uploadLink = getReceiptUploadUrl(name, phone || undefined);
+  const uploadLink = getReceiptUploadUrl(safeName, phone || undefined);
 
   let message = `🍀 *Bolão entre Amigos*\n\nOlá ${firstName}, tudo bem? Passando para lembrar da sua participação no *Bolão entre Amigos*.\n`;
   

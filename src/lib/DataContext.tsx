@@ -161,11 +161,15 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
       usersData = snap.docs.map(d => ({ id: d.id, collectionName: 'users', ...d.data() }));
       updateCombined();
+    }, (err) => {
+      console.warn('[Sync] Offline/Timeout users snapshot fallback:', err);
     });
 
     const unsubMembers = onSnapshot(collection(db, 'members'), (mSnap) => {
       membersData = mSnap.docs.map(d => ({ id: d.id, collectionName: 'members', ...d.data() }));
       updateCombined();
+    }, (err) => {
+      console.warn('[Sync] Offline/Timeout members snapshot fallback:', err);
     });
 
     return () => {
@@ -176,11 +180,6 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
 
   // 3. Monitoramento de RESULTADOS (Lotofácil e Mega-Sena) - LIMITE 10.000
   useEffect(() => {
-    if (!isNativeApk) {
-      setLotofacilResults([]);
-      setMegasenaResults([]);
-      return;
-    }
     if (!userId) return;
 
     const qLoto = query(collection(db, 'lotofacil_results'), orderBy('contest', 'desc'), limit(MAX_STORAGE_LIMIT));
@@ -193,6 +192,8 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
           localStorage.setItem('bolao_cache_latest_result', JSON.stringify(list[0]));
         }
       } catch {}
+    }, (err) => {
+      console.warn('[Sync] Offline/Timeout lotofacil_results snapshot fallback:', err);
     });
 
     const qMega = query(collection(db, 'megasena_results'), orderBy('contest', 'desc'), limit(MAX_STORAGE_LIMIT));
@@ -202,6 +203,8 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
       try {
         localStorage.setItem('bolao_cache_results_megasena', JSON.stringify(list));
       } catch {}
+    }, (err) => {
+      console.warn('[Sync] Offline/Timeout megasena_results snapshot fallback:', err);
     });
 
     return () => {

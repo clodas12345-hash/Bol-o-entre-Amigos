@@ -27,13 +27,14 @@ try {
     cacheSettings = memoryLocalCache();
   }
 
+  const firestoreOptions = {
+    localCache: cacheSettings,
+    experimentalAutoDetectLongPolling: true,
+  };
+
   dbInstance = databaseId
-    ? initializeFirestore(app, {
-        localCache: cacheSettings,
-      }, databaseId)
-    : initializeFirestore(app, {
-        localCache: cacheSettings,
-      });
+    ? initializeFirestore(app, firestoreOptions, databaseId)
+    : initializeFirestore(app, firestoreOptions);
 } catch (err) {
   console.warn('Firestore initialized with fallback:', err);
   dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);

@@ -393,7 +393,8 @@ export default function DetailedFinancialReport() {
                 const isPaid = m.isPaidInSelectedMonth;
                 const pendingMonths = calculatePendingMonths(m);
                 const currentMonthKey = `${String(filterMonth).padStart(2, '0')}/${filterYear}`;
-                const whatsappUrl = getWhatsAppCobrarUrl(m.phone, m.displayName || m.email, m.quotas, pixConfig.defaultAmount || 20.00, pixConfig.pixKey || '11953292570', pendingMonths);
+                const memberName = m.displayName || m.name || m.email || 'Participante';
+                const whatsappUrl = getWhatsAppCobrarUrl(m.phone, memberName, m.quotas, pixConfig.defaultAmount || 20.00, pixConfig.pixKey || '11953292570', pendingMonths);
                 const isOdd = idx % 2 === 1;
 
                 return (
