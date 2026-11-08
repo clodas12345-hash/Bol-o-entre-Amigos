@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, isQuotaError } from '../lib/firebase';
 import { useToast } from './NotificationManager';
@@ -122,7 +122,11 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
       const memberObj = users.find(u => u.id === selectedUser || u.uid === selectedUser);
       if (memberObj && !isScheduledPix) {
         const col = memberObj.collectionName || 'users';
-        await updateDoc(doc(db, col, memberObj.id), { paymentStatus: 'Pago' });
+        const docId = memberObj.id || selectedUser;
+        const payload = { paymentStatus: 'Pago', lastPaidMonth: month.trim() };
+        await setDoc(doc(db, col, docId), payload, { merge: true }).catch(() => {});
+        const altCol = col === 'users' ? 'members' : 'users';
+        await setDoc(doc(db, altCol, docId), payload, { merge: true }).catch(() => {});
       }
 
       if (isScheduledPix && scheduledDate) {

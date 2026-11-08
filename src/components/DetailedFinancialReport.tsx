@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, doc, updateDoc, getDoc, addDoc, deleteDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { collection, doc, updateDoc, getDoc, getDocs, query, where, setDoc, addDoc, deleteDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db, isQuotaError, auth } from '../lib/firebase';
-import { formatFirstAndLastName, getWhatsAppCobrarUrl, calculatePendingMonths, isMemberActiveInMonth } from '../lib/formatters';
+import { formatFirstAndLastName, getWhatsAppCobrarUrl, calculatePendingMonths, isMemberActiveInMonth, normalizeBrazilianPhoneDigits } from '../lib/formatters';
 import { useToast } from './NotificationManager';
 import PixPaymentArea from './PixPaymentArea';
 import { PixConfig, DEFAULT_PIX_CONFIG } from '../lib/pix';
@@ -48,16 +48,53 @@ export default function DetailedFinancialReport() {
     setIsUpdatingStatus(member.id);
     try {
       if (newStatus === 'Pago') {
-        // Registra um novo pagamento para o mês selecionado com histórico auditável
         const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
         const amount = quotas * (pixConfig.defaultAmount || 20.00);
-        
+
+        // Busca comprovante pendente correspondente para vincular a este mês de referência
+        let attachedReceiptURL: string | null = null;
+        try {
+          const qReceipts = query(collection(db, 'pending_receipts'), where('status', '==', 'pending'));
+          const receiptsSnap = await getDocs(qReceipts);
+          const memberPhoneClean = member.phone ? normalizeBrazilianPhoneDigits(member.phone) : '';
+          
+          const matchingPending = receiptsSnap.docs.find(d => {
+            const data = d.data();
+            const sameUser = (data.userId && (data.userId === member.id || data.userId === member.uid));
+            const pendingPhone = data.phone ? normalizeBrazilianPhoneDigits(data.phone) : '';
+            const samePhone = (memberPhoneClean && pendingPhone && memberPhoneClean === pendingPhone);
+            return sameUser || samePhone;
+          });
+
+          if (matchingPending) {
+            const pData = matchingPending.data();
+            attachedReceiptURL = pData.imageBase64 || pData.receiptUrl || null;
+            await updateDoc(doc(db, 'pending_receipts', matchingPending.id), {
+              status: 'homologated',
+              referenceMonth: monthKey,
+              homologatedAt: serverTimestamp(),
+              homologatedBy: currentUserEmail
+            }).catch(() => {});
+          }
+        } catch {}
+
+        // Se não encontrou pendente, verifica se o membro tem comprovante no histórico
+        if (!attachedReceiptURL && Array.isArray(member.receipts)) {
+          const inProfile = member.receipts.find((r: any) => r.referenceMonth === monthKey);
+          if (inProfile?.imageUrl) {
+            attachedReceiptURL = inProfile.imageUrl;
+          }
+        }
+
+        // Registra o pagamento na coleção 'payments' com o mês de referência explícito
         await addDoc(collection(db, 'payments'), {
           userId: member.uid || member.id,
           memberName: member.displayName || member.name || 'Participante',
+          phone: member.phone || '',
           amount: amount,
           month: monthKey,
           status: 'Pago',
+          receiptURL: attachedReceiptURL,
           createdAt: serverTimestamp(),
           homologatedBy: currentUserEmail,
           history: [{
@@ -66,7 +103,7 @@ export default function DetailedFinancialReport() {
             userRole: auth.currentUser?.email ? 'admin' : 'membro',
             previousStatus: 'Pendente',
             newStatus: 'Pago',
-            note: `Status alterado no Extrato Financeiro por ${currentUserEmail}`
+            note: `Status alterado no Extrato Financeiro por ${currentUserEmail} para o mês ${monthKey}`
           }]
         });
 
@@ -80,12 +117,28 @@ export default function DetailedFinancialReport() {
         }
       }
 
-      // Sincroniza o status global do membro
-      const colName = member.collectionName || 'users';
-      await updateDoc(doc(db, colName, member.id), {
-        paymentStatus: newStatus,
-        lastPaidMonth: newStatus === 'Pago' ? monthKey : member.lastPaidMonth
-      });
+      // Sincroniza o status global do participante de forma resiliente em ambas coleções ('users' e 'members')
+      const updatePayload: any = {
+        paymentStatus: newStatus
+      };
+      if (newStatus === 'Pago') {
+        updatePayload.lastPaidMonth = monthKey;
+      } else if (member.lastPaidMonth) {
+        updatePayload.lastPaidMonth = member.lastPaidMonth;
+      }
+
+      const primaryCol = member.collectionName || (member.uid ? 'users' : 'members');
+      const secondaryCol = primaryCol === 'users' ? 'members' : 'users';
+
+      // Atualiza de forma segura via setDoc com merge para nunca falhar com erro NOT_FOUND
+      const docId = member.id || member.uid;
+      if (docId) {
+        await setDoc(doc(db, primaryCol, docId), updatePayload, { merge: true }).catch(() => {});
+        if (member.uid && member.uid !== docId) {
+          await setDoc(doc(db, primaryCol, member.uid), updatePayload, { merge: true }).catch(() => {});
+        }
+        await setDoc(doc(db, secondaryCol, docId), updatePayload, { merge: true }).catch(() => {});
+      }
       
     } catch (err) {
       console.error('Erro ao atualizar status:', err);
@@ -157,7 +210,11 @@ export default function DetailedFinancialReport() {
       return isMemberActiveInMonth(member, monthKey);
     })
     .map(member => {
-      const allMemberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
+      const allMemberPayments = payments.filter(p => 
+        p.userId === member.id || 
+        p.userId === member.uid ||
+        (member.phone && p.phone && normalizeBrazilianPhoneDigits(p.phone) === normalizeBrazilianPhoneDigits(member.phone))
+      );
       
       // Filtra aportes e total baseado no modo de visualização
       const filteredPayments = showAllTime 
@@ -165,22 +222,37 @@ export default function DetailedFinancialReport() {
         : allMemberPayments.filter(p => p.month === monthKey);
 
       const totalInvested = filteredPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-      const lastPayment = allMemberPayments.sort((a, b) => {
-        const timeA = a.createdAt?.seconds || 0;
-        const timeB = b.createdAt?.seconds || 0;
+      
+      // Pagamento específico do mês selecionado
+      const monthPayment = filteredPayments.find(p => p.month === monthKey) || (showAllTime ? null : filteredPayments[0]);
+
+      // Último pagamento para exibição e auditoria
+      const sortedAll = [...allMemberPayments].sort((a, b) => {
+        const timeA = a.createdAt?.seconds || (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0);
+        const timeB = b.createdAt?.seconds || (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0);
         return timeB - timeA;
-      })[0];
+      });
+      const lastPayment = sortedAll[0];
 
       const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
       const isPaid = showAllTime 
         ? member.paymentStatus === 'Pago'
         : filteredPayments.length > 0;
 
+      // Comprovante correspondente ao mês de referência atual
+      const profileReceipt = Array.isArray(member.receipts)
+        ? member.receipts.find((r: any) => r.referenceMonth === monthKey)
+        : null;
+
+      const receiptForMonth = monthPayment?.receiptURL || monthPayment?.receiptUrl || profileReceipt?.imageUrl || (showAllTime ? lastPayment?.receiptURL : null);
+
       return { 
         ...member, 
         quotas, 
         totalInvested, 
         lastPayment, 
+        monthPayment,
+        receiptForMonth,
         paymentsCount: filteredPayments.length,
         isPaidInSelectedMonth: isPaid
       };
@@ -295,17 +367,19 @@ export default function DetailedFinancialReport() {
         </button>
       </div>
 
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
-        <table className="w-full border-collapse text-xs sm:text-sm">
+      <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-inner relative">
+        <table className="min-w-[780px] w-full border-separate border-spacing-0 text-xs sm:text-sm">
           <thead>
-            <tr className="bg-gray-50 text-gray-700 font-semibold border-b">
-              <th className="p-2.5 text-left">Participante</th>
-              <th className="p-2.5 text-center">Cotas</th>
-              <th className="p-2.5 text-center">Aportes</th>
-              <th className="p-2.5 text-center">Total Investido</th>
-              <th className="p-2.5 text-center">Último Mês</th>
-              <th className="p-2.5 text-center">Comprovante</th>
-              <th className="p-2.5 text-center">Status / Ação</th>
+            <tr className="bg-gray-100 text-gray-700 font-bold border-b border-gray-200">
+              <th className="p-3 text-left sticky left-0 bg-gray-100 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-200 min-w-[190px] whitespace-nowrap text-gray-800">
+                Participante
+              </th>
+              <th className="p-3 text-center min-w-[90px] whitespace-nowrap border-b border-gray-200">Cotas</th>
+              <th className="p-3 text-center min-w-[90px] whitespace-nowrap border-b border-gray-200">Aportes</th>
+              <th className="p-3 text-center min-w-[130px] whitespace-nowrap border-b border-gray-200">Total Investido</th>
+              <th className="p-3 text-center min-w-[110px] whitespace-nowrap border-b border-gray-200">Último Mês</th>
+              <th className="p-3 text-center min-w-[120px] whitespace-nowrap border-b border-gray-200">Comprovante</th>
+              <th className="p-3 text-center min-w-[150px] whitespace-nowrap border-b border-gray-200">Status / Ação</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -321,40 +395,44 @@ export default function DetailedFinancialReport() {
                 const pendingMonths = calculatePendingMonths(m);
                 const currentMonthKey = `${String(filterMonth).padStart(2, '0')}/${filterYear}`;
                 const whatsappUrl = getWhatsAppCobrarUrl(m.phone, m.displayName || m.email, m.quotas, pixConfig.defaultAmount || 20.00, pixConfig.pixKey || '11953292570', pendingMonths);
+                const isOdd = idx % 2 === 1;
 
                 return (
-                  <tr key={m.id} className={`${idx % 2 === 1 ? 'bg-slate-100' : 'bg-white'} hover:bg-slate-200/60 transition`}>
-                    <td className="p-2.5 font-medium text-gray-800">
-                      <div className="font-bold">{formatFirstAndLastName(m.displayName || m.email)}</div>
-                      {m.phone && <span className="text-[10px] text-gray-400">{m.phone}</span>}
+                  <tr key={m.id} className={`${isOdd ? 'bg-slate-50' : 'bg-white'} hover:bg-slate-100/80 transition group`}>
+                    <td className={`p-3 font-medium text-gray-800 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-150 min-w-[190px] whitespace-nowrap ${isOdd ? 'bg-slate-50 group-hover:bg-slate-100' : 'bg-white group-hover:bg-slate-100'}`}>
+                      <div className="font-black text-gray-900 text-xs sm:text-sm tracking-tight">{formatFirstAndLastName(m.displayName || m.email)}</div>
+                      {m.phone && <span className="text-[10px] text-gray-400 font-mono block mt-0.5">{m.phone}</span>}
                     </td>
-                    <td className="p-2.5 text-center">
-                      <span className="bg-amber-100 text-amber-900 font-black text-xs px-2 py-0.5 rounded-full border border-amber-200">
+                    <td className="p-3 text-center whitespace-nowrap">
+                      <span className="bg-amber-100 text-amber-900 font-black text-xs px-2.5 py-1 rounded-full border border-amber-200 inline-block">
                         {m.quotas} {m.quotas > 1 ? 'cotas' : 'cota'}
                       </span>
                     </td>
-                    <td className="p-2.5 text-center text-gray-600 font-semibold">
+                    <td className="p-3 text-center text-gray-600 font-semibold whitespace-nowrap">
                       {m.paymentsCount}x
                     </td>
-                    <td className="p-2.5 text-center font-bold text-emerald-700">
+                    <td className="p-3 text-center font-bold text-emerald-700 whitespace-nowrap text-sm">
                       R$ {(m.totalInvested || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="p-2.5 text-center text-gray-500">
-                      {m.lastPayment?.month || '-'}
+                    <td className="p-3 text-center text-gray-600 font-medium whitespace-nowrap">
+                      {showAllTime 
+                        ? (m.lastPayment?.month || '-') 
+                        : (isPaid ? monthKey : (m.lastPayment?.month || '-'))}
                     </td>
-                    <td className="p-2.5 text-center">
+                    <td className="p-3 text-center whitespace-nowrap">
                       <div className="flex flex-col items-center gap-1">
-                        {m.lastPayment?.receiptURL && (
+                        {m.receiptForMonth && (
                           <button
-                            onClick={() => setSelectedReceipt(m.lastPayment.receiptURL)}
-                            className="text-xs text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
+                            onClick={() => setSelectedReceipt(m.receiptForMonth)}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer flex items-center gap-1"
+                            title={`Visualizar comprovante referente a ${showAllTime ? (m.lastPayment?.month || '') : monthKey}`}
                           >
-                            Ver PIX
+                            <span>🖼️</span> Ver PIX
                           </button>
                         )}
                         <button
                           onClick={() => {
-                            const paymentObj = m.lastPayment || {
+                            const paymentObj = m.monthPayment || m.lastPayment || {
                               id: `payment_${m.id}_${monthKey}`,
                               memberName: m.displayName || m.name || m.email,
                               userId: m.id || m.uid,
@@ -374,7 +452,7 @@ export default function DetailedFinancialReport() {
                         </button>
                       </div>
                     </td>
-                    <td className="p-2.5 text-center">
+                    <td className="p-3 text-center whitespace-nowrap">
                       <div className="flex flex-col items-center gap-2">
                         {can('members_toggle_payment') ? (
                           <div className="flex flex-col items-center gap-1">

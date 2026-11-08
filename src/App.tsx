@@ -66,7 +66,7 @@ import { PendingRequestsProvider, usePendingRequests } from './lib/PendingReques
 import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from './lib/formatters';
 import { PermissionKey } from './lib/permissions';
 import { fetchLotteryResultDirectly } from './lib/apiHelper';
-import { checkAndNotifyWinningGamesForResult } from './lib/autoNotificationService';
+import { checkAndNotifyWinningGamesForResult, checkScheduledPix, startScheduledPixCronService } from './lib/autoNotificationService';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { App as CapApp } from '@capacitor/app';
@@ -1299,14 +1299,13 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
         {!isHome && !isChatPage && (
           <div className="mt-8 mb-4 flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-300">
             <button
-              onClick={() => {
-                if (window.history.length > 1) {
-                  navigate(-1);
-                } else {
-                  navigate('/');
-                }
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                navigate('/');
               }}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white font-extrabold text-xs shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 border border-white/10"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-950 text-white font-extrabold text-xs shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 border border-white/10 active:scale-95"
               title="Voltar à página inicial"
             >
               <span>←</span> Voltar para o Início
@@ -1538,10 +1537,16 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('bolao_mega_result_synced', { detail: megaResult }));
           await checkAndNotifyWinningGamesForResult('megasena', megaResult);
         }
+
+        // Verifica Pix agendados (notificação 24h antes do vencimento para membros)
+        await checkScheduledPix();
       } catch (err) {
         console.warn('[Auto-Sync] Erro na sincronização inicial de resultados:', err);
       }
     };
+
+    // Inicializa o serviço contínuo de cron-job local para Pix agendados
+    startScheduledPixCronService();
 
     syncLatestLotteryResults();
 
@@ -1801,27 +1806,42 @@ export default function App() {
                   {/* 1. Tabela de Jogos Cadastrados, Apostas e Resultado Oficial Caixa Unificado */}
                   <GamesTable onOpenNewGame={() => setShowNewGameModal(true)} />
 
-                  {/* 2. Dashboard Financeiro Principal (Apenas Admin) */}
+                  {/* 2. Dashboard Financeiro Principal (Apenas Admin) - Retraído por padrão */}
                   {isUserAdmin && (
-                    <div className="bg-white rounded-xl shadow-xs border overflow-hidden">
-                      <div className="p-3 sm:p-4 border-b bg-gray-50 flex flex-wrap justify-between items-center gap-2">
-                        <h2 className="font-bold text-sm text-gray-800">📊 Painel Financeiro e Caixa</h2>
-                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                          {(activeUserData?.role === 'admin' || activeUserData?.role === 'counselor' || activeUser?.email === 'clodas12345@gmail.com' || (activeUserData?.phone && normalizeBrazilianPhoneDigits(activeUserData.phone).includes('11953292570'))) && (
-                            <>
-                              <button
-                                onClick={() => window.print()}
-                                className="flex-1 sm:flex-initial justify-center bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap"
-                              >
-                                <span>🖨️</span> Imprimir Relatório
-                              </button>
-                              <ExportButton />
-                            </>
-                          )}
+                    <details className="bg-white rounded-2xl shadow-xs border border-gray-200 overflow-hidden group">
+                      <summary className="p-3.5 sm:p-4 bg-gray-50 hover:bg-gray-100/90 transition cursor-pointer flex flex-wrap justify-between items-center gap-2 list-none outline-none select-none">
+                        <div className="flex items-center gap-2.5">
+                          <span className="p-1.5 bg-emerald-600 text-white rounded-xl text-xs shadow-xs">📊</span>
+                          <div>
+                            <h2 className="font-bold text-sm text-gray-800 leading-tight">Painel Financeiro e Caixa</h2>
+                            <p className="text-[11px] text-gray-500 font-medium">Toque para expandir métricas, validação rápida e fluxo de caixa</p>
+                          </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          {(activeUserData?.role === 'admin' || activeUserData?.role === 'counselor' || activeUser?.email === 'clodas12345@gmail.com' || (activeUserData?.phone && normalizeBrazilianPhoneDigits(activeUserData.phone).includes('11953292570'))) && (
+                            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.print();
+                                }}
+                                className="bg-purple-900 hover:bg-purple-800 text-white text-xs font-black px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap"
+                              >
+                                <span>🖨️</span> Imprimir
+                              </button>
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <ExportButton />
+                              </div>
+                            </div>
+                          )}
+                          <span className="text-gray-400 group-open:rotate-180 transition-transform text-sm font-bold ml-1">▼</span>
+                        </div>
+                      </summary>
+                      <div className="border-t border-gray-150">
+                        <FinancialDashboard />
                       </div>
-                      <FinancialDashboard />
-                    </div>
+                    </details>
                   )}
 
                   {/* 4. Gráficos Visuais Avançados (Apenas Admin) */}

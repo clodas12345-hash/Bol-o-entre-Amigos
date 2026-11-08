@@ -111,11 +111,14 @@ export default function PublicReceiptUpload() {
 
       // Fallback para Firestore direto se estiver rodando no APK nativo ou se API falhar
       if (!savedSuccessfully && isNativeApk) {
+        const now = new Date();
+        const currentMonthStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
         const uploadPromise = addDoc(collection(db, 'pending_receipts'), {
           name: cleanName,
           phone: cleanPhone,
           imageBase64: base64Data,
           mimeType: mimeType,
+          referenceMonth: currentMonthStr,
           createdAt: serverTimestamp(),
           status: 'pending'
         });

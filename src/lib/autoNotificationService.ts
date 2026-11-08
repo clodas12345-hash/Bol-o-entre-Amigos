@@ -1,4 +1,4 @@
-import { collection, addDoc, getDoc, getDocs, setDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDoc, getDocs, setDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { sendAppNotification, notifyWinningPrize } from './notifications';
 import { calculateGamePrize } from './prizes';
@@ -261,24 +261,143 @@ export async function runAutoPrizeCheck() {
   }
 }
 
+/**
+ * Serviço automático (cron-job local) que verifica os Pix agendados no banco
+ * e dispara notificação push para o membro participante 24 horas antes do vencimento.
+ */
 export async function checkScheduledPix() {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const q = query(collection(db, 'payments'), where('status', '==', 'pending'), where('isScheduledPix', '==', true));
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    // 24 horas a frente (amanhã)
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
+    const q = query(
+      collection(db, 'payments'),
+      where('isScheduledPix', '==', true)
+    );
     const snap = await getDocs(q);
 
     for (const docSnap of snap.docs) {
       const data = docSnap.data();
-      if (data.scheduledDate === today) {
-        // Notificar o admin e o usuário
-        await sendAppNotification(`Verificar Pix Programado: ${data.memberName || 'Participante'}`, {
-          body: `O Pix programado de R$ ${data.amount} está agendado para hoje. Por favor, confira o extrato.`
+      const statusLower = String(data.status || '').toLowerCase();
+      const isPending = statusLower === 'pending' || statusLower === 'pendente';
+      if (!isPending) continue;
+
+      const scheduledDate = String(data.scheduledDate || '').trim();
+      if (!scheduledDate) continue;
+
+      const memberName = data.memberName || 'Participante';
+      const amountVal = Number(data.amount) || 0;
+      const amountFormatted = amountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      
+      const [yyyy, mm, dd] = scheduledDate.split('-');
+      const formattedDateBR = (dd && mm && yyyy) ? `${dd}/${mm}/${yyyy}` : scheduledDate;
+
+      // 1. Notificação 24 HORAS ANTES do vencimento
+      const isDueTomorrow = scheduledDate === tomorrowStr;
+      const alreadyNotified24h = data.notified24hBefore === true || !!localStorage.getItem(`bolao_pix_24h_${docSnap.id}`);
+
+      if (isDueTomorrow && !alreadyNotified24h) {
+        const title = '⏰ Lembrete de Pix Agendado (Vence em 24h)';
+        const body = `Olá, ${memberName}! Seu Pix programado de R$ ${amountFormatted} vence amanhã (${formattedDateBR}). Lembre-se de confirmar o envio do valor para o Bolão.`;
+
+        // Dispara push notification para o membro
+        await sendAppNotification(title, {
+          body,
+          id: Math.floor(Math.random() * 800000) + 200000,
+          category: 'payment_system',
+          uid: data.userId || null,
+          targetPath: '/contatos'
         });
+
+        // Grava no histórico de notificações do participante no Firestore
+        if (data.userId) {
+          await addDoc(collection(db, 'notifications'), {
+            userId: data.userId,
+            title,
+            message: body,
+            type: 'payment',
+            targetPath: '/contatos',
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        }
+
+        // Atualiza o documento no Firestore para evitar envios duplicados
+        await updateDoc(doc(db, 'payments', docSnap.id), {
+          notified24hBefore: true,
+          notified24hAt: serverTimestamp()
+        });
+
+        try {
+          localStorage.setItem(`bolao_pix_24h_${docSnap.id}`, new Date().toISOString());
+        } catch {}
+
+        console.log(`[Auto Pix 24h] Notificação de 24h enviada para ${memberName} (vence em ${formattedDateBR})`);
+      }
+
+      // 2. Notificação no dia do vencimento (caso ainda pendente)
+      const isDueToday = scheduledDate === todayStr;
+      const alreadyNotifiedToday = data.notifiedToday === true || !!localStorage.getItem(`bolao_pix_today_${docSnap.id}`);
+
+      if (isDueToday && !alreadyNotifiedToday) {
+        const titleToday = '⚡ Pix Agendado Vencendo Hoje!';
+        const bodyToday = `Olá, ${memberName}! Seu Pix programado de R$ ${amountFormatted} vence hoje (${formattedDateBR}). Por favor, realize ou confirme a transferência no Bolão.`;
+
+        await sendAppNotification(titleToday, {
+          body: bodyToday,
+          id: Math.floor(Math.random() * 800000) + 300000,
+          category: 'payment_system',
+          uid: data.userId || null,
+          targetPath: '/contatos'
+        });
+
+        if (data.userId) {
+          await addDoc(collection(db, 'notifications'), {
+            userId: data.userId,
+            title: titleToday,
+            message: bodyToday,
+            type: 'payment',
+            targetPath: '/contatos',
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        }
+
+        await updateDoc(doc(db, 'payments', docSnap.id), {
+          notifiedToday: true,
+          notifiedTodayAt: serverTimestamp()
+        });
+
+        try {
+          localStorage.setItem(`bolao_pix_today_${docSnap.id}`, new Date().toISOString());
+        } catch {}
+
+        console.log(`[Auto Pix Today] Notificação de vencimento hoje enviada para ${memberName}`);
       }
     }
   } catch (err) {
-    console.warn('[Auto Pix Check] Falha na verificação de Pix:', err);
+    console.warn('[Auto Pix Check] Falha na verificação de Pix agendado:', err);
   }
+}
+
+let pixCronInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Inicializa o serviço contínuo de cron-job local para verificação periódica de Pix agendados.
+ */
+export function startScheduledPixCronService() {
+  if (pixCronInterval) return;
+  // Executa imediatamente na inicialização
+  checkScheduledPix().catch(err => console.warn('[Pix Cron Startup] Erro:', err));
+
+  // Executa periodicamente a cada 60 segundos
+  pixCronInterval = setInterval(() => {
+    checkScheduledPix().catch(err => console.warn('[Pix Cron Loop] Erro:', err));
+  }, 60000);
 }
 
 /**

@@ -38,22 +38,38 @@ export default function ReceiptBatchManager() {
 
     payments.forEach(p => {
       let pDate: Date | null = null;
-      if (p.createdAt?.toDate && typeof p.createdAt.toDate === 'function') {
-        pDate = p.createdAt.toDate();
-      } else if (p.createdAt?.seconds) {
-        pDate = new Date(p.createdAt.seconds * 1000);
-      } else if (p.date) {
-        pDate = new Date(p.date);
-      }
+      let m = '';
+      let y = 0;
+      let monthKey = '';
+      let monthLabel = '';
 
-      if (!pDate || isNaN(pDate.getTime())) {
-        pDate = new Date(2025, 0, 1);
-      }
+      // Prioridade: mês de referência do pagamento/comprovante (ex: '10/2026' ou '11/2026')
+      const pMonthStr = String(p.month || p.referenceMonth || '').trim();
+      if (/^\d{1,2}\/\d{4}$/.test(pMonthStr)) {
+        const parts = pMonthStr.split('/');
+        m = parts[0].padStart(2, '0');
+        y = Number(parts[1]);
+        monthKey = `${y}-${m}`;
+        monthLabel = `${m}/${y}`;
+        pDate = new Date(y, Number(m) - 1, 1);
+      } else {
+        if (p.createdAt?.toDate && typeof p.createdAt.toDate === 'function') {
+          pDate = p.createdAt.toDate();
+        } else if (p.createdAt?.seconds) {
+          pDate = new Date(p.createdAt.seconds * 1000);
+        } else if (p.date) {
+          pDate = new Date(p.date);
+        }
 
-      const m = String(pDate.getMonth() + 1).padStart(2, '0');
-      const y = pDate.getFullYear();
-      const monthKey = `${y}-${m}`;
-      const monthLabel = `${m}/${y}`;
+        if (!pDate || isNaN(pDate.getTime())) {
+          pDate = new Date(2025, 0, 1);
+        }
+
+        m = String(pDate.getMonth() + 1).padStart(2, '0');
+        y = pDate.getFullYear();
+        monthKey = `${y}-${m}`;
+        monthLabel = `${m}/${y}`;
+      }
 
       if (!map.has(monthKey)) {
         // Mês considerado > 6 meses se o início do mês for anterior ao limite de 6 meses atrás

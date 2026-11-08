@@ -1226,33 +1226,32 @@ export default function MembersList() {
         </form>
       )}
 
-      {/* Tabela de Membros com Cotas */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full border-collapse text-xs sm:text-sm">
-          <thead>
-            <tr className="bg-gray-50 text-gray-700 text-[10px] sm:text-[11px] uppercase tracking-wider border-b">
-              <th className="py-2.5 px-2.5 sm:p-3 text-left">Participante</th>
-              <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Função</th>
-              <th className="py-2.5 px-2.5 sm:p-3 text-center whitespace-nowrap">Cotas</th>
-              {isAdmin && (
-                <>
-                  <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Valor Mensal</th>
-                  <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Pagamento</th>
-                  <th className="py-2.5 px-2 sm:p-3 text-center font-bold whitespace-nowrap">Status</th>
-                  <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Ações</th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {memberFilterTab === 'receipts' ? (
-              <tr>
-                <td colSpan={isAdmin ? 7 : 3}>
-                  <ReceiptsList onMemberUpdated={fetchMembers} />
-                </td>
+      {memberFilterTab === 'receipts' ? (
+        <div className="w-full">
+          <ReceiptsList onMemberUpdated={fetchMembers} />
+        </div>
+      ) : (
+        /* Tabela de Membros com Cotas */
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-gray-700 text-[10px] sm:text-[11px] uppercase tracking-wider border-b">
+                <th className="py-2.5 px-2.5 sm:p-3 text-left">Participante</th>
+                <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Função</th>
+                <th className="py-2.5 px-2.5 sm:p-3 text-center whitespace-nowrap">Cotas</th>
+                {isAdmin && (
+                  <>
+                    <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Valor Mensal</th>
+                    <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Pagamento</th>
+                    <th className="py-2.5 px-2 sm:p-3 text-center font-bold whitespace-nowrap">Status</th>
+                    <th className="py-2.5 px-2 sm:p-3 text-center whitespace-nowrap">Ações</th>
+                  </>
+                )}
               </tr>
-            ) : displayedMembers.length === 0 ? (
-              <tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {displayedMembers.length === 0 ? (
+                <tr>
                 <td colSpan={isAdmin ? 7 : 3} className="p-8 text-center text-gray-400 italic font-medium">
                   {memberFilterTab === 'pending'
                     ? 'Nenhum participante na listagem regular (veja os quadros de pedidos pendentes acima).'
@@ -1492,9 +1491,10 @@ export default function MembersList() {
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Modal de Edição */}
       {editingMember && (

@@ -159,12 +159,12 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
     };
 
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      usersData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      usersData = snap.docs.map(d => ({ id: d.id, collectionName: 'users', ...d.data() }));
       updateCombined();
     });
 
     const unsubMembers = onSnapshot(collection(db, 'members'), (mSnap) => {
-      membersData = mSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      membersData = mSnap.docs.map(d => ({ id: d.id, collectionName: 'members', ...d.data() }));
       updateCombined();
     });
 

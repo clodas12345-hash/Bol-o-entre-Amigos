@@ -156,6 +156,7 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
   const handleClickApprove = (receipt: any) => {
     const matched = findMatchingMember(receipt);
     const { currentMonthStr, prevMonthStr, prevMonthKey } = getMonthsInfo();
+    const effectiveCurrentMonthStr = receipt.referenceMonth || currentMonthStr;
 
     // Se o participante estava com status Pendente (ou não estava "Pago"), abre o pop-up perguntando sobre pagamento atrasado / mês anterior
     const isPending = !matched || matched.paymentStatus !== 'Pago';
@@ -163,12 +164,12 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
       setLatePaymentModal({
         receipt,
         member: matched,
-        currentMonthStr,
+        currentMonthStr: effectiveCurrentMonthStr,
         prevMonthStr,
         prevMonthKey
       });
     } else {
-      finalizeApproval(receipt, matched, 'current', currentMonthStr, prevMonthKey);
+      finalizeApproval(receipt, matched, 'current', effectiveCurrentMonthStr, prevMonthKey);
     }
   };
 
