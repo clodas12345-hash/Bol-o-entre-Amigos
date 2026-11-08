@@ -136,7 +136,7 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
           {/* Legenda */}
           <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold text-gray-600 bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/60">
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> Dia de Sorteio
+              <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> Dia de Sorteio (Dom a Sex)
             </span>
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Feriado Nacional
@@ -149,7 +149,7 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
           {/* Grid de Dias do Mês */}
           <div className="grid grid-cols-7 gap-1.5 text-center">
             {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d, i) => (
-              <div key={d} className={`text-[11px] font-black uppercase tracking-wider py-1 ${i === 6 ? 'text-red-500' : 'text-gray-500'}`}>
+              <div key={d} className={`text-[11px] font-black uppercase tracking-wider py-1 ${i === 0 ? 'text-emerald-500' : (i === 6 ? 'text-gray-400' : 'text-gray-500')}`}>
                 {d}
               </div>
             ))}
