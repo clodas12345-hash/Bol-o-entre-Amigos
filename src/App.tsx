@@ -1402,14 +1402,46 @@ function ProtectedRoute({ children, permission }: { children: React.ReactNode; p
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [userData, setUserData] = useState<any>(null);
-  const [phoneUser, setPhoneUser] = useState<any>(() => {
-    const saved = localStorage.getItem('bolao_phone_user');
-    if (saved) return JSON.parse(saved);
+
+  const [userData, setUserDataState] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('bolao_cache_user_data');
+      if (cached) return JSON.parse(cached);
+    } catch {}
     return null;
   });
+
+  const [phoneUser, setPhoneUser] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('bolao_phone_user');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const setUserData = (newData: any) => {
+    if (typeof newData === 'function') {
+      setUserDataState((prev: any) => {
+        const updated = newData(prev);
+        if (updated) {
+          try { localStorage.setItem('bolao_cache_user_data', JSON.stringify(updated)); } catch {}
+        } else {
+          try { localStorage.removeItem('bolao_cache_user_data'); } catch {}
+        }
+        return updated;
+      });
+    } else {
+      setUserDataState(newData);
+      if (newData) {
+        try { localStorage.setItem('bolao_cache_user_data', JSON.stringify(newData)); } catch {}
+      } else {
+        try { localStorage.removeItem('bolao_cache_user_data'); } catch {}
+      }
+    }
+  };
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showNewGameModal, setShowNewGameModal] = useState(false);
   const [showHowToUseModal, setShowHowToUseModal] = useState(false);
@@ -1450,8 +1482,14 @@ export default function App() {
     (activeUser?.phoneNumber && normalizeBrazilianPhoneDigits(activeUser.phoneNumber).includes('11953292570'));
 
   const handleSignOut = () => {
-    localStorage.removeItem('bolao_phone_user');
+    try {
+      localStorage.removeItem('bolao_phone_user');
+      localStorage.removeItem('bolao_cache_auth_user');
+      localStorage.removeItem('bolao_cache_user_data');
+    } catch {}
     setPhoneUser(null);
+    setUserDataState(null);
+    setUser(null);
     signOut(auth);
   };
 
@@ -1634,9 +1672,6 @@ export default function App() {
           if (userSnap.exists()) {
             const uData = userSnap.data();
             setUserData(uData);
-            try {
-              localStorage.setItem('bolao_cache_user_data', JSON.stringify(uData));
-            } catch {}
             setLoading(false);
           } else {
             // Se não existe na coleção 'users', verifica 'members'
@@ -1645,9 +1680,6 @@ export default function App() {
               if (memberSnap.exists()) {
                 const mData = memberSnap.data();
                 setUserData(mData);
-                try {
-                  localStorage.setItem('bolao_cache_user_data', JSON.stringify(mData));
-                } catch {}
                 setLoading(false);
               } else {
                 const isAdminEmail = currentUser.email === 'clodas12345@gmail.com';
@@ -1661,9 +1693,6 @@ export default function App() {
                 };
                 await setDoc(userDocRef, defaultData).catch(() => {});
                 setUserData(defaultData);
-                try {
-                  localStorage.setItem('bolao_cache_user_data', JSON.stringify(defaultData));
-                } catch {}
                 setLoading(false);
               }
             } catch (err) {
@@ -1687,6 +1716,10 @@ export default function App() {
           setLoading(false);
         });
       } else {
+        try {
+          localStorage.removeItem('bolao_cache_auth_user');
+          localStorage.removeItem('bolao_cache_user_data');
+        } catch {}
         setUserData(null);
         setLoading(false);
       }
