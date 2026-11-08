@@ -422,9 +422,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         if (normY >= 2000 && normY < currentCalendarYear && parsedDate.getFullYear() === currentCalendarYear) {
           parsedDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(parsedDate.getDate(), 28), 12, 0, 0);
         }
-      } else if (!isMegaSena && startContestNum > 2000 && startContestNum <= 3575 && !data.date && parsedDate.getFullYear() >= 2026) {
-        const inferredYear = startContestNum <= 2990 ? 2023 : startContestNum <= 3282 ? 2024 : 2025;
-        parsedDate = new Date(inferredYear, parsedDate.getMonth(), Math.min(parsedDate.getDate(), 28), 12, 0, 0);
       }
 
       const currentMonth = (data.date || parsedDate.getFullYear() < currentCalendarYear)

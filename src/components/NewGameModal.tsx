@@ -209,9 +209,6 @@ export default function NewGameModal({ onClose, onGameAdded }: NewGameModalProps
         if (normY >= 2000 && normY < currentCalendarYear) {
           parsedDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(parsedDate.getDate(), 28), 12, 0, 0);
         }
-      } else if (gameDate === todayIso && !isMegaSena && startContestNum > 0 && startContestNum <= 3575) {
-        const inferredYear = startContestNum <= 2990 ? 2023 : startContestNum <= 3282 ? 2024 : 2025;
-        parsedDate = new Date(inferredYear, parsedDate.getMonth(), Math.min(parsedDate.getDate(), 28), 12, 0, 0);
       }
 
       const resolvedMonthRef = parsedDate.getFullYear() < currentCalendarYear

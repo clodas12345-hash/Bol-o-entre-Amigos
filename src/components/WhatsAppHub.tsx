@@ -482,7 +482,7 @@ Participe! 🤝🍀`;
               <option value="">👤 Enviar para membro cadastrado...</option>
               {members.filter(m => m.phone).map(m => (
                 <option key={m.id} value={m.phone}>
-                  {formatFirstAndLastName(m.displayName || m.email)} ({m.phone})
+                  {formatFirstAndLastName(m.displayName || m.name || m.email)} ({m.phone})
                 </option>
               ))}
             </select>

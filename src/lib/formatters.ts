@@ -8,14 +8,24 @@ import { useState, useEffect } from 'react';
  *  - "Maria dos Santos Silva" -> "Maria Silva"
  *  - "usuario@gmail.com" -> "usuario"
  */
-export function formatFirstAndLastName(nameOrEmail?: string | null): string {
-  if (!nameOrEmail) return 'Sem nome';
+export function formatFirstAndLastName(input?: any, fallback = 'Participante'): string {
+  if (!input) return fallback;
+
+  let nameOrEmail = input;
+  if (typeof input === 'object' && input !== null) {
+    nameOrEmail = input.displayName || input.name || input.userName || input.memberName || input.email || '';
+  }
+
+  if (!nameOrEmail || typeof nameOrEmail !== 'string') return fallback;
+
+  // Remove marcações de função/ambiente em parênteses como (Admin), (Preview), (Participante)
+  const withoutParens = String(nameOrEmail).replace(/\([^)]*\)/gi, '').trim();
 
   // Se for um endereço de e-mail puro
-  const cleaned = nameOrEmail.includes('@') ? nameOrEmail.split('@')[0] : nameOrEmail;
+  const cleaned = withoutParens.includes('@') ? withoutParens.split('@')[0] : withoutParens;
   const parts = cleaned.trim().split(/\s+/).filter(Boolean);
 
-  if (parts.length === 0) return 'Sem nome';
+  if (parts.length === 0) return fallback;
   if (parts.length === 1) return parts[0];
 
   const first = parts[0];

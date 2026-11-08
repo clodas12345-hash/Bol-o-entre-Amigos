@@ -46,7 +46,7 @@ export default function PrizeSplitModal({
     eligibleMembers.forEach((m, idx) => {
       const q = Number(m.quotas) > 0 ? Number(m.quotas) : 1;
       const memberShare = q * prizePerSingleQuota;
-      text += `${idx + 1}. ${formatFirstAndLastName(m.displayName || m.email)} (${q} cota${q > 1 ? 's' : ''}): R$ ${memberShare.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
+      text += `${idx + 1}. ${formatFirstAndLastName(m.displayName || m.name || m.email)} (${q} cota${q > 1 ? 's' : ''}): R$ ${memberShare.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
     });
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
@@ -145,7 +145,7 @@ export default function PrizeSplitModal({
                         </span>
                         <div>
                           <span className="font-semibold text-gray-800">
-                            {formatFirstAndLastName(m.displayName || m.email)}
+                            {formatFirstAndLastName(m.displayName || m.name || m.email)}
                           </span>
                           <span className="ml-2 inline-block text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded">
                             {q} {q > 1 ? 'cotas' : 'cota'}

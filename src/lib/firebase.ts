@@ -6,10 +6,11 @@ import { firebaseConfig } from './firebaseConfig';
 import { Capacitor } from '@capacitor/core';
 
 // REGRA ESTRITA DE AMBIENTE:
-// O cliente Web e APK sempre se conectam ao Cloud Firestore para sincronização em tempo real.
+// Apenas o APK nativo e o servidor backend Node.js conectam ao Cloud Firestore.
+// O Preview Web (navegador / AI Studio) nunca conecta à nuvem nem carrega dados locais.
 export const isServer = typeof window === 'undefined';
-export const isNativeApk = typeof window !== 'undefined';
-export const isAIStudioPreview = false;
+export const isNativeApk = !isServer && Capacitor.isNativePlatform();
+export const isAIStudioPreview = !isServer && !isNativeApk;
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -21,9 +22,13 @@ const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestor
 let dbInstance;
 try {
   let cacheSettings;
-  try {
-    cacheSettings = persistentLocalCache({ tabManager: persistentMultipleTabManager() });
-  } catch (e) {
+  if (isNativeApk) {
+    try {
+      cacheSettings = persistentLocalCache({ tabManager: persistentMultipleTabManager() });
+    } catch (e) {
+      cacheSettings = memoryLocalCache();
+    }
+  } else {
     cacheSettings = memoryLocalCache();
   }
 
@@ -35,9 +40,16 @@ try {
   dbInstance = databaseId
     ? initializeFirestore(app, firestoreOptions, databaseId)
     : initializeFirestore(app, firestoreOptions);
+
+  if (isAIStudioPreview) {
+    disableNetwork(dbInstance).catch(() => {});
+  }
 } catch (err) {
   console.warn('Firestore initialized with fallback:', err);
   dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  if (isAIStudioPreview) {
+    disableNetwork(dbInstance).catch(() => {});
+  }
 }
 
 import { logSystemError } from './systemErrorLogger';

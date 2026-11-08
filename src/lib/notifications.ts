@@ -382,7 +382,13 @@ export function getActiveUserDisplayName(): string {
 }
 
 function formatShortPersonName(fullName: string): string {
-  const clean = fullName.replace(/\s+/g, ' ').trim();
+  if (!fullName) return '';
+  // Remove marcações de função/ambiente em parênteses como (Admin), (Preview), (Participante)
+  let clean = String(fullName)
+    .replace(/\([^)]*\)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   if (!clean) return '';
   const parts = clean.split(' ');
   const first = parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase();
@@ -415,14 +421,17 @@ export function syncActiveUserDisplayName(rawName?: string | null): void {
 
 /**
  * Substitui marcadores como {name} ou expressões genéricas ("Parabéns Grupo", "Parabéns a todos os membros")
- * pelo nome real da pessoa logada no aparelho.
+ * pelo nome real da pessoa logada no aparelho sem sufixos do sistema em parênteses.
  */
 export function personalizeNotificationText(text?: string | null, customUserName?: string | null): string {
   if (!text) return '';
-  const name = (customUserName && customUserName.trim()) || getActiveUserDisplayName();
+  const name = formatShortPersonName((customUserName && customUserName.trim()) || getActiveUserDisplayName());
   const display = name || 'Amigo(a)';
 
-  return String(text)
+  // Remove qualquer marcação remanescente do tipo (Admin), (Preview), (Participante) do texto
+  const cleanText = String(text).replace(/\s*\([^)]*\)/gi, '').trim();
+
+  return cleanText
     .replace(/\{name\}/gi, display)
     .replace(/Parabéns\s+Grupo!/gi, `Parabéns, ${display}!`)
     .replace(/Parabéns\s+Grupo/gi, `Parabéns, ${display}`)

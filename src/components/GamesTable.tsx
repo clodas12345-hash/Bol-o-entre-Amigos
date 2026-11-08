@@ -542,9 +542,6 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       if (normY >= 2000 && normY < currentYear && gDate.getFullYear() === currentYear) {
         gDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(gDate.getDate(), 28), 12, 0, 0);
       }
-    } else if (contestNumber && contestNumber > 0 && contestNumber <= 3575 && gDate.getFullYear() >= 2026) {
-      const inferredYear = contestNumber <= 2990 ? 2023 : contestNumber <= 3282 ? 2024 : 2025;
-      gDate = new Date(inferredYear, gDate.getMonth(), Math.min(gDate.getDate(), 28), 12, 0, 0);
     }
 
     if (!gDate || isNaN(gDate.getTime())) {
@@ -577,8 +574,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
     const isAlreadyDrawnContest = Boolean(
       (targetResult && Array.isArray(targetResult.numbers) && targetResult.numbers.length > 0) ||
-      (contestNumber && maxOfficialContest > 0 && contestNumber < maxOfficialContest) ||
-      (contestNumber && contestNumber > 0 && contestNumber <= 3575)
+      (contestNumber && maxOfficialContest > 0 && contestNumber < maxOfficialContest)
     );
 
     const isPast = isPastDate || isPastMonthRef || isAlreadyDrawnContest;

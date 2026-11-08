@@ -69,12 +69,6 @@ export const parseDateSafely = (dateVal: any, fallbackMonthStr?: string, contest
     }
   }
 
-  // Se for um concurso de anos anteriores (Lotofácil <= 3575 é de 2025 ou anterior)
-  if (contestNum && contestNum > 0 && contestNum <= 3575) {
-    if (contestNum <= 3282) return new Date(2024, 11, 15, 12, 0, 0);
-    return new Date(2025, 11, 15, 12, 0, 0);
-  }
-
   return new Date();
 };
 
@@ -201,10 +195,6 @@ export default function GameHistory({
         if (normY >= 2000 && normY < currentYear && gDate.getFullYear() === currentYear) {
           gDate = new Date(normY, (mPart >= 1 && mPart <= 12 ? mPart : 1) - 1, Math.min(gDate.getDate(), 28), 12, 0, 0);
         }
-      } else if (contestNumber && contestNumber > 0 && contestNumber <= 3575 && gDate.getFullYear() >= 2026) {
-        // Concursos Lotofácil até ~3575 ocorreram em 2025 ou anos anteriores
-        const inferredYear = contestNumber <= 2990 ? 2023 : contestNumber <= 3282 ? 2024 : 2025;
-        gDate = new Date(inferredYear, gDate.getMonth(), Math.min(gDate.getDate(), 28), 12, 0, 0);
       }
 
       const gameDay = new Date(gDate);
@@ -225,8 +215,7 @@ export default function GameHistory({
 
       const isAlreadyDrawnContest = Boolean(
         (targetResult && Array.isArray(targetResult.numbers) && targetResult.numbers.length > 0) ||
-        (contestNumber && maxOfficialContest > 0 && contestNumber < maxOfficialContest) ||
-        (contestNumber && contestNumber > 0 && contestNumber <= 3575)
+        (contestNumber && maxOfficialContest > 0 && contestNumber < maxOfficialContest)
       );
 
       const isPast = isPastDate || isPastMonthRef || isAlreadyDrawnContest;

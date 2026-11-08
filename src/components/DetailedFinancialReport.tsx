@@ -308,50 +308,50 @@ export default function DetailedFinancialReport() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 bg-gray-50 p-3 rounded-2xl border border-gray-100">
-        <div className="flex items-center gap-3">
-          <h3 className="font-black text-gray-900 text-sm uppercase tracking-tight">Extrato Financeiro</h3>
-          <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowAllTime(!showAllTime)}
-            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all border cursor-pointer ${
-              showAllTime 
-                ? 'bg-purple-600 text-white border-purple-500' 
-                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
-            }`}
-          >
-            {showAllTime ? '♾️ Tudo' : '📅 Mensal'}
-          </button>
-          <button
-            onClick={() => setShowPendingOnly(!showPendingOnly)}
-            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all border cursor-pointer ${
-              showPendingOnly 
-                ? 'bg-amber-600 text-white border-amber-500' 
-                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
-            }`}
-          >
-            {showPendingOnly ? '⏳ Apenas Pendentes' : '👤 Todos'}
-          </button>
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 bg-gray-50 p-2 rounded-xl border border-gray-150">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="font-black text-gray-900 text-xs sm:text-sm uppercase tracking-tight">Extrato Financeiro</h3>
+          <div className="h-3.5 w-px bg-gray-300 hidden sm:block"></div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowAllTime(!showAllTime)}
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase transition-all border cursor-pointer ${
+                showAllTime 
+                  ? 'bg-purple-600 text-white border-purple-500' 
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              {showAllTime ? '♾️ Tudo' : '📅 Mensal'}
+            </button>
+            <button
+              onClick={() => setShowPendingOnly(!showPendingOnly)}
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase transition-all border cursor-pointer ${
+                showPendingOnly 
+                  ? 'bg-amber-600 text-white border-amber-500' 
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              {showPendingOnly ? '⏳ Pendentes' : '👤 Todos'}
+            </button>
+          </div>
         </div>
 
         {!showAllTime && (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-1.5">
             <button
               onClick={handlePrevMonth}
-              className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 transition shadow-xs cursor-pointer"
+              className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 transition shadow-2xs cursor-pointer text-xs"
             >
               ◀
             </button>
-            <div className="bg-white border border-gray-200 px-4 py-1.5 rounded-xl shadow-inner min-w-[140px] text-center">
+            <div className="bg-white border border-gray-200 px-3 py-1 rounded-lg shadow-2xs min-w-[120px] text-center">
               <span className="text-xs font-black text-gray-800 uppercase tracking-wide">
                 {monthNames[filterMonth - 1]} / {filterYear}
               </span>
             </div>
             <button
               onClick={handleNextMonth}
-              className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 transition shadow-xs cursor-pointer"
+              className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 transition shadow-2xs cursor-pointer text-xs"
             >
               ▶
             </button>
@@ -360,18 +360,18 @@ export default function DetailedFinancialReport() {
 
         <button
           onClick={() => setShowPixModal(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-1.5 rounded-lg shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
         >
           <span>📲</span> Chave PIX
         </button>
       </div>
 
-      <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-inner relative">
-        <table className="min-w-[700px] w-full border-separate border-spacing-0 text-xs sm:text-sm">
+      <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-2xs relative w-full">
+        <table className="w-full border-separate border-spacing-0 text-xs">
           <thead>
             <tr className="bg-gray-100 text-gray-700 font-bold border-b border-gray-200">
-              <th className="py-2.5 px-2 text-left sticky left-0 bg-gray-100 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-200 min-w-[130px] sm:min-w-[145px] whitespace-nowrap text-gray-800">
-                Participante
+              <th className="py-2 px-1 text-left sticky left-0 bg-gray-100 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-200 min-w-[100px] sm:min-w-[115px] max-w-[125px] whitespace-nowrap text-gray-800">
+                Nome
               </th>
               <th className="p-3 text-center min-w-[80px] whitespace-nowrap border-b border-gray-200">Cotas</th>
               <th className="p-3 text-center min-w-[80px] whitespace-nowrap border-b border-gray-200">Aportes</th>
@@ -400,7 +400,7 @@ export default function DetailedFinancialReport() {
                 return (
                   <tr key={m.id} className={`${isOdd ? 'bg-slate-50' : 'bg-white'} hover:bg-slate-100/80 transition group`}>
                     <td className={`py-2.5 px-2 font-medium text-gray-800 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.08)] border-r border-b border-gray-150 min-w-[130px] sm:min-w-[145px] whitespace-nowrap ${isOdd ? 'bg-slate-50 group-hover:bg-slate-100' : 'bg-white group-hover:bg-slate-100'}`}>
-                      <div className="font-black text-gray-900 text-xs sm:text-sm tracking-tight">{formatFirstAndLastName(m.displayName || m.email)}</div>
+                      <div className="font-black text-gray-900 text-xs sm:text-sm tracking-tight">{formatFirstAndLastName(m.displayName || m.name || m.email)}</div>
                       {m.phone && <span className="text-[10px] text-gray-400 font-mono block mt-0.5">{m.phone}</span>}
                     </td>
                     <td className="p-3 text-center whitespace-nowrap">

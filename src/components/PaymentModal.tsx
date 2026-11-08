@@ -215,7 +215,7 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
                   const q = Number(u.quotas) > 0 ? Number(u.quotas) : 1;
                   return (
                     <option key={u.id} value={u.id}>
-                      {formatFirstAndLastName(u.displayName || u.email)} ({q} cota{q > 1 ? 's' : ''} - R$ {(q * 20).toFixed(2)})
+                      {formatFirstAndLastName(u.displayName || u.name || u.email)} ({q} cota{q > 1 ? 's' : ''} - R$ {(q * 20).toFixed(2)})
                     </option>
                   );
                 })}
