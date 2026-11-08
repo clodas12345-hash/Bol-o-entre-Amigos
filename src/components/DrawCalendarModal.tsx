@@ -89,7 +89,7 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
                 📅 Calendário de Sorteios & Feriados
               </h2>
               <p className="text-xs text-white/80 font-medium mt-0.5">
-                {isMegaSena ? 'Mega-Sena (Ter, Qui e Dom)' : 'Lotofácil (Segunda a Sexta e Domingo)'} • Nova Agenda Oficial Caixa
+                {isMegaSena ? 'Mega-Sena (Ter, Qui e Dom 11h)' : 'Lotofácil (Seg a Sex 21h e Dom 11h)'} • Agenda Oficial Caixa
               </p>
             </div>
           </div>
@@ -263,7 +263,7 @@ export default function DrawCalendarModal({ onClose }: DrawCalendarModalProps) {
         <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-xs text-gray-500">
           <div className="flex items-center gap-1.5">
             <Info className="w-4 h-4 text-blue-500" />
-            <span>Sorteios de Sábado agora ocorrem aos Domingos (pula sábados e feriados nacionais automaticamente).</span>
+            <span>Sorteios de Sábado foram transferidos para Domingo (a partir das 11h pela Caixa; pula sábados e feriados nacionais).</span>
           </div>
           <button
             onClick={onClose}

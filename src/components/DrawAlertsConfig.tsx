@@ -31,11 +31,11 @@ const DEFAULT_PREFERENCES: AlertPreferences = {
   notifyAt2000: true,
   notifyAt2035: true,
   notifyAt2155: true,
-  daysOfWeek: [0, 1, 2, 3, 4, 5] // Segunda a Sexta + Domingo (Nova agenda Caixa)
+  daysOfWeek: [0, 1, 2, 3, 4, 5] // Segunda a Sexta e Domingo (Agenda Loterias Caixa)
 };
 
 const DAYS_MAP = [
-  { id: 0, label: 'Dom', full: 'Domingo', hasDraw: true },
+  { id: 0, label: 'Dom', full: 'Domingo (a partir das 11h)', hasDraw: true },
   { id: 1, label: 'Seg', full: 'Segunda-feira', hasDraw: true },
   { id: 2, label: 'Ter', full: 'Terça-feira', hasDraw: true },
   { id: 3, label: 'Qua', full: 'Quarta-feira', hasDraw: true },
@@ -56,8 +56,8 @@ export default function DrawAlertsConfig() {
       const saved = localStorage.getItem('bolao_draw_alerts_config');
       if (!saved) return DEFAULT_PREFERENCES;
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed.daysOfWeek) && parsed.daysOfWeek.includes(6) && !parsed.daysOfWeek.includes(0)) {
-        parsed.daysOfWeek = [0, ...parsed.daysOfWeek.filter((d: number) => d !== 6)];
+      if (Array.isArray(parsed.daysOfWeek) && !parsed.daysOfWeek.includes(0)) {
+        parsed.daysOfWeek = Array.from(new Set([...parsed.daysOfWeek, 0])).filter((d: number) => d !== 6);
       }
       return { ...DEFAULT_PREFERENCES, ...parsed };
     } catch {

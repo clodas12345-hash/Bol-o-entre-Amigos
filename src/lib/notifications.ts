@@ -285,9 +285,9 @@ export function getUserNotificationPreferences(uid?: string | null): UserNotific
       ...parsedLegacy,
       ...parsedSpecific
     };
-    // Migração automática da agenda Caixa: garante que Domingo (0) esteja habilitado se tinha Sábado (6) salvo
-    if (Array.isArray(merged.daysOfWeek) && merged.daysOfWeek.includes(6) && !merged.daysOfWeek.includes(0)) {
-      merged.daysOfWeek = [0, ...merged.daysOfWeek.filter(d => d !== 6)];
+    // Garante que a agenda oficial da Caixa (Segunda a Sexta + Domingo: 0..5) esteja devidamente configurada
+    if (Array.isArray(merged.daysOfWeek) && !merged.daysOfWeek.includes(0)) {
+      merged.daysOfWeek = Array.from(new Set([...merged.daysOfWeek, 0])).filter(d => d !== 6);
     }
     return merged;
   } catch {

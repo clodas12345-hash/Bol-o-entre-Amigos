@@ -140,9 +140,9 @@ export function isNationalHoliday(date: Date): HolidayInfo {
 
 /**
  * Checa se determinado dia é um dia válido para realização de sorteio da loteria especificada
- * Conforme nova agenda oficial da Caixa: os sorteios que ocorriam aos Sábados agora são realizados aos Domingos!
- * - Lotofácil: Segunda a Sexta e Domingo (dias 0, 1, 2, 3, 4, 5) — Sem sorteio aos Sábados (6)
- * - Mega-Sena: Terça, Quinta e Domingo (dias 0, 2, 4) — Sem sorteio aos Sábados (6)
+ * Regras Oficiais da Caixa Econômica Federal (conforme site das Loterias Caixa):
+ * - Lotofácil: Segunda a Sexta (a partir das 21h) e Domingos (a partir das 11h) [Dias 0, 1, 2, 3, 4, 5] — Sem sorteio aos Sábados (6)
+ * - Mega-Sena: Terça e Quinta (a partir das 21h) e Domingos (a partir das 11h) [Dias 0, 2, 4] — Sem sorteio aos Sábados (6)
  */
 export function isDrawDay(
   date: Date, 
@@ -150,19 +150,19 @@ export function isDrawDay(
 ): DrawDayInfo {
   const dayOfWeek = date.getDay(); // 0 = Domingo, 6 = Sábado
 
-  // 1. Domingo não possui sorteio regular da Caixa
-  if (dayOfWeek === 0) {
-    return { isDraw: false, reason: 'Domingo (Sem sorteio regular da Caixa)' };
+  // 1. Sábado não possui sorteio regular nesta agenda
+  if (dayOfWeek === 6) {
+    return { isDraw: false, reason: 'Sábado (Sem sorteio regular da Caixa)' };
   }
 
   // 2. Dias da semana válidos por modalidade
   const isMegaSena = lotteryType === 'megasena';
-  const allowedDays = isMegaSena ? [2, 4, 6] : [1, 2, 3, 4, 5, 6]; // Lotofácil: Seg a Sáb (1..6)
+  const allowedDays = isMegaSena ? [0, 2, 4] : [0, 1, 2, 3, 4, 5]; // Lotofácil: Dom, Seg, Ter, Qua, Qui, Sex (0..5)
 
   if (!allowedDays.includes(dayOfWeek)) {
     return { 
       isDraw: false, 
-      reason: isMegaSena ? 'Mega-Sena ocorre às Terças, Quintas e Sábados' : 'Sorteio indisponível no dia' 
+      reason: isMegaSena ? 'Mega-Sena ocorre às Terças, Quintas e Domingos' : 'Sorteio indisponível no dia' 
     };
   }
 
