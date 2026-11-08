@@ -84,11 +84,6 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
   };
 
   useEffect(() => {
-    if (!isNativeApk) {
-      setReceipts([]);
-      return;
-    }
-
     const unsubReceipts = onSnapshot(collection(db, 'pending_receipts'), (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       // Ordena por nome crescente (A-Z)

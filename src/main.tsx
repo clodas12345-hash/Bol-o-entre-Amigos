@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import App from './App';
 import './index.css';
 import { ToastProvider } from './components/NotificationManager';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Detecta se está rodando no aplicativo nativo Android/iOS (Capacitor ou WebView APK)
 // para reservar espaço da barra superior (relógio/rede/bateria) e dos botões nativos inferiores
@@ -34,9 +35,11 @@ if (typeof window !== 'undefined') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ToastProvider>
-      <App />
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );
 

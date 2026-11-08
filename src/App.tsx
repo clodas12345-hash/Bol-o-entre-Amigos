@@ -480,7 +480,7 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   }, [currentContest, activePool?.currentContest, isMegaSena]);
 
   useEffect(() => {
-    if (!isNativeApk || !user) return;
+    if (!user) return;
     const lastRead = localStorage.getItem(`bolao_last_read_chat_${user.uid}`);
     const lastReadDate = lastRead ? new Date(lastRead) : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -677,7 +677,6 @@ function Layout({ children, user, userData, isAdmin, onSignOut, onUpdateUserData
   }, [navigate, user?.uid]);
 
   useEffect(() => {
-    if (!isNativeApk) return;
     const q = query(collection(db, resultsCollection), orderBy('createdAt', 'desc'), limit(1));
     const unsub = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
@@ -1457,7 +1456,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!isNativeApk) return;
     if (!phoneUser?.sessionUser?.uid) return;
     const phoneUid = phoneUser.sessionUser.uid;
 
@@ -1616,19 +1614,6 @@ export default function App() {
       unsubUserRealtime(); // Cancela listener anterior se houver
 
       if (currentUser) {
-        if (!isNativeApk) {
-          const isAdminEmail = currentUser.email === 'clodas12345@gmail.com';
-          setUserData({
-            uid: currentUser.uid,
-            email: currentUser.email,
-            displayName: currentUser.displayName || 'Participante (Preview)',
-            role: isAdminEmail ? 'admin' : 'participante',
-            approved: true
-          });
-          setLoading(false);
-          return;
-        }
-
         // Tenta carregar do cache local imediatamente para evitar qualquer piscar branco
         try {
           const cachedUser = localStorage.getItem('bolao_cache_user_data');
