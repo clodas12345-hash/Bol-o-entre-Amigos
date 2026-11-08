@@ -1410,7 +1410,7 @@ export default function App() {
     return null;
   });
   const [showPhoneModal, setShowPhoneModal] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showNewGameModal, setShowNewGameModal] = useState(false);
   const [showHowToUseModal, setShowHowToUseModal] = useState(false);
