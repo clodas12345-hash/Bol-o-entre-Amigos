@@ -40,18 +40,23 @@ export default function DetailedFinancialReport() {
   }, []);
 
   const togglePaymentStatus = async (member: any, targetMonthKey?: string) => {
-    const monthKey = targetMonthKey || `${String(filterMonth).padStart(2, '0')}/${filterYear}`;
-    const isPaidInMonth = payments.some(p => (p.userId === member.id || p.userId === member.uid) && p.month === monthKey);
-    const newStatus = isPaidInMonth ? 'Pendente' : 'Pago';
-    const currentUserEmail = auth.currentUser?.email || auth.currentUser?.displayName || 'Administrador';
-    
-    setIsUpdatingStatus(member.id);
+    if (!member) return;
+    const memberId = member.id || member.uid;
+    if (!memberId) return;
+
+    if (isUpdatingStatus === memberId) return;
+    setIsUpdatingStatus(memberId);
+
     try {
+      const monthKey = targetMonthKey || `${String(filterMonth).padStart(2, '0')}/${filterYear}`;
+      const isPaidInMonth = payments.some(p => (p.userId === member.id || p.userId === member.uid) && p.month === monthKey);
+      const newStatus = isPaidInMonth ? 'Pendente' : 'Pago';
+      const currentUserEmail = auth.currentUser?.email || auth.currentUser?.displayName || 'Administrador';
+
       if (newStatus === 'Pago') {
         const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
         const amount = quotas * (pixConfig.defaultAmount || 20.00);
 
-        // Busca comprovante pendente correspondente para vincular a este mês de referência
         let attachedReceiptURL: string | null = null;
         try {
           const qReceipts = query(collection(db, 'pending_receipts'), where('status', '==', 'pending'));
@@ -78,7 +83,6 @@ export default function DetailedFinancialReport() {
           }
         } catch {}
 
-        // Se não encontrou pendente, verifica se o membro tem comprovante no histórico
         if (!attachedReceiptURL && Array.isArray(member.receipts)) {
           const inProfile = member.receipts.find((r: any) => r.referenceMonth === monthKey);
           if (inProfile?.imageUrl) {
@@ -86,7 +90,6 @@ export default function DetailedFinancialReport() {
           }
         }
 
-        // Registra o pagamento na coleção 'payments' com o mês de referência explícito
         await addDoc(collection(db, 'payments'), {
           userId: member.uid || member.id,
           memberName: member.displayName || member.name || 'Participante',
@@ -105,19 +108,19 @@ export default function DetailedFinancialReport() {
             newStatus: 'Pago',
             note: `Status alterado no Extrato Financeiro por ${currentUserEmail} para o mês ${monthKey}`
           }]
+        }).catch((e) => {
+          console.warn('Erro ao salvar pagamento em payments:', e);
         });
 
         addToast(`Pagamento de ${monthKey} registrado para ${formatFirstAndLastName(member.displayName || member.email)}!`, 'success');
       } else {
-        // Remove o pagamento do mês selecionado
         const paymentToDelete = payments.find(p => (p.userId === member.id || p.userId === member.uid) && p.month === monthKey);
         if (paymentToDelete) {
-          await deleteDoc(doc(db, 'payments', paymentToDelete.id));
+          await deleteDoc(doc(db, 'payments', paymentToDelete.id)).catch(() => {});
           addToast(`Pagamento de ${monthKey} removido.`, 'info');
         }
       }
 
-      // Sincroniza o status global do participante de forma resiliente em ambas coleções ('users' e 'members')
       const updatePayload: any = {
         paymentStatus: newStatus
       };
@@ -130,18 +133,14 @@ export default function DetailedFinancialReport() {
       const primaryCol = member.collectionName || (member.uid ? 'users' : 'members');
       const secondaryCol = primaryCol === 'users' ? 'members' : 'users';
 
-      // Atualiza de forma segura via setDoc com merge para nunca falhar com erro NOT_FOUND
-      const docId = member.id || member.uid;
-      if (docId) {
-        await setDoc(doc(db, primaryCol, docId), updatePayload, { merge: true }).catch(() => {});
-        if (member.uid && member.uid !== docId) {
-          await setDoc(doc(db, primaryCol, member.uid), updatePayload, { merge: true }).catch(() => {});
-        }
-        await setDoc(doc(db, secondaryCol, docId), updatePayload, { merge: true }).catch(() => {});
+      await setDoc(doc(db, primaryCol, memberId), updatePayload, { merge: true }).catch(() => {});
+      if (member.uid && member.uid !== memberId) {
+        await setDoc(doc(db, primaryCol, member.uid), updatePayload, { merge: true }).catch(() => {});
       }
-      
+      await setDoc(doc(db, secondaryCol, memberId), updatePayload, { merge: true }).catch(() => {});
+
     } catch (err) {
-      console.error('Erro ao atualizar status:', err);
+      console.error('Erro ao atualizar status do pagamento:', err);
       if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
         addToast('Limite de cota atingido no banco.', 'error');
