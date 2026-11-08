@@ -1601,6 +1601,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Timeout de segurança absoluto: garante que em até 1.5 segundo a tela branca some e o app exiba o conteúdo
+    const safetyTimer = setTimeout(() => {
+      if (loading) {
+        console.warn('[Safety] Forçando liberação do loading para evitar tela branca.');
+        setLoading(false);
+      }
+    }, 1500);
+
     let unsubUserRealtime = () => {};
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -1621,6 +1629,18 @@ export default function App() {
           return;
         }
 
+        // Tenta carregar do cache local imediatamente para evitar qualquer piscar branco
+        try {
+          const cachedUser = localStorage.getItem('bolao_cache_user_data');
+          if (cachedUser) {
+            const parsed = JSON.parse(cachedUser);
+            if (parsed) {
+              setUserData(parsed);
+              setLoading(false);
+            }
+          }
+        } catch {}
+
         const userDocRef = doc(db, 'users', currentUser.uid);
         const memberDocRef = doc(db, 'members', currentUser.uid);
 
@@ -1631,30 +1651,20 @@ export default function App() {
             setUserData(uData);
             try {
               localStorage.setItem('bolao_cache_user_data', JSON.stringify(uData));
-            } catch (cacheErr) {
-              console.warn('Failed to cache user data:', cacheErr);
-            }
+            } catch {}
             setLoading(false);
           } else {
             // Se não existe na coleção 'users', verifica 'members'
             try {
               const memberSnap = await getDoc(memberDocRef);
               if (memberSnap.exists()) {
-                // Se existe em 'members', escuta mudanças em tempo real lá
-                unsubUserRealtime = onSnapshot(memberDocRef, (memSnap) => {
-                  if (memSnap.exists()) {
-                    const mData = memSnap.data();
-                    setUserData(mData);
-                    try {
-                      localStorage.setItem('bolao_cache_user_data', JSON.stringify(mData));
-                    } catch (cacheErr) {
-                      console.warn('Failed to cache member data:', cacheErr);
-                    }
-                  }
-                  setLoading(false);
-                });
+                const mData = memberSnap.data();
+                setUserData(mData);
+                try {
+                  localStorage.setItem('bolao_cache_user_data', JSON.stringify(mData));
+                } catch {}
+                setLoading(false);
               } else {
-                // Novo usuário via Google: cadastra com approved = false (exceto admin clodas)
                 const isAdminEmail = currentUser.email === 'clodas12345@gmail.com';
                 const defaultData = {
                   uid: currentUser.uid,
@@ -1664,13 +1674,11 @@ export default function App() {
                   approved: isAdminEmail ? true : false,
                   createdAt: new Date().toISOString()
                 };
-                await setDoc(userDocRef, defaultData);
+                await setDoc(userDocRef, defaultData).catch(() => {});
                 setUserData(defaultData);
                 try {
                   localStorage.setItem('bolao_cache_user_data', JSON.stringify(defaultData));
-                } catch (cacheErr) {
-                  console.warn('Failed to cache default user data:', cacheErr);
-                }
+                } catch {}
                 setLoading(false);
               }
             } catch (err) {
@@ -1679,23 +1687,18 @@ export default function App() {
             }
           }
         }, async (snapErr) => {
-          console.warn('Erro no listener em tempo real, usando fallback de getDoc:', snapErr);
-          // Fallback silencioso via getDoc em caso de erro de regras/permissões iniciais
+          console.warn('Erro no listener em tempo real:', snapErr);
           try {
             const userSnap = await getDoc(userDocRef);
             if (userSnap.exists()) {
-              const uData = userSnap.data();
-              setUserData(uData);
+              setUserData(userSnap.data());
             } else {
               const memberSnap = await getDoc(memberDocRef);
               if (memberSnap.exists()) {
-                const mData = memberSnap.data();
-                setUserData(mData);
+                setUserData(memberSnap.data());
               }
             }
-          } catch (fbErr) {
-            console.error('Fallback fetch user error:', fbErr);
-          }
+          } catch {}
           setLoading(false);
         });
       } else {
@@ -1705,6 +1708,7 @@ export default function App() {
     });
 
     return () => {
+      clearTimeout(safetyTimer);
       unsubscribe();
       unsubUserRealtime();
     };
