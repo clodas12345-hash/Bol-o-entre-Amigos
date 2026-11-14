@@ -14,7 +14,7 @@ import {
   getPendingNativeAlarms
 } from '../lib/notifications';
 import { runAutoPrizeCheck } from '../lib/autoNotificationService';
-import { isDrawDay, getNextDrawDate, formatDateBR, getDayNameBR } from '../lib/drawCalendar';
+import { isDrawDay, getNextDrawDate, formatDateBR, getDayNameBR, getDrawHourForDate, getDrawTimeTextForDate, getGoogleCalendarByDay } from '../lib/drawCalendar';
 
 interface AlertPreferences {
   pushEnabled: boolean;
@@ -140,57 +140,62 @@ export default function DrawAlertsConfig() {
     loadUserPreferences();
   }, [currentUser]);
 
-  // Calcula tempo para o próximo sorteio da Lotofácil/Mega-Sena (pulando domingos e feriados nacionais)
+  // Calcula tempo para o próximo sorteio da Lotofácil/Mega-Sena (Domingos 11h, Seg-Sex 21h, sem sábado e sem feriados)
   useEffect(() => {
     const calculateNextDraw = () => {
       const now = new Date();
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
+      const lotteryType = isMegaSena ? 'megasena' : 'lotofacil';
+      const lotLabel = isMegaSena ? 'Mega-Sena' : 'Lotofácil';
+
+      const todayDrawCheck = isDrawDay(now, lotteryType);
+      const todayDrawHour = getDrawHourForDate(now);
+      const todayTimeText = getDrawTimeTextForDate(now);
 
       let targetDate = new Date(now);
-      targetDate.setHours(20, 0, 0, 0);
+      targetDate.setHours(todayDrawHour, 0, 0, 0);
 
-      const todayDrawCheck = isDrawDay(now, isMegaSena ? 'megasena' : 'lotofacil');
-      const isBeforeDrawTime = currentHour < 20;
-      const isDuringDraw = currentHour === 20 && currentMinute <= 45;
+      const isBeforeDrawTime = currentHour < todayDrawHour;
+      const isDuringDraw = currentHour === todayDrawHour && currentMinute <= 45;
 
       let isToday = false;
       let statusBadge = 'Próximo';
 
       if (todayDrawCheck.isDraw && isBeforeDrawTime) {
-        // Sorteio acontece hoje às 20h
         isToday = true;
-        statusBadge = 'Hoje às 20h00';
+        statusBadge = `Hoje às ${todayTimeText}`;
       } else if (todayDrawCheck.isDraw && isDuringDraw) {
         isToday = true;
         statusBadge = 'Sorteio em Andamento!';
         setNextDrawInfo({
-          text: 'Sorteio da Lotofácil em apuração pela Caixa!',
+          text: `Sorteio da ${lotLabel} em apuração pela Caixa!`,
           isToday: true,
-          timeLeft: 'Acontecendo agora às 20h00',
+          timeLeft: `Acontecendo agora (${todayTimeText})`,
           statusBadge
         });
         return;
       } else {
         const nextDraw = getNextDrawDate(
-          todayDrawCheck.isDraw && !isBeforeDrawTime 
+          todayDrawCheck.isDraw && !isBeforeDrawTime
             ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-            : now, 
-          isMegaSena ? 'megasena' : 'lotofacil'
+            : now,
+          lotteryType
         );
         targetDate = new Date(nextDraw.date);
-        targetDate.setHours(20, 0, 0, 0);
+        targetDate.setHours(getDrawHourForDate(targetDate), 0, 0, 0);
         statusBadge = `${getDayNameBR(targetDate)}, ${formatDateBR(targetDate)}`;
       }
 
+      const targetTimeText = getDrawTimeTextForDate(targetDate);
       const diffMs = targetDate.getTime() - now.getTime();
       const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
       const totalMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
       setNextDrawInfo({
         text: isToday
-          ? 'Hoje às 20h00 (Sorteio Oficial Caixa)'
-          : `${getDayNameBR(targetDate)}, ${formatDateBR(targetDate)} às 20h00`,
+          ? `Hoje às ${targetTimeText} (Sorteio Oficial Caixa)`
+          : `${getDayNameBR(targetDate)}, ${formatDateBR(targetDate)} às ${targetTimeText}`,
         isToday,
         timeLeft: totalHours > 0 ? `Faltam ${totalHours}h ${totalMinutes}m` : `Faltam ${totalMinutes}m`,
         statusBadge
@@ -247,7 +252,9 @@ export default function DrawAlertsConfig() {
   };
 
   const handleTestNotification = async () => {
-    await sendAppNotification('🍀 Lotofácil: Sorteio das 20h00!', {
+    const lotLabel = isMegaSena ? 'Mega-Sena' : 'Lotofácil';
+    const timeText = getDrawTimeTextForDate(new Date());
+    await sendAppNotification(`🍀 ${lotLabel}: Sorteio das ${timeText}!`, {
       body: 'O sorteio oficial está começando. Abra o aplicativo para conferir as dezenas premiadas!',
       id: Math.floor(Math.random() * 100000) + 1
     });
@@ -275,25 +282,26 @@ export default function DrawAlertsConfig() {
     }
   };
 
-  // 1-Clique: Adicionar ao Google Agenda com recorrência de Segunda a Sábado às 20h00
+  // 1-Clique: Adicionar ao Google Agenda com recorrência oficial Caixa
   const handleAddToGoogleCalendar = () => {
-    // Formato UTC: 20:00 Horário de Brasília (BRT / UTC-3) corresponde às 23:00 UTC
-    // Cria data base para o próximo sorteio
-    const baseDate = new Date();
-    const year = baseDate.getFullYear();
-    const month = String(baseDate.getMonth() + 1).padStart(2, '0');
-    const day = String(baseDate.getDate()).padStart(2, '0');
+    const lotteryType = isMegaSena ? 'megasena' : 'lotofacil';
+    const lotLabel = isMegaSena ? 'Mega-Sena' : 'Lotofácil';
+    const nextDraw = getNextDrawDate(new Date(), lotteryType);
+    const drawHour = getDrawHourForDate(nextDraw.date);
+    const year = nextDraw.date.getFullYear();
+    const month = String(nextDraw.date.getMonth() + 1).padStart(2, '0');
+    const day = String(nextDraw.date.getDate()).padStart(2, '0');
+    const startH = String(drawHour).padStart(2, '0');
 
-    const title = encodeURIComponent('🍀 Sorteio Oficial Lotofácil - Conferir Bolão');
+    const title = encodeURIComponent(`🍀 Sorteio Oficial ${lotLabel} - Conferir Bolão`);
     const details = encodeURIComponent(
-      'Horário do sorteio oficial da Lotofácil (Caixa Econômica Federal)!\n\nAbra o aplicativo do bolão para conferir seus bilhetes, pontos e premiações apuradas.'
+      `Horário oficial do sorteio da ${lotLabel} (Caixa Econômica Federal): ${isMegaSena ? 'Terças e Quintas às 21h; Domingos às 11h' : 'Segunda a Sexta às 21h; Domingos às 11h'}!\n\nAbra o aplicativo do bolão para conferir seus bilhetes, pontos e premiações apuradas.`
     );
-    const location = encodeURIComponent('Bolão Lotofácil Gestor');
-    // 20:00 às 20:30 BRT
-    const dates = `${year}${month}${day}T230000Z/${year}${month}${day}T233000Z`;
-    const recur = encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR');
+    const location = encodeURIComponent('Bolão Amigos');
+    const dates = `${year}${month}${day}T${startH}0000/${year}${month}${day}T${startH}3000`;
+    const recur = encodeURIComponent(`RRULE:FREQ=WEEKLY;BYDAY=${getGoogleCalendarByDay(lotteryType)}`);
 
-    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}&recur=${recur}`;
+    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&ctz=America%2FSao_Paulo&details=${details}&location=${location}&recur=${recur}`;
 
     window.open(googleCalendarUrl, '_blank', 'noopener,noreferrer');
     addToast('Abrindo Google Agenda com evento recorrente...', 'info');
@@ -301,31 +309,40 @@ export default function DrawAlertsConfig() {
 
   // Download de Arquivo .ICS (Compatível com iPhone/Apple Calendar, Android, Outlook e Mac)
   const handleDownloadIcsFile = async () => {
+    const lotteryType = isMegaSena ? 'megasena' : 'lotofacil';
+    const lotLabel = isMegaSena ? 'Mega-Sena' : 'Lotofácil';
+    const nextDraw = getNextDrawDate(new Date(), lotteryType);
+    const drawHour = getDrawHourForDate(nextDraw.date);
+    const year = nextDraw.date.getFullYear();
+    const month = String(nextDraw.date.getMonth() + 1).padStart(2, '0');
+    const day = String(nextDraw.date.getDate()).padStart(2, '0');
+    const startH = String(drawHour).padStart(2, '0');
+
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Bolao Lotofacil Gestor//Alertas de Sorteio//PT-BR',
+      'PRODID:-//Bolao Amigos//Alertas de Sorteio//PT-BR',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      `UID:lotofacil-draw-${Date.now()}@bolao.lotofacil`,
-      'SUMMARY:🍀 Sorteio Oficial Lotofácil - Conferir Bolão',
-      'DESCRIPTION:Horário oficial do sorteio da Lotofácil (Caixa). Acesse o app do bolão para conferir os acertos e prêmios!',
-      'LOCATION:Bolão Lotofácil Gestor',
-      'RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR',
-      'DTSTART:20260101T230000Z',
-      'DTEND:20260101T233000Z',
+      `UID:${lotteryType}-draw-${Date.now()}@bolao.amigos`,
+      `SUMMARY:🍀 Sorteio Oficial ${lotLabel} - Conferir Bolão`,
+      `DESCRIPTION:Horário oficial do sorteio da ${lotLabel} (Caixa: Seg-Sex 21h / Dom 11h). Acesse o app do bolão para conferir os acertos e prêmios!`,
+      'LOCATION:Bolão Amigos',
+      `RRULE:FREQ=WEEKLY;BYDAY=${getGoogleCalendarByDay(lotteryType)}`,
+      `DTSTART;TZID=America/Sao_Paulo:${year}${month}${day}T${startH}0000`,
+      `DTEND;TZID=America/Sao_Paulo:${year}${month}${day}T${startH}3000`,
       'BEGIN:VALARM',
       'TRIGGER:-PT15M',
       'ACTION:DISPLAY',
-      'DESCRIPTION:Faltam 15 minutos para o sorteio da Lotofácil! Prepare-se para conferir.',
+      `DESCRIPTION:Faltam 15 minutos para o sorteio da ${lotLabel}! Prepare-se para conferir.`,
       'END:VALARM',
       'END:VEVENT',
       'END:VCALENDAR'
     ].join('\r\n');
 
     await downloadOrShareFile({
-      fileName: 'sorteios_lotofacil_lembrete.ics',
+      fileName: `sorteios_${lotteryType}_lembrete.ics`,
       content: icsContent,
       mimeType: 'text/calendar;charset=utf-8'
     });
@@ -335,9 +352,16 @@ export default function DrawAlertsConfig() {
 
   // Compartilhar lembrete rápido para o grupo no WhatsApp
   const handleShareWhatsAppReminder = () => {
+    const lotteryType = isMegaSena ? 'megasena' : 'lotofacil';
+    const lotLabel = isMegaSena ? 'MEGA-SENA' : 'LOTOFÁCIL';
+    const nextDraw = getNextDrawDate(new Date(), lotteryType);
+    const timeText = getDrawTimeTextForDate(nextDraw.date);
+    const todayCheck = isDrawDay(new Date(), lotteryType);
+    const whenLabel = todayCheck.isDraw ? 'hoje' : `${getDayNameBR(nextDraw.date)} (${nextDraw.dateFormatted})`;
+
     const text = encodeURIComponent(
-      `🍀 *LEMBRETE DO BOLÃO LOTOFÁCIL*\n\n` +
-      `⏰ Pessoal, hoje tem sorteio oficial às *20h00*!\n` +
+      `🍀 *LEMBRETE DO BOLÃO ${lotLabel}*\n\n` +
+      `⏰ Pessoal, o próximo sorteio oficial é ${whenLabel} a partir das *${timeText}*!\n` +
       `Fiquem atentos para conferir as dezenas e acertos do nosso bolão assim que sair o resultado.\n\n` +
       `👉 Acesse o app para acompanhar!`
     );
@@ -405,7 +429,7 @@ export default function DrawAlertsConfig() {
                 onClick={handleManualAutoCheck}
                 disabled={isCheckingNow}
                 className="bg-emerald-500/80 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-2 rounded-xl transition border border-emerald-400/40 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                title="Sincroniza os alarmes nativos (20h35/21h05) e confere o jogo do dia agora"
+                title="Sincroniza os alarmes nativos (21h dias úteis / 11h domingos) e confere o jogo do dia agora"
               >
                 <span>⚡</span> {isCheckingNow ? 'Conferindo...' : 'Conferir Jogo do Dia'}
               </button>
@@ -440,7 +464,7 @@ export default function DrawAlertsConfig() {
                 )}
               </div>
               <p className="text-[11px] text-blue-100/90 leading-relaxed">
-                Os alarmes das <strong>19h30, 20h00, 20h35, 21h05 e 21h55</strong> ficam gravados no sistema Android (<code className="text-amber-300">setExactAndAllowWhileIdle</code>) e rodam mesmo com o app 100% fechado, conferindo os jogos do dia às <strong>21h55</strong> e parabenizando todos os membros se houver prêmio!
+                Os alarmes oficiais (<strong>Seg–Sex às 20h30, 21h00, 21h35, 21h55 e 22h15</strong>; e <strong>Domingos às 10h30, 11h00, 11h35, 12h05 e 12h35</strong>) ficam gravados no sistema Android (<code className="text-amber-300">setExactAndAllowWhileIdle</code>) e rodam mesmo com o app 100% fechado!
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
@@ -504,7 +528,7 @@ export default function DrawAlertsConfig() {
                 <span className="flex items-center gap-2">
                   <span>⏳</span>
                   <span>
-                    <strong>19h30</strong> — Pré-Sorteio (Faltam 30 min)
+                    <strong>20h30 (Seg–Sex) / 10h30 (Dom)</strong> — Pré-Sorteio (Faltam 30 min)
                   </span>
                 </span>
                 <input
@@ -519,7 +543,7 @@ export default function DrawAlertsConfig() {
                 <span className="flex items-center gap-2">
                   <span>🎯</span>
                   <span>
-                    <strong>20h00</strong> — Hora Exata do Sorteio
+                    <strong>21h00 (Seg–Sex) / 11h00 (Dom)</strong> — Hora do Sorteio Caixa
                   </span>
                 </span>
                 <input
@@ -534,7 +558,7 @@ export default function DrawAlertsConfig() {
                 <span className="flex items-center gap-2">
                   <span>🏆</span>
                   <span>
-                    <strong>20h35</strong> — Apuração & Conferência dos Jogos
+                    <strong>21h35 (Seg–Sex) / 11h35 (Dom)</strong> — Apuração & Conferência
                   </span>
                 </span>
                 <input
@@ -549,7 +573,7 @@ export default function DrawAlertsConfig() {
                 <span className="flex items-center gap-2">
                   <span>🎉</span>
                   <span>
-                    <strong>21h55</strong> — Conferência Automática Diária & Alerta de Prêmio (Funciona c/ App Fechado)
+                    <strong>Conferência Automática Final & Alerta de Prêmio</strong> (Funciona c/ App Fechado)
                   </span>
                 </span>
                 <input

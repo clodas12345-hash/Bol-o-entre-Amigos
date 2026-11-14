@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, addDoc, collection, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { useToast } from './NotificationManager';
-import { formatFirstAndLastName } from '../lib/formatters';
+import { formatFirstAndLastName, normalizeBrazilianPhoneDigits } from '../lib/formatters';
+import { useData } from '../lib/DataContext';
+import PaymentThankYouWhatsAppModal, { PaymentThankYouPayload } from './PaymentThankYouWhatsAppModal';
 
 export interface AuditHistoryEntry {
   id?: string;
@@ -49,12 +51,14 @@ export default function PaymentDetailsModal({
   onStatusUpdated
 }: PaymentDetailsModalProps) {
   const { addToast } = useToast();
+  const { payments, members } = useData();
   const [isUpdating, setIsUpdating] = useState(false);
   const [newStatusInput, setNewStatusInput] = useState<string>(
     payment.status || payment.paymentStatus || 'Pendente'
   );
   const [adminNote, setAdminNote] = useState('');
   const [showEnlargedImage, setShowEnlargedImage] = useState(false);
+  const [thankYouModalData, setThankYouModalData] = useState<PaymentThankYouPayload | null>(null);
 
   const currentStatus = payment.status || payment.paymentStatus || 'Pendente';
   const displayName = payment.memberName || payment.name || 'Participante';
@@ -142,8 +146,13 @@ export default function PaymentDetailsModal({
         note: adminNote.trim() || `Status alterado de "${currentStatus}" para "${newStatusInput}" via tela de detalhes`
       };
 
-      // 1. Atualiza o documento principal do pagamento
-      if (payment.id) {
+      const nowDate = new Date();
+      const currentMonthStr = `${String(nowDate.getMonth() + 1).padStart(2, '0')}/${nowDate.getFullYear()}`;
+      const isConfirmedPaid = (newStatusInput === 'validado' || newStatusInput === 'Pago' || newStatusInput === 'approved');
+      const isSyntheticPayment = !payment.id || payment.id.startsWith('payment_');
+
+      // 1. Atualiza o documento principal do pagamento (ou cria se for registro sintético sem doc no banco)
+      if (!isSyntheticPayment) {
         await updateDoc(doc(db, collectionTarget, payment.id), {
           status: newStatusInput,
           paymentStatus: newStatusInput,
@@ -151,31 +160,66 @@ export default function PaymentDetailsModal({
           validatedAt: serverTimestamp(),
           homologatedBy: currentUserEmail,
           history: arrayUnion(newAuditEntry)
-        }).catch(() => {});
+        });
+      } else if (isConfirmedPaid) {
+        await addDoc(collection(db, 'payments'), {
+          userId: payment.userId || payment.memberId || '',
+          memberName: displayName,
+          phone: payment.phone || '',
+          amount: Number(payment.amount || payment.value || 20),
+          month: payment.month || currentMonthStr,
+          status: newStatusInput,
+          validatedDate: todayStr,
+          createdAt: serverTimestamp(),
+          homologatedBy: currentUserEmail,
+          history: [newAuditEntry]
+        });
       }
 
       // 2. Se houver membro associado, atualiza também o status do membro
       const memberDocId = payment.memberId || payment.userId;
       if (memberDocId) {
-        const memberStatus = (newStatusInput === 'validado' || newStatusInput === 'Pago' || newStatusInput === 'approved')
-          ? 'Pago'
-          : 'Pendente';
+        const memberStatus = isConfirmedPaid ? 'Pago' : 'Pendente';
 
         await updateDoc(doc(db, 'members', memberDocId), {
           paymentStatus: memberStatus,
-          lastPaymentDate: todayStr
+          lastPaymentDate: todayStr,
+          ...(isConfirmedPaid ? { lastPaidMonth: payment.month || currentMonthStr } : {})
         }).catch(() => {});
 
         await updateDoc(doc(db, 'users', memberDocId), {
           paymentStatus: memberStatus,
-          lastPaymentDate: todayStr
+          lastPaymentDate: todayStr,
+          ...(isConfirmedPaid ? { lastPaidMonth: payment.month || currentMonthStr } : {})
         }).catch(() => {});
       }
 
       addToast(`Status do pagamento alterado para "${newStatusInput}" com sucesso!`, 'success');
       setAdminNote('');
-      onStatusUpdated?.();
-      onClose();
+
+      if (isConfirmedPaid) {
+        const cleanPhone = normalizeBrazilianPhoneDigits(payment.phone || '');
+        const matchedMember = members.find(m =>
+          (memberDocId && (m.id === memberDocId || m.uid === memberDocId)) ||
+          (cleanPhone && normalizeBrazilianPhoneDigits(m.phone || '') === cleanPhone)
+        );
+        const resolvedMember = matchedMember || {
+          id: memberDocId || payment.id,
+          displayName,
+          phone: payment.phone || '',
+          quotas: 1
+        };
+        const quotas = Number(resolvedMember.quotas) > 0 ? Number(resolvedMember.quotas) : 1;
+        setThankYouModalData({
+          member: resolvedMember,
+          confirmedMonth: payment.month || currentMonthStr,
+          quotas,
+          amount: Number(payment.amount || payment.value) || quotas * 20.0
+        });
+      } else {
+        onStatusUpdated?.();
+        onClose();
+      }
     } catch (err) {
       console.error('Erro ao atualizar histórico de status:', err);
       addToast('Erro ao atualizar status do pagamento.', 'error');
@@ -200,6 +244,15 @@ export default function PaymentDetailsModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <PaymentThankYouWhatsAppModal
+        data={thankYouModalData}
+        payments={payments}
+        onClose={() => {
+          setThankYouModalData(null);
+          onStatusUpdated?.();
+          onClose();
+        }}
+      />
       {/* Modal principal de Detalhes */}
       <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-gray-100 my-4 overflow-hidden flex flex-col max-h-[92vh]">
         
@@ -397,7 +450,7 @@ export default function PaymentDetailsModal({
 
       {/* Modal de Imagem Expandida */}
       {showEnlargedImage && receiptImg && (
-        <div className="fixed inset-0 z-60 bg-black/85 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-4">
           <div className="bg-white p-4 rounded-2xl max-w-lg w-full flex flex-col shadow-2xl">
             <div className="flex justify-between items-center mb-2 pb-2 border-b">
               <span className="font-bold text-gray-800 text-xs">Comprovante PIX de {displayName}</span>

@@ -8,6 +8,8 @@ import { useResponsiveLayout } from '../lib/formatters';
 import { useData } from '../lib/DataContext';
 import { extractContestNumber, parseDateSafely } from './GameHistory';
 import { useToast } from './NotificationManager';
+import PaymentThankYouWhatsAppModal, { PaymentThankYouPayload } from './PaymentThankYouWhatsAppModal';
+import ScheduledPixManager from './ScheduledPixManager';
 
 export const evaluateGamePrize = (game: any, savedResultsList: any[] = []): number => {
   const contestNumber = extractContestNumber(game.contestNumber || game.contest);
@@ -36,6 +38,7 @@ export default function FinancialDashboard() {
   const { addToast } = useToast();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [viewScope, setViewScope] = useState<'current_month' | 'all_time'>('current_month');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'scheduled_pix'>('overview');
   
   const {
     payments,
@@ -49,6 +52,7 @@ export default function FinancialDashboard() {
   const [last24HoursPendingCount, setLast24HoursPendingCount] = useState<number>(0);
   const [pendingItems, setPendingItems] = useState<any[]>([]);
   const [isQuickValidating, setIsQuickValidating] = useState<boolean>(false);
+  const [thankYouQueue, setThankYouQueue] = useState<PaymentThankYouPayload[]>([]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'pending_receipts'), (snap) => {
@@ -123,7 +127,9 @@ export default function FinancialDashboard() {
         // 2. Record payment in payments collection with audit history
         await addDoc(collection(db, 'payments'), {
           memberId: item.memberId || item.userId || '',
+          userId: item.userId || item.memberId || '',
           memberName: item.memberName || item.userName || item.name || 'Membro',
+          phone: item.phone || '',
           amount: Number(item.amount || item.value || 20.00),
           month: item.month || monthStr,
           status: 'validado',
@@ -154,6 +160,29 @@ export default function FinancialDashboard() {
         : `⚡ ${itemsToProcess.length} pagamentos validados com sucesso para hoje (${todayStr})!`;
       
       addToast?.(msg, 'success');
+
+      const queuedPayloads: PaymentThankYouPayload[] = itemsToProcess.map(item => {
+        const targetId = item.memberId || item.userId;
+        const matchedMember = members.find(
+          m => m.id === targetId || m.uid === targetId || (item.phone && m.phone === item.phone)
+        );
+        const memberObj = matchedMember || {
+          id: targetId || item.phone,
+          displayName: item.memberName || item.userName || item.name || 'Membro',
+          phone: item.phone || '',
+          quotas: 1
+        };
+        const q = Number(memberObj.quotas) > 0 ? Number(memberObj.quotas) : 1;
+        return {
+          member: memberObj,
+          confirmedMonth: item.month || item.referenceMonth || monthStr,
+          quotas: q,
+          amount: Number(item.amount || item.value) || q * 20.0
+        };
+      });
+      if (queuedPayloads.length > 0) {
+        setThankYouQueue(queuedPayloads);
+      }
     } catch (err) {
       console.error('Erro na validação rápida:', err);
       addToast?.('Erro ao validar pagamento.', 'error');
@@ -241,10 +270,19 @@ export default function FinancialDashboard() {
     return processedGames.filter(g => g.monthStr === currentMonthStr);
   }, [processedGames, currentMonthStr]);
 
-  // Total de cotas dos membros marcados como "Pago" no mês atual
+  // Total de cotas dos membros ativos marcados como "Pago" no mês atual
   const paidMembersTotal = useMemo(() => {
     return members
-      .filter(m => m.paymentStatus === 'Pago')
+      .filter(
+        m =>
+          m.paymentStatus === 'Pago' &&
+          m.rejected !== true &&
+          m.status !== 'recusado' &&
+          m.active !== false &&
+          m.archived !== true &&
+          m.status !== 'inativo' &&
+          m.approved !== false
+      )
       .reduce((sum, m) => {
         const q = Number(m.quotas) > 0 ? Number(m.quotas) : 1;
         return sum + (q * 20.00);
@@ -378,7 +416,44 @@ export default function FinancialDashboard() {
   }, [payments, processedGames]);
 
   return (
-    <div className="p-4 sm:p-5 bg-white">
+    <div className="p-4 sm:p-5 bg-white space-y-4">
+      <PaymentThankYouWhatsAppModal
+        data={thankYouQueue[0] || null}
+        payments={payments}
+        onClose={() => setThankYouQueue(prev => prev.slice(1))}
+      />
+
+      {/* Abas Superiores do Painel Financeiro */}
+      <div className="flex bg-gray-100 p-1.5 rounded-xl gap-2 text-xs font-bold">
+        <button
+          type="button"
+          onClick={() => setDashboardTab('overview')}
+          className={`flex-1 py-2.5 px-4 rounded-lg transition cursor-pointer flex items-center justify-center gap-2 ${
+            dashboardTab === 'overview'
+              ? 'bg-purple-900 text-white shadow-xs font-black'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+          }`}
+        >
+          <span>📊</span> Visão Geral & Extrato
+        </button>
+        <button
+          type="button"
+          onClick={() => setDashboardTab('scheduled_pix')}
+          className={`flex-1 py-2.5 px-4 rounded-lg transition cursor-pointer flex items-center justify-center gap-2 ${
+            dashboardTab === 'scheduled_pix'
+              ? 'bg-teal-800 text-white shadow-xs font-black'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70'
+          }`}
+        >
+          <span>⏰</span> Gestão de Pix Agendados
+        </button>
+      </div>
+
+      {dashboardTab === 'scheduled_pix' ? (
+        <ScheduledPixManager />
+      ) : (
+        <div className="space-y-4">
+
       {pendingReceiptsCount > 0 && (
         <div className="mb-4 bg-gradient-to-r from-amber-500 via-orange-600 to-rose-600 text-white p-3.5 rounded-xl shadow-lg border-2 border-amber-200 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -583,7 +658,9 @@ export default function FinancialDashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </div>
       </div>
+    )}
     </div>
   );
 }

@@ -64,6 +64,11 @@
         "cost": { "type": "number" },
         "date": { "type": "string" },
         "receiptURL": { "type": "string" },
+        "receiptHash": { "type": "string" },
+        "receiptCompressedHash": { "type": "string" },
+        "receiptFileName": { "type": "string" },
+        "receiptTimestamp": { "type": "number" },
+        "processedAt": { "type": "number" },
         "createdAt": { "type": "string" }
       },
       "required": ["poolId", "numbers"]
@@ -187,6 +192,22 @@
         "key": { "type": "string" },
         "value": { "type": "string" }
       }
+    },
+    "ScheduledPix": {
+      "title": "Scheduled PIX Reminder",
+      "description": "Recurring or scheduled PIX reminders for members.",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "memberName": { "type": "string" },
+        "phone": { "type": "string" },
+        "amount": { "type": "number" },
+        "dayOfMonth": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "paused"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["memberId", "amount", "dayOfMonth", "status"]
     }
   },
   "firestore": {
@@ -203,6 +224,7 @@
     "/megasena_results/{resId}": { "schema": "MegaSenaResult", "description": "Mega-Sena history." },
     "/settings/{settingId}": { "schema": "Setting", "description": "System settings (PIX, chat, rules)." },
     "/bet_releases/{releaseId}": { "schema": "BetRelease", "description": "Admin releases for member bets." },
-    "/bet_submissions/{submissionId}": { "schema": "BetSubmission", "description": "Member bet submissions." }
+    "/bet_submissions/{submissionId}": { "schema": "BetSubmission", "description": "Member bet submissions." },
+    "/scheduled_pix/{pixId}": { "schema": "ScheduledPix", "description": "Scheduled PIX reminders." }
   }
 }

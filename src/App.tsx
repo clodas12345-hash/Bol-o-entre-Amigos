@@ -127,7 +127,11 @@ function BackgroundUploadStatus() {
           </span>
           <div className="flex flex-col items-start relative z-10">
             <span className="text-[10px] font-black uppercase tracking-wider text-white leading-none">
-              {isProcessing ? (batchStats.round > 1 ? `Reprocessando (${batchStats.round}ª tent.)...` : 'Enviando Apostas...') : 'Reprocessar Erros'}
+              {isProcessing
+                ? (batchStats.round > 1 ? `Reprocessando (${batchStats.round}ª tent.)...` : 'Enviando Apostas...')
+                : failedItems > 0
+                ? 'Reprocessar Erros'
+                : 'Comprovantes Duplicados'}
             </span>
             <span className="text-[10px] font-black mt-0.5 text-amber-300 leading-none">
               {completedItems} de {totalItems} salvos • Restam {queue.length}
@@ -147,7 +151,7 @@ function BackgroundUploadStatus() {
                   {isProcessing ? (
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping absolute inset-0" />
                   ) : null}
-                  <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : failedItems > 0 ? 'bg-red-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full relative z-10 ${isProcessing ? 'bg-amber-400' : failedItems > 0 ? 'bg-red-400' : duplicateItems > 0 ? 'bg-amber-400' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'}`} />
                 </div>
                 <div>
                   <span className="text-[11px] font-black uppercase tracking-wider block leading-none">
@@ -157,7 +161,9 @@ function BackgroundUploadStatus() {
                         : isCurrentlyAnalyzing
                         ? 'Analisando Bilhetes...'
                         : 'Subindo Apostas...'
-                      : 'Aguardando Reprocessamento'}
+                      : failedItems > 0
+                      ? 'Aguardando Reprocessamento'
+                      : 'Arquivo já processado'}
                   </span>
                   <span className="text-[10px] text-amber-300 font-black">
                     Concluídos: {completedItems} de {totalItems} ({overallProgressPercent}%) • Restam: {queue.length}

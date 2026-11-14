@@ -139,12 +139,31 @@ export function DataProvider({ children, userId }: { children: React.ReactNode; 
     let membersData: any[] = [];
 
     const updateCombined = () => {
-      const unificada = [...usersData];
+      const rejectedSet = new Set<string>();
+      if (isNativeApk) {
+        try {
+          const rawRej = localStorage.getItem('bolao_rejected_join_ids');
+          if (rawRej) {
+            const parsedRej = JSON.parse(rawRej);
+            if (Array.isArray(parsedRej)) {
+              parsedRej.forEach((id: any) => {
+                if (id) rejectedSet.add(String(id));
+              });
+            }
+          }
+        } catch {}
+      }
+
+      const rawCombined = [...usersData];
       membersData.forEach(m => {
-        if (!unificada.some(u => u.id === m.id || (m.email && u.email === m.email))) {
-          unificada.push(m);
+        if (!rawCombined.some(u => u.id === m.id || (m.email && u.email === m.email))) {
+          rawCombined.push(m);
         }
       });
+
+      const unificada = rawCombined.filter(
+        m => !rejectedSet.has(String(m.id)) && m.rejected !== true && m.status !== 'recusado'
+      );
 
       unificada.sort((a, b) => {
         const nameA = (a.displayName || a.name || a.email || '').trim();

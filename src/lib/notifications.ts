@@ -851,80 +851,101 @@ export async function scheduleUpcomingDrawAlerts(
         continue;
       }
 
-      // Alerta 1: 19h30 (30 minutos antes do sorteio)
-      const date1930 = new Date(drawDate);
-      date1930.setHours(19, 30, 0, 0);
+      const isSunday = drawDate.getDay() === 0;
 
-      // Alerta 2: 20h00 (Horário oficial do sorteio)
-      const date2000 = new Date(drawDate);
-      date2000.setHours(20, 0, 0, 0);
+      // Horários oficiais da Caixa: Domingo às 11h00 | Segunda a Sexta às 21h00
+      const preHour = isSunday ? 10 : 20;
+      const preLabel = isSunday ? '10h30' : '20h30';
 
-      // Alerta 3: 20h35 (1ª Conferência automática das dezenas sorteadas)
-      const date2035 = new Date(drawDate);
-      date2035.setHours(20, 35, 0, 0);
+      const drawHour = isSunday ? 11 : 21;
+      const drawLabel = isSunday ? '11h00' : '21h00';
 
-      // Alerta 4: 21h05 (2ª Conferência automática com rateio oficial da Caixa liberado)
-      const date2105 = new Date(drawDate);
-      date2105.setHours(21, 5, 0, 0);
+      const check1Hour = isSunday ? 11 : 21;
+      const check1Label = isSunday ? '11h35' : '21h35';
 
-      // Alerta 5: 21h55 (Conferência Automática Oficial dos Jogos do Dia e Premiações)
-      const date2155 = new Date(drawDate);
-      date2155.setHours(21, 55, 0, 0);
+      const check2Hour = isSunday ? 12 : 21;
+      const check2Minute = isSunday ? 5 : 55;
+      const check2Label = isSunday ? '12h05' : '21h55';
+
+      // Alerta 1: 30 minutos antes do sorteio
+      const datePre = new Date(drawDate);
+      datePre.setHours(preHour, 30, 0, 0);
+
+      // Alerta 2: Horário oficial do sorteio
+      const dateDraw = new Date(drawDate);
+      dateDraw.setHours(drawHour, 0, 0, 0);
+
+      // Alerta 3: 1ª Conferência automática das dezenas sorteadas
+      const dateCheck1 = new Date(drawDate);
+      dateCheck1.setHours(check1Hour, 35, 0, 0);
+
+      // Alerta 4: Rateio oficial / 2ª conferência
+      const dateCheck2 = new Date(drawDate);
+      dateCheck2.setHours(check2Hour, check2Minute, 0, 0);
+
+      // Alerta 5: Conferência definitiva de fechamento do concurso do dia (21h55 dias úteis / 12h35 domingo)
+      const dateFinal = new Date(drawDate);
+      if (isSunday) {
+        dateFinal.setHours(12, 35, 0, 0);
+      } else {
+        dateFinal.setHours(22, 15, 0, 0);
+      }
+      const finalLabel = isSunday ? '12h35' : '22h15';
 
       const baseId = (i + 1) * 10000;
       const lotName = lotteryType === 'megasena' ? 'Mega-Sena' : 'Lotofácil';
 
-      if (prefs.drawTimeAlerts !== false && prefs.notifyAt1930 !== false && date1930.getTime() > now.getTime()) {
+      if (prefs.drawTimeAlerts !== false && prefs.notifyAt1930 !== false && datePre.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `⏰ Faltam 30 minutos! (${lotName})`,
-          `O sorteio oficial da ${lotName} começa às 20h00. Verifique suas apostas no app!`,
-          date1930,
+          `O sorteio oficial da ${lotName} começa às ${drawLabel}. Verifique suas apostas no app!`,
+          datePre,
           baseId + 1930,
-          { autoCheckPrize: false, drawStage: '1930' }
+          { autoCheckPrize: false, drawStage: preLabel }
         );
         if (res) scheduledCount++;
       }
 
-      if (prefs.drawTimeAlerts !== false && prefs.notifyAt2000 !== false && date2000.getTime() > now.getTime()) {
+      if (prefs.drawTimeAlerts !== false && prefs.notifyAt2000 !== false && dateDraw.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `🍀 Sorteio Oficial da ${lotName}!`,
-          `O sorteio das 20h00 está começando agora!`,
-          date2000,
+          `O sorteio das ${drawLabel} está começando agora!`,
+          dateDraw,
           baseId + 2000,
-          { autoCheckPrize: true, drawStage: '2000' }
+          { autoCheckPrize: true, drawStage: drawLabel }
         );
         if (res) scheduledCount++;
       }
 
-      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2035 !== false && date2035.getTime() > now.getTime()) {
+      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2035 !== false && dateCheck1.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `🎉 Conferência do Jogo do Dia (${lotName})`,
-          `Resultado das 20h35 liberado! Toque para conferir automaticamente se o jogo de hoje foi premiado!`,
-          date2035,
+          `Resultado das ${check1Label} liberado! Toque para conferir automaticamente se o jogo de hoje foi premiado!`,
+          dateCheck1,
           baseId + 2035,
-          { autoCheckPrize: true, drawStage: '2035' }
+          { autoCheckPrize: true, drawStage: check1Label }
         );
         if (res) scheduledCount++;
       }
 
-      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2035 !== false && date2105.getTime() > now.getTime()) {
+      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2035 !== false && dateCheck2.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
           `🏆 Rateio Oficial Caixa (${lotName})`,
-          `Verificando premiação oficial do concurso de hoje! Toque para ver o resultado das apostas.`,
-          date2105,
+          `Conferência oficial das ${check2Label} em andamento! Toque para ver o resultado das apostas.`,
+          dateCheck2,
           baseId + 2105,
-          { autoCheckPrize: true, drawStage: '2105' }
+          { autoCheckPrize: true, drawStage: check2Label }
         );
         if (res) scheduledCount++;
       }
 
-      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2155 !== false && date2155.getTime() > now.getTime()) {
+      if (prefs.officialResultsAlerts !== false && prefs.notifyAt2155 !== false && dateFinal.getTime() > now.getTime()) {
         const res = await scheduleNativeNotificationAt(
-          `🔍 Conferência Automática das 21h55 (${lotName})`,
+          `🔍 Conferência Automática das ${finalLabel} (${lotName})`,
           `Conferindo todas as apostas do dia na Caixa! Caso haja aposta premiada, todos os membros receberão a parabenização do prêmio.`,
-          date2155,
+          dateFinal,
           baseId + 2155,
-          { autoCheckPrize: true, drawStage: '2155' }
+          { autoCheckPrize: true, drawStage: finalLabel }
         );
         if (res) scheduledCount++;
       }

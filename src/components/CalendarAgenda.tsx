@@ -13,9 +13,10 @@ export default function CalendarAgenda() {
   const [showModal, setShowModal] = useState(false);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
-  const [time, setTime] = useState('20:00');
+  const [time, setTime] = useState('21:00');
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   const { addToast } = useToast();
   const isAdmin = getIsAdmin();
@@ -66,9 +67,9 @@ export default function CalendarAgenda() {
   };
 
   const handleDeleteEvent = async (id: string) => {
-    if (!confirm('Deseja excluir este agendamento?')) return;
     try {
       await deleteDoc(doc(db, 'events', id));
+      setConfirmingDeleteId(null);
       addToast('Evento excluído.', 'info');
     } catch (err) {
       console.error(err);
@@ -236,7 +237,7 @@ export default function CalendarAgenda() {
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-gray-900 text-xs sm:text-sm">{ev.title}</span>
                     <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.2 rounded">
-                      {ev.date} às {ev.time || '20:00'}
+                      {ev.date} às {ev.time || '21:00'}
                     </span>
                   </div>
                   {ev.description && (
@@ -245,13 +246,33 @@ export default function CalendarAgenda() {
                 </div>
 
                 {isAdmin && (
-                  <button
-                    onClick={() => handleDeleteEvent(ev.id)}
-                    className="text-red-500 hover:text-red-700 text-xs font-semibold p-1.5 transition cursor-pointer"
-                    title="Excluir evento"
-                  >
-                    🗑️ Excluir
-                  </button>
+                  confirmingDeleteId === ev.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEvent(ev.id)}
+                        className="bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDeleteId(null)}
+                        className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-[11px] font-bold px-2 py-1 rounded-lg transition cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDeleteId(ev.id)}
+                      className="text-red-500 hover:text-red-700 text-xs font-semibold p-1.5 transition cursor-pointer"
+                      title="Excluir evento"
+                    >
+                      🗑️ Excluir
+                    </button>
+                  )
                 )}
               </div>
             ))

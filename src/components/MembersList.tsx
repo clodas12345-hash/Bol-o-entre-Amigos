@@ -11,6 +11,7 @@ import { Contacts } from '@capacitor-community/contacts';
 import { useData } from '../lib/DataContext';
 import { UserSearch } from 'lucide-react';
 import ReceiptsList from './ReceiptsList';
+import PaymentThankYouWhatsAppModal, { PaymentThankYouPayload } from './PaymentThankYouWhatsAppModal';
 
 // Helpers de persistência local para contornar problemas de limite de cota do Firestore
 const getLocalMembers = (): any[] => {
@@ -34,6 +35,22 @@ const saveLocalMember = (newMember: any) => {
   }
 };
 
+const getRejectedJoinIds = (): string[] => {
+  try {
+    const saved = localStorage.getItem('bolao_rejected_join_ids');
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistRejectedJoinIds = (ids: string[]) => {
+  try {
+    localStorage.setItem('bolao_rejected_join_ids', JSON.stringify(Array.from(new Set(ids))));
+  } catch {}
+};
+
 export default function MembersList() {
   const { setIsQuotaExceeded } = usePool();
   const { isMobile, compactTableClass } = useResponsiveLayout();
@@ -50,8 +67,9 @@ export default function MembersList() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { members: syncMembers } = useData();
+  const { members: syncMembers, payments } = useData();
   const [localMembers, setLocalMembersState] = useState<any[]>(getLocalMembers());
+  const [rejectedIds, setRejectedIds] = useState<string[]>(getRejectedJoinIds);
   
   const members = useMemo(() => {
     const combined = [...syncMembers];
@@ -61,11 +79,13 @@ export default function MembersList() {
         combined.push(loc);
       }
     });
-    return combined;
-  }, [syncMembers, localMembers]);
+    return combined.filter(m => !rejectedIds.includes(m.id) && m.rejected !== true && m.status !== 'recusado');
+  }, [syncMembers, localMembers, rejectedIds]);
 
   const fetchMembers = () => {
     setLocalMembersState(getLocalMembers());
+    setRejectedIds(getRejectedJoinIds());
+    window.dispatchEvent(new Event('bolao-members-updated'));
   };
 
   const [confirmation, setConfirmation] = useState<{ action: () => void, message: string } | null>(null);
@@ -75,6 +95,7 @@ export default function MembersList() {
     prevMonthStr: string;
     prevMonthKey: string;
   } | null>(null);
+  const [thankYouModalData, setThankYouModalData] = useState<PaymentThankYouPayload | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [memberFilterTab, setMemberFilterTab] = useState<'all' | 'pending' | 'approved' | 'unpaid' | 'receipts' | 'inactive'>('all');
@@ -304,6 +325,15 @@ export default function MembersList() {
         localStorage.setItem('bolao_local_members', JSON.stringify(updated));
         addToast(`Status de pagamento local alterado para "${newStatus}"`, 'info');
         fetchMembers();
+        if (newStatus === 'Pago') {
+          const fallbackMonth = monthRefStr || `${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
+          setThankYouModalData({
+            member,
+            confirmedMonth: fallbackMonth,
+            quotas,
+            amount: quotas * 20.0
+          });
+        }
       } catch (err) {
         addToast('Erro ao atualizar pagamento local.', 'error');
       }
@@ -323,6 +353,7 @@ export default function MembersList() {
         await addDoc(collection(db, 'payments'), {
           userId: member.uid || member.id,
           memberName: member.displayName || member.name || 'Participante',
+          phone: member.phone || '',
           amount: quotas * 20.0,
           month: monthRefStr,
           isLatePayment: isLatePreviousMonth,
@@ -368,6 +399,16 @@ export default function MembersList() {
         'success'
       );
       fetchMembers();
+
+      if (newStatus === 'Pago') {
+        const fallbackMonth = monthRefStr || `${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
+        setThankYouModalData({
+          member,
+          confirmedMonth: fallbackMonth,
+          quotas,
+          amount: quotas * 20.0
+        });
+      }
     } catch (err) {
       if (isQuotaError(err)) {
         setIsQuotaExceeded(true);
@@ -381,6 +422,18 @@ export default function MembersList() {
         localStorage.setItem('bolao_local_members', JSON.stringify(updated));
         addToast(`Status alterado localmente para "${newStatus}" devido ao limite de cota do servidor.`, 'info');
         fetchMembers();
+        if (newStatus === 'Pago') {
+          const fallbackMonth = monthRefStr || `${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
+          setThankYouModalData({
+            member,
+            confirmedMonth: fallbackMonth,
+            quotas,
+            amount: quotas * 20.0
+          });
+        }
+      } else {
+        console.error('Erro ao atualizar status de pagamento:', err);
+        addToast('Erro ao atualizar status de pagamento.', 'error');
       }
     }
   };
@@ -524,6 +577,83 @@ export default function MembersList() {
       fetchMembers();
     } catch (err) {
       addToast('Erro ao recusar solicitação de cotas.', 'error');
+    }
+  };
+
+  const rejectJoinRequest = async (member: any) => {
+    if (!isAdmin) {
+      addToast('Apenas administradores podem recusar solicitações.', 'error');
+      return;
+    }
+
+    const reqPhone = normalizeBrazilianPhoneDigits(member.phone || '');
+    const idsToReject = [member.id, member.userDocId, member.memberDocId].filter(Boolean).map(String);
+
+    // Remove imediatamente da lista local e persiste o bloqueio para sobreviver a recarregamentos
+    const nextRejectedIds = Array.from(new Set([...getRejectedJoinIds(), ...idsToReject]));
+    setRejectedIds(nextRejectedIds);
+    persistRejectedJoinIds(nextRejectedIds);
+
+    try {
+      const local = getLocalMembers();
+      const filteredLocal = local.filter(
+        m => !idsToReject.includes(String(m.id)) && !(reqPhone && normalizeBrazilianPhoneDigits(m.phone || '') === reqPhone)
+      );
+      localStorage.setItem('bolao_local_members', JSON.stringify(filteredLocal));
+
+      const cachedMembers = localStorage.getItem('bolao_cache_members');
+      if (cachedMembers) {
+        const parsedCache = JSON.parse(cachedMembers);
+        if (Array.isArray(parsedCache)) {
+          const filteredCache = parsedCache.filter((m: any) => !idsToReject.includes(String(m.id)));
+          localStorage.setItem('bolao_cache_members', JSON.stringify(filteredCache));
+        }
+      }
+    } catch {}
+
+    window.dispatchEvent(new Event('bolao-members-updated'));
+
+    if (member.isLocalOnly) {
+      addToast(`Solicitação de "${member.displayName || 'Participante'}" recusada e excluída!`, 'success');
+      fetchMembers();
+      return;
+    }
+
+    const primaryCol = member.collectionName || 'users';
+    const altCol = primaryCol === 'users' ? 'members' : 'users';
+
+    try {
+      await deleteDoc(doc(db, primaryCol, member.id));
+      if (member.userDocId && member.userDocId !== member.id) {
+        await deleteDoc(doc(db, 'users', member.userDocId)).catch(() => {});
+      }
+      if (member.memberDocId && member.memberDocId !== member.id) {
+        await deleteDoc(doc(db, 'members', member.memberDocId)).catch(() => {});
+      }
+      await deleteDoc(doc(db, altCol, member.id)).catch(() => {});
+      addToast(`Solicitação de "${member.displayName || 'Participante'}" recusada e removida com sucesso!`, 'success');
+      fetchMembers();
+    } catch (err) {
+      // Fallback caso deleteDoc falhe: marca explicitamente como recusado no Firestore
+      try {
+        await updateDoc(doc(db, primaryCol, member.id), {
+          approved: false,
+          rejected: true,
+          active: false,
+          status: 'recusado',
+          archived: true,
+          rejectedAt: serverTimestamp()
+        });
+        addToast(`Solicitação de "${member.displayName || 'Participante'}" recusada com sucesso!`, 'success');
+        fetchMembers();
+      } catch (fallbackErr) {
+        console.error('Erro ao recusar solicitação:', err, fallbackErr);
+        const revertedIds = getRejectedJoinIds().filter(id => !idsToReject.includes(id));
+        persistRejectedJoinIds(revertedIds);
+        setRejectedIds(revertedIds);
+        window.dispatchEvent(new Event('bolao-members-updated'));
+        addToast('Erro ao salvar recusa da solicitação.', 'error');
+      }
     }
   };
 
@@ -725,19 +855,47 @@ export default function MembersList() {
   const currentMonthStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
   const approvedMembers = useMemo(() => {
-    return sortedMembers.filter(m => m.approved !== false && isMemberActiveInMonth(m, currentMonthStr));
+    return sortedMembers.filter(
+      m =>
+        m.approved !== false &&
+        m.rejected !== true &&
+        m.status !== 'recusado' &&
+        isMemberActiveInMonth(m, currentMonthStr)
+    );
   }, [sortedMembers, currentMonthStr]);
 
   const inactiveMembers = useMemo(() => {
-    return sortedMembers.filter(m => m.approved !== false && !isMemberActiveInMonth(m, currentMonthStr));
+    return sortedMembers.filter(
+      m =>
+        m.approved !== false &&
+        m.rejected !== true &&
+        m.status !== 'recusado' &&
+        !isMemberActiveInMonth(m, currentMonthStr)
+    );
   }, [sortedMembers, currentMonthStr]);
 
   const pendingJoinRequests = useMemo(() => {
-    return sortedMembers.filter(m => m.approved === false);
+    return sortedMembers.filter(
+      m =>
+        m.approved === false &&
+        m.rejected !== true &&
+        m.active !== false &&
+        m.archived !== true &&
+        m.status !== 'inativo' &&
+        m.status !== 'recusado'
+    );
   }, [sortedMembers]);
 
   const pendingQuotaRequests = useMemo(() => {
-    return sortedMembers.filter(m => m.approved !== false && isMemberActiveInMonth(m, currentMonthStr) && m.quotaRequest && m.quotaRequest.status === 'Pendente');
+    return sortedMembers.filter(
+      m =>
+        m.approved !== false &&
+        m.rejected !== true &&
+        m.status !== 'recusado' &&
+        isMemberActiveInMonth(m, currentMonthStr) &&
+        m.quotaRequest &&
+        m.quotaRequest.status === 'Pendente'
+    );
   }, [sortedMembers, currentMonthStr]);
 
   const displayedMembers = useMemo(() => {
@@ -763,6 +921,11 @@ export default function MembersList() {
 
   return (
     <div className="bg-white p-3 sm:p-4 space-y-4 sm:space-y-6 rounded-2xl border border-gray-150 shadow-xs">
+      <PaymentThankYouWhatsAppModal
+        data={thankYouModalData}
+        payments={payments}
+        onClose={() => setThankYouModalData(null)}
+      />
 
       {confirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -1006,7 +1169,7 @@ export default function MembersList() {
                   <button
                     onClick={() => {
                       setConfirmation({
-                        action: () => deleteMember(req),
+                        action: () => rejectJoinRequest(req),
                         message: `Tem certeza que deseja recusar e excluir a solicitação de ${req.displayName}?`
                       });
                     }}

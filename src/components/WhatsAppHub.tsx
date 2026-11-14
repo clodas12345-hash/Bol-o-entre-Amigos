@@ -15,7 +15,8 @@ interface WhatsAppHubProps {
 }
 
 export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
-  const { setIsQuotaExceeded } = usePool();
+  const { activePool, setIsQuotaExceeded } = usePool();
+  const isMegaSena = activePool?.lotteryType === 'megasena';
   const [activeTemplate, setActiveTemplate] = useState<string>('pix_reminder');
   const [customMessage, setCustomMessage] = useState<string>('');
   const [members, setMembers] = useState<any[]>([]);
@@ -28,37 +29,58 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
   const { addToast } = useToast();
 
   useEffect(() => {
-    // Carrega todos os dados necessários uma vez
+    // Carrega todos os dados necessários para a modalidade ativa
     const loadAllData = async () => {
       try {
+        const resultCollection = isMegaSena ? 'megasena_results' : 'lotofacil_results';
         const [usersSnap, membersSnap, gamesSnap, resultSnap, pollSnap] = await Promise.all([
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'members')),
           getDocs(collection(db, 'games')),
-          getDocs(query(collection(db, 'lotofacil_results'), orderBy('createdAt', 'desc'), limit(1))),
+          getDocs(query(collection(db, resultCollection), orderBy('contest', 'desc'), limit(1))),
           getDocs(query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(1)))
         ]);
 
-        // Processa Membros
+        // Processa Membros válidos e ativos
         const uList: any[] = usersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
         const mList: any[] = membersSnap.docs.map(d => ({ id: d.id, quotas: 1, ...d.data() }));
         const combined = [...uList];
         for (const m of mList) {
-          if (!combined.some(u => u.id === m.id || (u.email && m.email && u.email === m.email))) {
+          const mPhone = normalizeBrazilianPhoneDigits(m.phone || '');
+          const exists = combined.some(u =>
+            u.id === m.id ||
+            (u.email && m.email && u.email.toLowerCase() === m.email.toLowerCase()) ||
+            (mPhone && normalizeBrazilianPhoneDigits(u.phone || '') === mPhone)
+          );
+          if (!exists) {
             combined.push(m);
           }
         }
+        const activeMembers = combined.filter(
+          m =>
+            m.rejected !== true &&
+            m.status !== 'recusado' &&
+            m.active !== false &&
+            m.archived !== true &&
+            m.status !== 'inativo' &&
+            m.approved !== false
+        );
         // Ordena a lista telefônica/membros em ordem alfabética crescente (A-Z)
-        combined.sort((a, b) => {
+        activeMembers.sort((a, b) => {
           const nameA = (a.displayName || a.name || '').trim();
           const nameB = (b.displayName || b.name || '').trim();
           return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
         });
-        setMembers(combined);
+        setMembers(activeMembers);
 
-        // Processa outros dados
-        setGames(gamesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        if (!resultSnap.empty) setLatestResult(resultSnap.docs[0].data());
+        // Processa jogos da modalidade atual
+        const allGames = gamesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const filteredGames = allGames.filter((g: any) => {
+          const gIsMega = g.lotteryType === 'megasena' || g.type === 'megasena';
+          return isMegaSena ? gIsMega : !gIsMega;
+        });
+        setGames(filteredGames);
+        setLatestResult(!resultSnap.empty ? resultSnap.docs[0].data() : null);
         if (!pollSnap.empty) setLatestPoll({ id: pollSnap.docs[0].id, ...pollSnap.docs[0].data() });
 
       } catch (e) {
@@ -69,7 +91,7 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
 
     loadAllData();
     // Removendo onSnapshots para economizar cota.
-  }, []);
+  }, [isMegaSena]);
 
   // Cálculos do Bolão
   const totalPaidMembers = members.filter(m => m.paymentStatus === 'Pago');
@@ -82,16 +104,23 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
 
   const prizeSummary = games.map(g => {
     const nums = Array.isArray(g.numbers) ? g.numbers.map((n: any) => Number(n)) : [];
-    return calculateGamePrize(nums, drawnNumbers, g.customPrize);
+    return calculateGamePrize(nums, drawnNumbers, g.customPrize, latestResult);
   });
 
   const totalPrize = prizeSummary.reduce((sum, p) => sum + p.prizeAmount, 0);
+  const hits4 = prizeSummary.filter(p => p.hits === 4).length;
+  const hits5 = prizeSummary.filter(p => p.hits === 5).length;
+  const hits6 = prizeSummary.filter(p => p.hits === 6).length;
   const hits11 = prizeSummary.filter(p => p.hits === 11).length;
   const hits12 = prizeSummary.filter(p => p.hits === 12).length;
   const hits13 = prizeSummary.filter(p => p.hits === 13).length;
   const hits14 = prizeSummary.filter(p => p.hits === 14).length;
   const hits15 = prizeSummary.filter(p => p.hits === 15).length;
   const prizePerQuota = totalPaidQuotas > 0 ? totalPrize / totalPaidQuotas : 0;
+
+  const contestNum = Number(latestResult?.contest ?? latestResult?.concurso) || null;
+  const lotteryName = isMegaSena ? 'Mega-Sena' : 'Lotofácil';
+  const lotteryUpper = isMegaSena ? 'MEGA-SENA' : 'LOTOFÁCIL';
 
   const currentMonth = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const appUrl = getAppPublicUrl();
@@ -103,9 +132,9 @@ export default function WhatsAppHub({ onClose }: WhatsAppHubProps) {
     switch (activeTemplate) {
       case 'visitor_invite':
         return `*CONVITE: BOLÃO ENTRE AMIGOS - VAGAS ABERTAS!*
-${latestResult?.concurso ? `*Concurso Alvo:* #${latestResult.concurso + 1}\n` : ''}*Referência:* ${currentMonth.toUpperCase()}
+${contestNum ? `*Concurso Alvo:* #${contestNum + 1}\n` : ''}*Referência:* ${currentMonth.toUpperCase()}
 
-Olá! Passando para convidar você para participar do nosso *Bolão entre Amigos* da Lotofácil.
+Olá! Passando para convidar você para participar do nosso *Bolão entre Amigos* da ${lotteryName}.
 
 - *Cotas acessíveis:* A partir de R$ 20,00 por cota
 - *Conferência 100% automática:* O sistema confere as dezenas em tempo real a cada sorteio da Caixa
@@ -115,7 +144,7 @@ Olá! Passando para convidar você para participar do nosso *Bolão entre Amigos
 ${visitorUrl}`;
 
       case 'pix_reminder':
-        return `🍀 *BOLÃO DA LOTOFÁCIL - LEMBRETE DE CONTRIBUIÇÃO* 🍀
+        return `🍀 *BOLÃO DA ${lotteryUpper} - LEMBRETE DE CONTRIBUIÇÃO* 🍀
 📅 *Mês de Referência:* ${currentMonth.toUpperCase()}
 
 Olá a todos do grupo! Passando para lembrar da contribuição deste mês para o nosso bolão.
@@ -124,17 +153,16 @@ Olá a todos do grupo! Passando para lembrar da contribuição deste mês para o
 *(Se você possui mais cotas, o valor é proporcional)*
 
 📱 *Chave PIX (Telefone):* ${pixKey}
-👤 *Titular:* Bolão da Lotofácil
+👤 *Titular:* Bolão da ${lotteryName}
 
 📲 *Acesse o aplicativo para registrar comprovantes e acompanhar os jogos:*
 ${appUrl}
 
-Vamos juntos rumo aos 15 pontos! 🍀🤞`;
+${isMegaSena ? 'Vamos juntos rumo à Sena! 🍀🤞' : 'Vamos juntos rumo aos 15 pontos! 🍀🤞'}`;
 
       case 'games_registered':
-        return `🎰 *APOSTAS REGISTRADAS NO BOLÃO!* 🎰
-${latestResult?.concurso ? `📌 *Concurso Alvo:* #${latestResult.concurso + 1}` : ''}
-🎟️ *Total de Jogos Registrados:* ${games.length} apostas
+        return `🎰 *APOSTAS REGISTRADAS NO BOLÃO (${lotteryUpper})!* 🎰
+${contestNum ? `📌 *Concurso Alvo:* #${contestNum + 1}\n` : ''}🎟️ *Total de Jogos Registrados:* ${games.length} apostas
 👥 *Cotas Participantes:* ${totalPaidQuotas} cotas ativas
 
 Todos os volantes e fechamentos matemáticos já foram gerados e cadastrados no nosso sistema.
@@ -144,22 +172,25 @@ ${appUrl}
 
 Boa sorte a todos nós! 🍀💰✨`;
 
-      case 'result_award':
-        return `🏆 *RESULTADO OFICIAL DA LOTOFÁCIL* 🏆
-${latestResult?.concurso ? `📌 *Concurso:* #${latestResult.concurso}` : ''}
-🎯 *Dezenas Sorteadas:*
+      case 'result_award': {
+        const performanceLines = isMegaSena
+          ? `${hits6 > 0 ? `🏆 *SENA (6 acertos):* ${hits6} aposta(s)!\n` : ''}${hits5 > 0 ? `⭐ *QUINA (5 acertos):* ${hits5} aposta(s)!\n` : ''}${hits4 > 0 ? `🎉 *QUADRA (4 acertos):* ${hits4} aposta(s)\n` : ''}`
+          : `${hits15 > 0 ? `🔥 *15 PONTOS:* ${hits15} aposta(s)!\n` : ''}${hits14 > 0 ? `✨ *14 PONTOS:* ${hits14} aposta(s)!\n` : ''}${hits13 > 0 ? `🎯 *13 Pontos:* ${hits13} aposta(s)\n` : ''}${hits12 > 0 ? `✅ *12 Pontos:* ${hits12} aposta(s)\n` : ''}${hits11 > 0 ? `👍 *11 Pontos:* ${hits11} aposta(s)\n` : ''}`;
+        return `🏆 *RESULTADO OFICIAL DA ${lotteryUpper}* 🏆
+${contestNum ? `📌 *Concurso:* #${contestNum}\n` : ''}🎯 *Dezenas Sorteadas:*
 ${drawnNumbers.map(n => String(n).padStart(2, '0')).join(' - ')}
 
 📊 *Desempenho dos Nossos Jogos:*
-${hits15 > 0 ? `🔥 *15 PONTOS:* ${hits15} aposta(s)!\n` : ''}${hits14 > 0 ? `✨ *14 PONTOS:* ${hits14} aposta(s)!\n` : ''}${hits13 > 0 ? `🎯 *13 Pontos:* ${hits13} aposta(s)\n` : ''}${hits12 > 0 ? `✅ *12 Pontos:* ${hits12} aposta(s)\n` : ''}${hits11 > 0 ? `👍 *11 Pontos:* ${hits11} aposta(s)\n` : ''}
+${performanceLines || 'Sem faixas premiadas neste concurso.\n'}
 💰 *Premiação Total do Bolão:* R$ ${totalPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 🎟️ *Valor por 1 Cota:* R$ ${prizePerQuota.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 
 📲 *Confira o espelho completo das apostas:*
 ${appUrl}`;
+      }
 
       case 'financial_report':
-        return `📊 *PRESTAÇÃO DE CONTAS - BOLÃO LOTOFÁCIL* 📊
+        return `📊 *PRESTAÇÃO DE CONTAS - BOLÃO ${lotteryUpper}* 📊
 📅 *Período:* ${currentMonth.toUpperCase()}
 
 👥 *Total de Membros:* ${members.length}
@@ -182,7 +213,7 @@ ${appUrl}
 Participe! 🤝🍀`;
 
       case 'custom':
-        return customMessage || `Olá pessoal! Comunicado importante do Bolão da Lotofácil: ...\n\nChave PIX: ${pixKey}\n${appUrl}`;
+        return customMessage || `Olá pessoal! Comunicado importante do Bolão da ${lotteryName}: ...\n\nChave PIX: ${pixKey}\n${appUrl}`;
 
       default:
         return '';

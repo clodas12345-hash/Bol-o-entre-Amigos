@@ -4,6 +4,8 @@ import { db, auth, isNativeApk } from '../lib/firebase';
 import { useToast } from './NotificationManager';
 import { normalizeBrazilianPhoneDigits, formatFirstAndLastName } from '../lib/formatters';
 import ReceiptBatchManager from './ReceiptBatchManager';
+import PaymentThankYouWhatsAppModal, { PaymentThankYouPayload } from './PaymentThankYouWhatsAppModal';
+import { useData } from '../lib/DataContext';
 
 interface ReceiptsListProps {
   onMemberUpdated?: () => void;
@@ -20,7 +22,9 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
     prevMonthKey: string;    // YYYY-MM for monthly_snapshots
   } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [thankYouModalData, setThankYouModalData] = useState<PaymentThankYouPayload | null>(null);
 
+  const { payments } = useData();
   const { addToast } = useToast();
 
   const fetchAllMembers = async () => {
@@ -214,6 +218,7 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
       await addDoc(collection(db, 'payments'), {
         userId: member ? (member.uid || member.id) : receipt.phone,
         memberName: member ? (member.displayName || member.name) : receipt.name,
+        phone: member?.phone || receipt.phone || '',
         amount: amountPaid,
         month: monthRefStr,
         status: 'Pago',
@@ -351,6 +356,17 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
 
       await deleteDoc(doc(db, 'pending_receipts', receipt.id));
       setLatePaymentModal(null);
+      setThankYouModalData({
+        member: member || {
+          id: receipt.userId || receipt.phone,
+          displayName: receipt.name,
+          phone: receipt.phone,
+          quotas
+        },
+        confirmedMonth: monthRefStr,
+        quotas,
+        amount: amountPaid
+      });
       await fetchAllMembers();
       onMemberUpdated?.();
     } catch (e) {
@@ -374,6 +390,12 @@ export default function ReceiptsList({ onMemberUpdated }: ReceiptsListProps) {
 
   return (
     <div className="p-4 space-y-4 max-w-2xl mx-auto">
+      <PaymentThankYouWhatsAppModal
+        data={thankYouModalData}
+        payments={payments}
+        onClose={() => setThankYouModalData(null)}
+      />
+
       {/* Pop-up perguntando sobre pagamento atrasado com opção de salvar no mês anterior */}
       {latePaymentModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">

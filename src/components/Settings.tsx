@@ -354,10 +354,10 @@ export default function Settings() {
                   </span>
                   <div className="min-w-0">
                     <span className="text-xs sm:text-sm font-black text-gray-900 block">
-                      Resultado Oficial da Caixa e Conferência (20h35)
+                      Resultado Oficial da Caixa e Conferência
                     </span>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                      Avise quando as dezenas sorteadas do concurso do dia forem publicadas e conferidas.
+                      Avise quando as dezenas sorteadas do concurso do dia forem publicadas e conferidas (21h35 dias úteis / 11h35 dom).
                     </p>
                   </div>
                 </div>
@@ -382,7 +382,7 @@ export default function Settings() {
                   </span>
                   <div className="min-w-0">
                     <span className="text-xs sm:text-sm font-black text-gray-900 block">
-                      Lembrete do Horário do Sorteio (19h30 e 20h00)
+                      Lembrete do Horário do Sorteio (21h dias úteis / 11h dom)
                     </span>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
                       Lembrete 30 minutos antes e na hora exata do sorteio oficial nos dias de jogo.

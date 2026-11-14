@@ -10,7 +10,7 @@ import { usePermissions } from '../lib/PermissionsContext';
 import { containsBadWords } from '../lib/profanityFilter';
 import { Camera, Image as ImageIcon, Mic, AtSign, Bot, Send, Reply, Smile, Trash2, Lock, Unlock, Sparkles, X, Check, AlertTriangle, ArrowLeft, EyeOff } from 'lucide-react';
 import { getApiUrl } from '../lib/apiHelper';
-import { getNextDrawDate, getDayNameBR } from '../lib/drawCalendar';
+import { getNextDrawDate, getDayNameBR, getDrawTimeTextForDate } from '../lib/drawCalendar';
 import { compressImage } from '../lib/imageUtils';
 
 function formatMessageTime(dateVal: any): string {
@@ -702,7 +702,7 @@ export default function Chat() {
         drawSchedule: isMegaSena 
           ? 'Terças e Quintas-feiras (a partir das 21h) e Domingos (a partir das 11h)' 
           : 'Segundas, Terças, Quartas, Quintas e Sextas-feiras (a partir das 21h) e Domingos (a partir das 11h)',
-        nextDrawDate: `${nextDraw.dateFormatted} (${getDayNameBR(nextDraw.date)}) às 20:00h`,
+        nextDrawDate: `${nextDraw.dateFormatted} (${getDayNameBR(nextDraw.date)}) a partir das ${getDrawTimeTextForDate(nextDraw.date)}`,
         currentContest: activePool?.currentContest || 'Vigente',
         quotaValue: 'R$ 5,00 por cota (ou R$ 10,00 para concursos especiais)',
         pixKey: '11953292570 (Nome: Clodas)',

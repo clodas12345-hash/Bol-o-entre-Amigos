@@ -6,6 +6,8 @@ import { useToast } from './NotificationManager';
 import { formatFirstAndLastName } from '../lib/formatters';
 import PixPaymentArea from './PixPaymentArea';
 import { usePool } from '../lib/PoolContext';
+import { useData } from '../lib/DataContext';
+import PaymentThankYouWhatsAppModal, { PaymentThankYouPayload } from './PaymentThankYouWhatsAppModal';
 
 export default function PaymentModal({ onClose }: { onClose: () => void }) {
   const { setIsQuotaExceeded } = usePool();
@@ -27,7 +29,9 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScheduledPix, setIsScheduledPix] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
+  const [thankYouModalData, setThankYouModalData] = useState<PaymentThankYouPayload | null>(null);
 
+  const { payments } = useData();
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -53,13 +57,23 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
           }
         }
 
-        combined.sort((a, b) => {
+        const activeCombined = combined.filter(
+          m =>
+            m.rejected !== true &&
+            m.status !== 'recusado' &&
+            m.active !== false &&
+            m.archived !== true &&
+            m.status !== 'inativo' &&
+            m.approved !== false
+        );
+
+        activeCombined.sort((a, b) => {
           const nameA = (a.displayName || a.name || a.email || '').trim();
           const nameB = (b.displayName || b.name || b.email || '').trim();
           return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
         });
 
-        setUsers(combined);
+        setUsers(activeCombined);
       } catch (err) {
         console.error('Error fetching users for payment modal:', err);
         if (isQuotaError(err)) setIsQuotaExceeded(true);
@@ -107,8 +121,12 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
         downloadURL = await getDownloadURL(storageRef);
       }
 
+      const memberObj = users.find(u => u.id === selectedUser || u.uid === selectedUser);
+
       await addDoc(collection(db, 'payments'), {
         userId: selectedUser,
+        memberName: memberObj?.displayName || memberObj?.name || 'Participante',
+        phone: memberObj?.phone || '',
         amount: parsedAmount,
         month: month.trim(),
         receiptURL: downloadURL || null,
@@ -119,7 +137,6 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
       });
 
       // Atualiza o status do participante para "Pago" apenas se não for Pix agendado
-      const memberObj = users.find(u => u.id === selectedUser || u.uid === selectedUser);
       if (memberObj && !isScheduledPix) {
         const col = memberObj.collectionName || 'users';
         const docId = memberObj.id || selectedUser;
@@ -133,10 +150,21 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
         const [yyyy, mm, dd] = scheduledDate.split('-');
         const formattedDateBR = `${dd}/${mm}/${yyyy}`;
         addToast(`PIX agendado para ${formattedDateBR} (R$ ${parsedAmount.toFixed(2)}) registrado com sucesso!`, 'success');
+        onClose();
       } else {
         addToast(`Pagamento de R$ ${parsedAmount.toFixed(2)} registrado com sucesso!`, 'success');
+        const resolvedMember = memberObj || {
+          id: selectedUser,
+          displayName: 'Participante',
+          quotas: 1
+        };
+        setThankYouModalData({
+          member: resolvedMember,
+          confirmedMonth: month.trim(),
+          quotas: Number(resolvedMember.quotas) > 0 ? Number(resolvedMember.quotas) : 1,
+          amount: parsedAmount
+        });
       }
-      onClose();
     } catch (err) {
       console.error('Erro ao salvar pagamento:', err);
       if (isQuotaError(err)) {
@@ -152,6 +180,19 @@ export default function PaymentModal({ onClose }: { onClose: () => void }) {
 
   const selectedUserObj = users.find(u => u.id === selectedUser || u.uid === selectedUser);
   const selectedUserQuotas = Number(selectedUserObj?.quotas) > 0 ? Number(selectedUserObj?.quotas) : 1;
+
+  if (thankYouModalData) {
+    return (
+      <PaymentThankYouWhatsAppModal
+        data={thankYouModalData}
+        payments={payments}
+        onClose={() => {
+          setThankYouModalData(null);
+          onClose();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">

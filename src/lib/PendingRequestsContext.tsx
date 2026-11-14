@@ -1,12 +1,17 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, isNativeApk } from './firebase';
+import { normalizeBrazilianPhoneDigits } from './formatters';
 
 export interface PendingMember {
   id: string;
+  uid?: string;
+  email?: string;
   displayName?: string;
   phone?: string;
   approved?: boolean;
+  rejected?: boolean;
+  status?: string;
   role?: string;
   quotas?: number;
   paymentStatus?: string;
@@ -35,6 +40,21 @@ export function PendingRequestsProvider({ children }: { children: ReactNode }) {
   const [usersList, setUsersList] = useState<PendingMember[]>([]);
   const [membersList, setMembersList] = useState<PendingMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [localVersion, setLocalVersion] = useState(0);
+
+  const refresh = useCallback(() => {
+    setLocalVersion(v => v + 1);
+  }, []);
+
+  useEffect(() => {
+    const handleMembersUpdated = () => setLocalVersion(v => v + 1);
+    window.addEventListener('bolao-members-updated', handleMembersUpdated);
+    window.addEventListener('storage', handleMembersUpdated);
+    return () => {
+      window.removeEventListener('bolao-members-updated', handleMembersUpdated);
+      window.removeEventListener('storage', handleMembersUpdated);
+    };
+  }, []);
 
   // Escuta em tempo real coleções 'users' e 'members'
   useEffect(() => {
@@ -90,53 +110,103 @@ export function PendingRequestsProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Mescla com os salvos localmente
+  // Mescla com os salvos localmente e remove recusas persistidas
   const allMembers = useMemo(() => {
+    const rejectedSet = new Set<string>();
+    if (isNativeApk) {
+      try {
+        const rawRej = localStorage.getItem('bolao_rejected_join_ids');
+        if (rawRej) {
+          const parsedRej = JSON.parse(rawRej);
+          if (Array.isArray(parsedRej)) {
+            parsedRej.forEach((id: any) => {
+              if (id) rejectedSet.add(String(id));
+            });
+          }
+        }
+      } catch {}
+    }
+
+    const isSameMember = (a: PendingMember, b: PendingMember) => {
+      if (a.id === b.id || (b.uid && (a.id === b.uid || a.uid === b.uid))) return true;
+      if (b.email && a.email && b.email.trim().toLowerCase() === a.email.trim().toLowerCase()) return true;
+      const phoneA = normalizeBrazilianPhoneDigits(a.phone || '');
+      const phoneB = normalizeBrazilianPhoneDigits(b.phone || '');
+      if (phoneA && phoneB && phoneA === phoneB) return true;
+      return false;
+    };
+
     const combined: PendingMember[] = [...usersList];
-    
+
     for (const m of membersList) {
-      const alreadyExists = combined.some(u =>
-        u.id === m.id ||
-        (m.displayName && u.displayName && u.displayName.toLowerCase() === m.displayName.toLowerCase())
-      );
-      if (!alreadyExists) {
+      if (!combined.some(u => isSameMember(u, m))) {
         combined.push(m);
       }
     }
 
-    try {
-      const localSaved = localStorage.getItem('bolao_local_members');
-      if (localSaved) {
-        const parsed = JSON.parse(localSaved);
-        if (Array.isArray(parsed)) {
-          for (const loc of parsed) {
-            const alreadyExists = combined.some(c => c.id === loc.id || (loc.phone && c.phone === loc.phone));
-            if (!alreadyExists) {
-              combined.push(loc);
+    if (isNativeApk) {
+      try {
+        const localSaved = localStorage.getItem('bolao_local_members');
+        if (localSaved) {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed)) {
+            for (const loc of parsed) {
+              if (!combined.some(c => isSameMember(c, loc))) {
+                combined.push(loc);
+              }
             }
           }
         }
+      } catch (err) {
+        console.warn('Erro ao ler bolao_local_members:', err);
       }
-    } catch (err) {
-      console.warn('Erro ao ler bolao_local_members:', err);
     }
 
-    return combined;
-  }, [usersList, membersList]);
+    return combined.filter(
+      (m: any) => !rejectedSet.has(m.id) && m.rejected !== true && m.status !== 'recusado'
+    );
+  }, [usersList, membersList, localVersion]);
 
   // Solicitações de novos membros aguardando aprovação
   const pendingJoinRequests = useMemo(() => {
-    return allMembers.filter(m => m.approved === false);
+    return allMembers.filter(
+      (m: any) =>
+        m.approved === false &&
+        m.rejected !== true &&
+        m.active !== false &&
+        m.archived !== true &&
+        m.status !== 'inativo' &&
+        m.status !== 'recusado'
+    );
   }, [allMembers]);
 
   // Solicitações de alteração de cotas
   const pendingQuotaRequests = useMemo(() => {
-    return allMembers.filter(m => m.approved !== false && m.quotaRequest && m.quotaRequest.status === 'Pendente');
+    return allMembers.filter(
+      (m: any) =>
+        m.approved !== false &&
+        m.rejected !== true &&
+        m.active !== false &&
+        m.archived !== true &&
+        m.status !== 'inativo' &&
+        m.status !== 'recusado' &&
+        m.quotaRequest &&
+        m.quotaRequest.status === 'Pendente'
+    );
   }, [allMembers]);
 
   // Membros ativos com pagamento pendente
   const unpaidMembers = useMemo(() => {
-    return allMembers.filter(m => m.approved !== false && m.paymentStatus === 'Pendente');
+    return allMembers.filter(
+      (m: any) =>
+        m.approved !== false &&
+        m.rejected !== true &&
+        m.active !== false &&
+        m.archived !== true &&
+        m.status !== 'inativo' &&
+        m.status !== 'recusado' &&
+        m.paymentStatus === 'Pendente'
+    );
   }, [allMembers]);
 
   const totalPendingCount = pendingJoinRequests.length + pendingQuotaRequests.length;
@@ -150,7 +220,7 @@ export function PendingRequestsProvider({ children }: { children: ReactNode }) {
         unpaidMembers,
         totalPendingCount,
         loading,
-        refresh: () => {}
+        refresh
       }}
     >
       {children}

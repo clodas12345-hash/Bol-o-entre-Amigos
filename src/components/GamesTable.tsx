@@ -16,7 +16,7 @@ import { triggerResultNotification } from '../lib/autoNotificationService';
 import { notifyWinningPrize, sendAppNotification, requestNotificationPermission, syncMissingGamesTwoHourReminders } from '../lib/notifications';
 import { usePermissions } from '../lib/PermissionsContext';
 import { fetchLotteryResultDirectly } from '../lib/apiHelper';
-import { isDrawDay, getNextDrawDate, isNationalHoliday, formatDateBR } from '../lib/drawCalendar';
+import { isDrawDay, getNextDrawDate, isNationalHoliday, formatDateBR, getDrawHourForDate, getDrawTimeTextForDate, getGoogleCalendarByDay } from '../lib/drawCalendar';
 import { useData } from '../lib/DataContext';
 
 interface GamesTableProps {
@@ -97,11 +97,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
     isToday: boolean;
     timeLeft: string;
     statusBadge: string;
-  }>({
-    text: 'Hoje às 20h00',
-    isToday: true,
-    timeLeft: '20h00',
-    statusBadge: 'Hoje'
+  }>(() => {
+    const now = new Date();
+    const timeText = getDrawTimeTextForDate(now);
+    return {
+      text: `Hoje às ${timeText}`,
+      isToday: true,
+      timeLeft: timeText,
+      statusBadge: 'Hoje'
+    };
   });
 
   const [currentDayStr, setCurrentDayStr] = useState(() => formatDateBR(new Date()));
@@ -118,12 +122,15 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
 
       const lotteryType = (activePool?.lotteryType === 'megasena' ? 'megasena' : 'lotofacil') as 'lotofacil' | 'megasena';
 
-      let targetDate = new Date(now);
-      targetDate.setHours(20, 0, 0, 0);
-
       const todayDrawCheck = isDrawDay(now, lotteryType);
-      const isBeforeDrawTime = currentHour < 20;
-      const isDuringDraw = currentHour === 20 && currentMinute <= 45;
+      const todayDrawHour = getDrawHourForDate(now);
+      const todayDrawTimeText = getDrawTimeTextForDate(now);
+
+      let targetDate = new Date(now);
+      targetDate.setHours(todayDrawHour, 0, 0, 0);
+
+      const isBeforeDrawTime = currentHour < todayDrawHour;
+      const isDuringDraw = currentHour === todayDrawHour && currentMinute <= 45;
 
       let isToday = false;
       let statusBadge = 'Próximo';
@@ -134,11 +141,11 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         // Mantém como sorteio de hoje até o último minuto do dia (23h59m59s), só mudando na virada do dia (00h00)
         isToday = true;
         if (isBeforeDrawTime) {
-          statusBadge = 'Hoje às 20h00';
+          statusBadge = `Hoje às ${todayDrawTimeText}`;
         } else if (isDuringDraw) {
           statusBadge = 'Sorteio em Apuração!';
           setNextDrawInfo({
-            text: 'Sorteio em apuração pela Caixa!',
+            text: `Sorteio das ${todayDrawTimeText} em apuração pela Caixa!`,
             isToday: true,
             timeLeft: 'Em andamento',
             statusBadge
@@ -147,7 +154,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
         } else {
           statusBadge = `Sorteio de Hoje (${formatDateBR(now)})`;
           setNextDrawInfo({
-            text: `Sorteio de Hoje (${formatDateBR(now)})`,
+            text: `Sorteio de Hoje às ${todayDrawTimeText} (${formatDateBR(now)})`,
             isToday: true,
             timeLeft: 'Até 23h59',
             statusBadge
@@ -157,16 +164,18 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
       } else {
         const nextDraw = getNextDrawDate(now, lotteryType);
         targetDate = new Date(nextDraw.date);
-        targetDate.setHours(20, 0, 0, 0);
+        const nextHour = getDrawHourForDate(targetDate);
+        targetDate.setHours(nextHour, 0, 0, 0);
         statusBadge = `${dayNames[targetDate.getDay()]} (${formatDateBR(targetDate)})`;
       }
 
+      const targetTimeText = getDrawTimeTextForDate(targetDate);
       const diffMs = targetDate.getTime() - now.getTime();
       const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
       const totalMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
       setNextDrawInfo({
-        text: isToday ? 'Hoje às 20h00' : `${statusBadge} às 20h00`,
+        text: isToday ? `Hoje às ${targetTimeText}` : `${statusBadge} às ${targetTimeText}`,
         isToday,
         timeLeft: totalHours > 0 ? `Faltam ${totalHours}h ${totalMinutes}m` : `Faltam ${totalMinutes}m`,
         statusBadge
@@ -196,16 +205,22 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
   };
 
   const handleAddToGoogleCalendar = () => {
-    const baseDate = new Date();
-    const year = baseDate.getFullYear();
-    const month = String(baseDate.getMonth() + 1).padStart(2, '0');
-    const day = String(baseDate.getDate()).padStart(2, '0');
-    const title = encodeURIComponent('🍀 Sorteio Oficial Lotofácil - Bolão');
-    const details = encodeURIComponent('Horário do sorteio da Lotofácil (20h00). Abra o app do Bolão para conferir!');
+    const lotteryType = (isMegaSena ? 'megasena' : 'lotofacil') as 'lotofacil' | 'megasena';
+    const nextDraw = getNextDrawDate(new Date(), lotteryType);
+    const drawHour = getDrawHourForDate(nextDraw.date);
+    const year = nextDraw.date.getFullYear();
+    const month = String(nextDraw.date.getMonth() + 1).padStart(2, '0');
+    const day = String(nextDraw.date.getDate()).padStart(2, '0');
+    const startH = String(drawHour).padStart(2, '0');
+    const lotLabel = isMegaSena ? 'Mega-Sena' : 'Lotofácil';
+    const title = encodeURIComponent(`🍀 Sorteio Oficial ${lotLabel} - Bolão`);
+    const details = encodeURIComponent(
+      `Horário oficial Caixa (${isMegaSena ? 'Ter/Qui às 21h e Dom às 11h' : 'Seg a Sex às 21h e Dom às 11h'}). Abra o app do Bolão para conferir!`
+    );
     const location = encodeURIComponent('Bolão dos Amigos');
-    const dates = `${year}${month}${day}T230000Z/${year}${month}${day}T233000Z`;
-    const recur = encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA');
-    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}&recur=${recur}`;
+    const dates = `${year}${month}${day}T${startH}0000/${year}${month}${day}T${startH}3000`;
+    const recur = encodeURIComponent(`RRULE:FREQ=WEEKLY;BYDAY=${getGoogleCalendarByDay(lotteryType)}`);
+    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&ctz=America%2FSao_Paulo&details=${details}&location=${location}&recur=${recur}`;
     window.open(googleCalendarUrl, '_blank', 'noopener,noreferrer');
     addToast('Abrindo Google Agenda com evento recorrente...', 'info');
   };
@@ -1364,7 +1379,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 )}
               </div>
               <span className="text-[11px] sm:text-xs text-purple-100 font-bold block mt-0.5">
-                {nextDrawInfo.isToday ? `Hoje às 20h00 • ${nextDrawInfo.timeLeft}` : `${nextDrawInfo.statusBadge} às 20h00`}
+                {nextDrawInfo.isToday ? `${nextDrawInfo.text} • ${nextDrawInfo.timeLeft}` : `${nextDrawInfo.text} • ${nextDrawInfo.timeLeft}`}
               </span>
             </div>
           </div>
@@ -2310,7 +2325,7 @@ export default function GamesTable({ onOpenNewGame }: GamesTableProps) {
                 <div>
                   <h4 className="font-bold text-purple-950 text-sm">Notificações Push no Celular</h4>
                   <p className="text-gray-600 text-[11px] mt-0.5">
-                    Receba avisos automáticos às 19h30, 20h00 e quando o resultado for publicado.
+                    Receba avisos automáticos 30 min antes, na hora do sorteio (21h seg-sex / 11h dom) e quando o resultado for publicado.
                   </p>
                 </div>
                 <button

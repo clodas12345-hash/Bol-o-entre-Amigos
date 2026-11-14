@@ -4,7 +4,7 @@ import { collection, addDoc, getDocs, onSnapshot, query, limit, serverTimestamp 
 import { db } from '../lib/firebase';
 import { usePool } from '../lib/PoolContext';
 import { useToast } from './NotificationManager';
-import { getNextDrawDate, getDayNameBR } from '../lib/drawCalendar';
+import { getNextDrawDate, getDayNameBR, getDrawTimeTextForDate } from '../lib/drawCalendar';
 import { getApiUrl } from '../lib/apiHelper';
 import { DEFAULT_PIX_CONFIG } from '../lib/pix';
 import { calculateGamePrize } from '../lib/prizes';
@@ -404,7 +404,7 @@ export default function VisitorPortal() {
                 <p className="text-sm font-black text-white flex items-center gap-1.5">
                   <span>📅</span> {nextDraw.dateFormatted} ({getDayNameBR(nextDraw.date)})
                 </p>
-                <span className="text-[10px] text-slate-400">Horário: 20:00h (Horário de Brasília)</span>
+                <span className="text-[10px] text-slate-400">Horário: a partir das {getDrawTimeTextForDate(nextDraw.date)} (Horário de Brasília)</span>
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] font-black uppercase text-slate-400">Valor da Cota</span>

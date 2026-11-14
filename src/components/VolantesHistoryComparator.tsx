@@ -638,7 +638,7 @@ export default function VolantesHistoryComparator({
 
         {/* Modal de Exibição do Bilhete/Comprovante */}
         {selectedReceiptUrl && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-60">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <div className="bg-white rounded-2xl max-w-lg w-full p-4 overflow-hidden relative shadow-2xl">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="font-bold text-sm text-gray-900">Comprovante Oficial da Aposta</h4>

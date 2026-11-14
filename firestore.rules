@@ -120,5 +120,9 @@ service cloud.firestore {
     match /backups_history/{backupId} {
       allow read, write: if true;
     }
+
+    match /scheduled_pix/{pixId} {
+      allow read, write: if true;
+    }
   }
 }

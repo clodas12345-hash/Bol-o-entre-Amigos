@@ -19,6 +19,15 @@ export interface QueueItem {
   message: string;
   durationMs?: number;
   options?: any;
+  isReceiptHashDuplicate?: boolean;
+}
+
+export interface ProcessedReceiptRecord {
+  hash: string;
+  compressedHash?: string;
+  fileName: string;
+  fileTimestamp: number;
+  processedAt: number;
 }
 
 export interface BatchStats {
@@ -68,6 +77,95 @@ const formatDateToMonthRef = (date: Date): string => {
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const yyyy = date.getFullYear();
   return `${mm}/${yyyy}`;
+};
+
+export const RECEIPT_DUPLICATE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 horas
+const PROCESSED_RECEIPTS_STORAGE_KEY = 'bolao_processed_receipt_hashes';
+
+const bytesToHex = (bytes: Uint8Array): string =>
+  Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+const fallbackFastHash = (bytes: Uint8Array): string => {
+  let h1 = 0x811c9dc5;
+  let h2 = 0xdeadbeef;
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    h1 ^= b;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= b + i;
+    h2 = Math.imul(h2, 0x85ebca6b);
+  }
+  return `fnv_${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}_${bytes.length}`;
+};
+
+export const computeBytesHash = async (bytes: Uint8Array): Promise<string> => {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      const digest = await crypto.subtle.digest('SHA-256', copy.buffer);
+      return bytesToHex(new Uint8Array(digest));
+    }
+  } catch (err) {
+    console.warn('[UploadHash] WebCrypto indisponível, usando fallback:', err);
+  }
+  return fallbackFastHash(bytes);
+};
+
+export const computeFileHash = async (file: File): Promise<string> => {
+  const buffer = await file.arrayBuffer();
+  return computeBytesHash(new Uint8Array(buffer));
+};
+
+export const computeBase64Hash = async (base64Str: string): Promise<string> => {
+  const clean = base64Str.replace(/^data:[^;]+;base64,/, '').trim();
+  const encoder = new TextEncoder();
+  return computeBytesHash(encoder.encode(clean));
+};
+
+const readStoredProcessedReceipts = (): ProcessedReceiptRecord[] => {
+  try {
+    const raw = localStorage.getItem(PROCESSED_RECEIPTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    const valid = parsed.filter(
+      (item: any) =>
+        item &&
+        typeof item.hash === 'string' &&
+        typeof item.processedAt === 'number' &&
+        now - item.processedAt <= RECEIPT_DUPLICATE_WINDOW_MS
+    );
+    if (valid.length !== parsed.length) {
+      localStorage.setItem(PROCESSED_RECEIPTS_STORAGE_KEY, JSON.stringify(valid));
+    }
+    return valid;
+  } catch {
+    return [];
+  }
+};
+
+const writeStoredProcessedReceipts = (records: ProcessedReceiptRecord[]) => {
+  try {
+    const now = Date.now();
+    const valid = records.filter((r) => now - r.processedAt <= RECEIPT_DUPLICATE_WINDOW_MS);
+    localStorage.setItem(PROCESSED_RECEIPTS_STORAGE_KEY, JSON.stringify(valid.slice(-500)));
+  } catch (err) {
+    console.warn('[UploadHash] Erro ao persistir hashes locais:', err);
+  }
+};
+
+const formatElapsedTimeBR = (elapsedMs: number): string => {
+  const safeMs = Math.max(0, elapsedMs);
+  const totalMinutes = Math.floor(safeMs / 60000);
+  if (totalMinutes < 1) return 'agora mesmo';
+  if (totalMinutes < 60) return `há ${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  return mins > 0 ? `há ${hours}h ${mins}min` : `há ${hours}h`;
 };
 
 const performClientSideOcr = async (base64Image: string, apiKey: string): Promise<any> => {
@@ -196,45 +294,72 @@ export const checkGameDuplicateInFirestore = async (
   return { isDuplicate: false };
 };
 
-export const getExistingSignatures = async (poolId?: string): Promise<Set<string>> => {
+const extractSignaturesAndRecentHashes = (
+  docs: any[],
+  now: number = Date.now()
+): { signatures: Set<string>; recentHashes: ProcessedReceiptRecord[] } => {
   const signatures = new Set<string>();
-  try {
-    let q;
-    if (poolId) {
-      // Filtra por poolId para reduzir drasticamente o número de documentos lidos e aumentar a velocidade
-      q = query(collection(db, 'games'), where('poolId', '==', poolId));
-    } else {
-      // Fallback para todos os jogos se poolId não for fornecido (limitado a 10.000)
-      q = query(collection(db, 'games'), limit(10000));
+  const recentHashesMap = new Map<string, ProcessedReceiptRecord>();
+
+  docs.forEach((docSnap) => {
+    const data: any = docSnap.data();
+    let cNum = '';
+    if (typeof data.contestNumber === 'number') {
+      cNum = String(data.contestNumber);
+    } else if (data.contest) {
+      const match = String(data.contest).match(/\b(\d{3,5})\b/);
+      cNum = match ? match[1] : '';
     }
-    
+    let dateStr = '';
+    if (data.date) {
+      if (typeof data.date.toDate === 'function') dateStr = data.date.toDate().toISOString().split('T')[0];
+      else if (data.date instanceof Date) dateStr = data.date.toISOString().split('T')[0];
+      else if (typeof data.date === 'string') dateStr = data.date.split('T')[0];
+    }
+    const numbers = Array.isArray(data.numbers) ? data.numbers.map((n: any) => Number(n)).sort((a, b) => a - b) : [];
+    const numbersKey = numbers.join('-');
+    if (numbersKey) {
+      if (cNum) signatures.add(`contest::${cNum}::${numbersKey}`);
+      else if (dateStr) signatures.add(`date::${dateStr}::${numbersKey}`);
+    }
+
+    if (typeof data.receiptHash === 'string' && data.receiptHash) {
+      let processedAtMs = typeof data.processedAt === 'number' ? data.processedAt : 0;
+      if (!processedAtMs && data.createdAt) {
+        if (typeof data.createdAt.toMillis === 'function') processedAtMs = data.createdAt.toMillis();
+        else if (typeof data.createdAt.toDate === 'function') processedAtMs = data.createdAt.toDate().getTime();
+        else if (typeof data.createdAt.seconds === 'number') processedAtMs = data.createdAt.seconds * 1000;
+      }
+
+      if (processedAtMs > 0 && now - processedAtMs <= RECEIPT_DUPLICATE_WINDOW_MS) {
+        const existing = recentHashesMap.get(data.receiptHash);
+        if (!existing || processedAtMs > existing.processedAt) {
+          recentHashesMap.set(data.receiptHash, {
+            hash: data.receiptHash,
+            compressedHash: typeof data.receiptCompressedHash === 'string' ? data.receiptCompressedHash : undefined,
+            fileName: String(data.receiptFileName || data.contest || 'Comprovante'),
+            fileTimestamp: typeof data.receiptTimestamp === 'number' ? data.receiptTimestamp : processedAtMs,
+            processedAt: processedAtMs
+          });
+        }
+      }
+    }
+  });
+
+  return { signatures, recentHashes: Array.from(recentHashesMap.values()) };
+};
+
+export const getExistingSignatures = async (poolId?: string): Promise<Set<string>> => {
+  try {
+    const q = poolId
+      ? query(collection(db, 'games'), where('poolId', '==', poolId))
+      : query(collection(db, 'games'), limit(10000));
     const snap = await getDocs(q);
-    snap.docs.forEach((doc) => {
-      const data: any = doc.data();
-      let cNum = '';
-      if (typeof data.contestNumber === 'number') {
-        cNum = String(data.contestNumber);
-      } else if (data.contest) {
-        const match = String(data.contest).match(/\b(\d{3,5})\b/);
-        cNum = match ? match[1] : '';
-      }
-      let dateStr = '';
-      if (data.date) {
-        if (typeof data.date.toDate === 'function') dateStr = data.date.toDate().toISOString().split('T')[0];
-        else if (data.date instanceof Date) dateStr = data.date.toISOString().split('T')[0];
-        else if (typeof data.date === 'string') dateStr = data.date.split('T')[0];
-      }
-      const numbers = Array.isArray(data.numbers) ? data.numbers.map((n: any) => Number(n)).sort((a, b) => a - b) : [];
-      const numbersKey = numbers.join('-');
-      if (numbersKey) {
-        if (cNum) signatures.add(`contest::${cNum}::${numbersKey}`);
-        else if (dateStr) signatures.add(`date::${dateStr}::${numbersKey}`);
-      }
-    });
+    return extractSignaturesAndRecentHashes(snap.docs).signatures;
   } catch (err) {
     console.warn('Aviso: Não foi possível obter histórico de duplicatas prévio:', err);
+    return new Set<string>();
   }
-  return signatures;
 };
 
 export const formatErrorMessage = (rawMsg: string): string => {
@@ -278,6 +403,60 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const { addToast } = useToast();
   const { pools, setIsQuotaExceeded } = usePool();
 
+  const processedReceiptsRef = React.useRef<Map<string, ProcessedReceiptRecord>>(new Map());
+  const inFlightHashesRef = React.useRef<Set<string>>(new Set());
+
+  const syncProcessedStoreFromRecords = useCallback((incoming: ProcessedReceiptRecord[]) => {
+    const now = Date.now();
+    const map = processedReceiptsRef.current;
+
+    // Limpa registros expirados (> 48h)
+    for (const [key, rec] of map.entries()) {
+      if (now - rec.processedAt > RECEIPT_DUPLICATE_WINDOW_MS) {
+        map.delete(key);
+      }
+    }
+
+    const stored = readStoredProcessedReceipts();
+    const merged = [...stored, ...incoming];
+    for (const rec of merged) {
+      if (!rec || !rec.hash) continue;
+      if (now - rec.processedAt > RECEIPT_DUPLICATE_WINDOW_MS) continue;
+      const existing = map.get(rec.hash);
+      if (!existing || rec.processedAt > existing.processedAt) {
+        map.set(rec.hash, rec);
+      }
+      if (rec.compressedHash) {
+        const existingComp = map.get(rec.compressedHash);
+        if (!existingComp || rec.processedAt > existingComp.processedAt) {
+          map.set(rec.compressedHash, rec);
+        }
+      }
+    }
+  }, []);
+
+  const findDuplicateReceiptWithin48h = useCallback((hashes: string[]): ProcessedReceiptRecord | null => {
+    const now = Date.now();
+    syncProcessedStoreFromRecords([]);
+    for (const h of hashes) {
+      if (!h) continue;
+      const rec = processedReceiptsRef.current.get(h);
+      if (rec && now - rec.processedAt <= RECEIPT_DUPLICATE_WINDOW_MS) {
+        return rec;
+      }
+    }
+    return null;
+  }, [syncProcessedStoreFromRecords]);
+
+  const registerProcessedReceipt = useCallback((record: ProcessedReceiptRecord) => {
+    syncProcessedStoreFromRecords([record]);
+    const uniqueRecords = new Map<string, ProcessedReceiptRecord>();
+    for (const rec of processedReceiptsRef.current.values()) {
+      uniqueRecords.set(rec.hash, rec);
+    }
+    writeStoredProcessedReceipts(Array.from(uniqueRecords.values()));
+  }, [syncProcessedStoreFromRecords]);
+
   const getGeminiApiKey = async (): Promise<string | null> => {
     try {
       const docSnap = await getDoc(doc(db, 'system_config', 'gemini'));
@@ -300,9 +479,49 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const currentPool = pools.find(p => p.id === poolId);
     const isMegaSena = currentPool?.lotteryType === 'megasena';
     const prices = isMegaSena ? MEGASENA_PRICES : LOTOFACIL_PRICES;
+    const reservedHashes: string[] = [];
 
     try {
-      updateItem(item.id, { status: 'compressing', progress: 20, message: 'Preparando imagem para envio...' });
+      updateItem(item.id, { status: 'compressing', progress: 15, message: 'Verificando integridade do comprovante...' });
+
+      const fileTimestamp = item.file?.lastModified || Date.now();
+      let fileHash = '';
+      if (item.file) {
+        try {
+          fileHash = await computeFileHash(item.file);
+        } catch (hashErr) {
+          console.warn('[UploadHash] Falha ao calcular hash do arquivo original:', hashErr);
+        }
+      }
+
+      // Verifica duplicidade por hash da imagem original dentro da janela de 48h (antes de comprimir/OCR)
+      if (fileHash) {
+        const isInFlight = inFlightHashesRef.current.has(fileHash);
+        const recentDuplicate = findDuplicateReceiptWithin48h([fileHash]);
+
+        if (isInFlight || recentDuplicate) {
+          const elapsedText = recentDuplicate ? formatElapsedTimeBR(Date.now() - recentDuplicate.processedAt) : 'agora mesmo';
+          const dupMsg = `Arquivo já processado ${elapsedText} (últimas 48h)`;
+          addToast(`⚠️ Comprovante duplicado (${item.name}): este arquivo já foi processado ${elapsedText} (janela de 48h).`, 'warning');
+          updateItem(item.id, {
+            status: 'duplicate',
+            progress: 100,
+            message: dupMsg,
+            durationMs: Date.now() - startTime,
+            isReceiptHashDuplicate: true
+          });
+          setBatchStats(prev => ({
+            ...prev,
+            duplicate: prev.duplicate + 1
+          }));
+          return true;
+        }
+
+        inFlightHashesRef.current.add(fileHash);
+        reservedHashes.push(fileHash);
+      }
+
+      updateItem(item.id, { status: 'compressing', progress: 25, message: 'Preparando imagem para envio...' });
 
       // 1. Processamento e Compressão (se for imagem)
       let base64Data = '';
@@ -329,6 +548,38 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!base64Data) throw new Error('Falha ao processar arquivo');
+
+      const compressedHash = await computeBase64Hash(base64Data);
+      const effectiveReceiptHash = fileHash || compressedHash;
+
+      // Verifica duplicidade também pelo hash da imagem comprimida (caso o mesmo conteúdo venha sem File ou reenviado)
+      if (compressedHash) {
+        const compInFlight = !reservedHashes.includes(compressedHash) && inFlightHashesRef.current.has(compressedHash);
+        const recentCompDuplicate = findDuplicateReceiptWithin48h([compressedHash]);
+
+        if (compInFlight || recentCompDuplicate) {
+          const elapsedText = recentCompDuplicate ? formatElapsedTimeBR(Date.now() - recentCompDuplicate.processedAt) : 'agora mesmo';
+          const dupMsg = `Arquivo já processado ${elapsedText} (últimas 48h)`;
+          addToast(`⚠️ Comprovante duplicado (${item.name}): este arquivo já foi processado ${elapsedText} (janela de 48h).`, 'warning');
+          updateItem(item.id, {
+            status: 'duplicate',
+            progress: 100,
+            message: dupMsg,
+            durationMs: Date.now() - startTime,
+            isReceiptHashDuplicate: true
+          });
+          setBatchStats(prev => ({
+            ...prev,
+            duplicate: prev.duplicate + 1
+          }));
+          return true;
+        }
+
+        if (!reservedHashes.includes(compressedHash)) {
+          inFlightHashesRef.current.add(compressedHash);
+          reservedHashes.push(compressedHash);
+        }
+      }
 
       // 2. Validação de tamanho final (Firestore tem limite de 1MB por documento)
       const dataSize = getBase64Size(base64Data);
@@ -510,6 +761,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                 cost: unitTotal,
                 date: Timestamp.fromDate(seqItem.date),
                 receiptURL,
+                receiptHash: effectiveReceiptHash,
+                receiptCompressedHash: compressedHash,
+                receiptFileName: item.name,
+                receiptTimestamp: fileTimestamp,
+                processedAt: Date.now(),
                 createdAt: serverTimestamp(),
               });
               savedCount++;
@@ -553,6 +809,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
               cost: isTeim ? unitTotal * teimCount : unitTotal,
               date: Timestamp.fromDate(parsedDate),
               receiptURL,
+              receiptHash: effectiveReceiptHash,
+              receiptCompressedHash: compressedHash,
+              receiptFileName: item.name,
+              receiptTimestamp: fileTimestamp,
+              processedAt: Date.now(),
               createdAt: serverTimestamp(),
             });
             savedCount++;
@@ -570,6 +831,14 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       if (batchCount > 0) {
         await batch.commit();
       }
+
+      registerProcessedReceipt({
+        hash: effectiveReceiptHash,
+        compressedHash,
+        fileName: item.name,
+        fileTimestamp,
+        processedAt: Date.now()
+      });
 
       // Calculate hits against latest official result if available
       let hitsSummary = '';
@@ -635,6 +904,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const friendlyError = formatErrorMessage(err?.message || 'Falha de processamento');
       updateItem(item.id, { status: 'error', progress: 100, message: friendlyError });
       return false;
+    } finally {
+      for (const h of reservedHashes) {
+        inFlightHashesRef.current.delete(h);
+      }
     }
   };
 
@@ -686,6 +959,22 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
   const [signaturesCache, setSignaturesCache] = useState<Set<string> | null>(null);
 
+  const loadBatchSignaturesAndHashes = useCallback(async (poolId?: string): Promise<Set<string>> => {
+    try {
+      const q = poolId
+        ? query(collection(db, 'games'), where('poolId', '==', poolId))
+        : query(collection(db, 'games'), limit(10000));
+      const snap = await getDocs(q);
+      const { signatures, recentHashes } = extractSignaturesAndRecentHashes(snap.docs);
+      syncProcessedStoreFromRecords(recentHashes);
+      return signatures;
+    } catch (err) {
+      console.warn('Aviso: Não foi possível carregar contexto de duplicidades do banco:', err);
+      syncProcessedStoreFromRecords([]);
+      return new Set<string>();
+    }
+  }, [syncProcessedStoreFromRecords]);
+
   const addToQueue = useCallback(async (files: File[], options: any) => {
     const newItems: QueueItem[] = files.map(file => ({
       id: `up_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -707,16 +996,18 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       return [...prev, ...newItems];
     });
 
-    // Pre-fetch signatures once or use cache for the batch
+    // Pre-fetch signatures + recent 48h receipt hashes once or use cache for the batch
     const targetPoolId = options?.poolId;
     let existingSigs = signaturesCache;
     if (!existingSigs) {
-      existingSigs = await getExistingSignatures(targetPoolId);
+      existingSigs = await loadBatchSignaturesAndHashes(targetPoolId);
       setSignaturesCache(existingSigs);
+    } else {
+      syncProcessedStoreFromRecords([]);
     }
 
     await runBatchUntilAllSucceed(newItems, existingSigs);
-  }, [pools, setIsQuotaExceeded, signaturesCache]);
+  }, [pools, setIsQuotaExceeded, signaturesCache, loadBatchSignaturesAndHashes, syncProcessedStoreFromRecords]);
 
   const retryFailed = useCallback(async () => {
     const failedItems = queue.filter(item => item.status === 'error');
@@ -724,9 +1015,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     // Tenta obter o poolId do primeiro item falho para otimizar
     const targetPoolId = failedItems[0]?.options?.poolId;
-    const existingSigs = await getExistingSignatures(targetPoolId);
+    const existingSigs = await loadBatchSignaturesAndHashes(targetPoolId);
     await runBatchUntilAllSucceed(failedItems, existingSigs);
-  }, [queue, pools]);
+  }, [queue, pools, loadBatchSignaturesAndHashes]);
 
   const clearCompleted = () => {
     setQueue(prev => prev.filter(item => item.status === 'pending' || item.status === 'compressing' || item.status === 'ocr' || item.status === 'saving' || item.status === 'error'));

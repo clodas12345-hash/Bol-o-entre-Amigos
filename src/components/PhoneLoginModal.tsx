@@ -81,6 +81,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
           if (usersSnap && usersSnap.docs) {
             usersSnap.docs.forEach(d => {
               const data = d.data();
+              if (data.rejected === true || data.status === 'recusado') return;
               const p = normalizeBrazilianPhoneDigits(data.phone || '');
               if (p && p === cleanPhone) {
                 matchedMember = { id: d.id, ...data };
@@ -91,6 +92,7 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
           if (!matchedMember && membersSnap && membersSnap.docs) {
             membersSnap.docs.forEach(d => {
               const data = d.data();
+              if (data.rejected === true || data.status === 'recusado') return;
               const p = normalizeBrazilianPhoneDigits(data.phone || '');
               if (p && p === cleanPhone) {
                 matchedMember = { id: d.id, ...data };
@@ -105,7 +107,11 @@ export default function PhoneLoginModal({ onPhoneLoginSuccess, onClose, isInline
             const localSaved = localStorage.getItem('bolao_local_members');
             if (localSaved) {
               const parsed = JSON.parse(localSaved);
-              const found = parsed.find((m: any) => normalizeBrazilianPhoneDigits(m.phone || '') === cleanPhone);
+              const found = parsed.find((m: any) =>
+                m.rejected !== true &&
+                m.status !== 'recusado' &&
+                normalizeBrazilianPhoneDigits(m.phone || '') === cleanPhone
+              );
               if (found) {
                 matchedMember = { ...found };
               }

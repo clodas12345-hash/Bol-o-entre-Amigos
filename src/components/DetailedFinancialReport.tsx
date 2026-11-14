@@ -9,6 +9,7 @@ import { usePool } from '../lib/PoolContext';
 import { usePermissions } from '../lib/PermissionsContext';
 import { useData } from '../lib/DataContext';
 import PaymentDetailsModal from './PaymentDetailsModal';
+import PaymentThankYouWhatsAppModal, { PaymentThankYouPayload } from './PaymentThankYouWhatsAppModal';
 
 export default function DetailedFinancialReport() {
   const { setIsQuotaExceeded } = usePool();
@@ -19,6 +20,7 @@ export default function DetailedFinancialReport() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<string | null>(null);
   const [showPixModal, setShowPixModal] = useState(false);
   const [pixConfig, setPixConfig] = useState<PixConfig>(DEFAULT_PIX_CONFIG);
+  const [thankYouModalData, setThankYouModalData] = useState<PaymentThankYouPayload | null>(null);
 
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
@@ -49,7 +51,12 @@ export default function DetailedFinancialReport() {
 
     try {
       const monthKey = targetMonthKey || `${String(filterMonth).padStart(2, '0')}/${filterYear}`;
-      const isPaidInMonth = payments.some(p => (p.userId === member.id || p.userId === member.uid) && p.month === monthKey);
+      const memberPhoneClean = member.phone ? normalizeBrazilianPhoneDigits(member.phone) : '';
+      const isMatchingMemberPayment = (p: any) =>
+        p.userId === member.id ||
+        p.userId === member.uid ||
+        (memberPhoneClean && p.phone && normalizeBrazilianPhoneDigits(p.phone) === memberPhoneClean);
+      const isPaidInMonth = payments.some(p => isMatchingMemberPayment(p) && p.month === monthKey);
       const newStatus = isPaidInMonth ? 'Pendente' : 'Pago';
       const currentUserEmail = auth.currentUser?.email || auth.currentUser?.displayName || 'Administrador';
 
@@ -114,9 +121,11 @@ export default function DetailedFinancialReport() {
 
         addToast(`Pagamento de ${monthKey} registrado para ${formatFirstAndLastName(member.displayName || member.email)}!`, 'success');
       } else {
-        const paymentToDelete = payments.find(p => (p.userId === member.id || p.userId === member.uid) && p.month === monthKey);
-        if (paymentToDelete) {
-          await deleteDoc(doc(db, 'payments', paymentToDelete.id)).catch(() => {});
+        const matchingPaymentsToDelete = payments.filter(p => isMatchingMemberPayment(p) && p.month === monthKey);
+        if (matchingPaymentsToDelete.length > 0) {
+          await Promise.all(
+            matchingPaymentsToDelete.map(p => deleteDoc(doc(db, 'payments', p.id)).catch(() => {}))
+          );
           addToast(`Pagamento de ${monthKey} removido.`, 'info');
         }
       }
@@ -138,6 +147,17 @@ export default function DetailedFinancialReport() {
         await setDoc(doc(db, primaryCol, member.uid), updatePayload, { merge: true }).catch(() => {});
       }
       await setDoc(doc(db, secondaryCol, memberId), updatePayload, { merge: true }).catch(() => {});
+
+      if (newStatus === 'Pago') {
+        const quotas = Number(member.quotas) > 0 ? Number(member.quotas) : 1;
+        const amount = quotas * (pixConfig.defaultAmount || 20.00);
+        setThankYouModalData({
+          member,
+          confirmedMonth: monthKey,
+          quotas,
+          amount
+        });
+      }
 
     } catch (err) {
       console.error('Erro ao atualizar status do pagamento:', err);
@@ -190,7 +210,14 @@ export default function DetailedFinancialReport() {
 
   const report = members
     .filter(member => {
-      const allMemberPayments = payments.filter(p => p.userId === member.id || p.userId === member.uid);
+      if (member.rejected === true || member.status === 'recusado') return false;
+
+      const memberPhoneClean = member.phone ? normalizeBrazilianPhoneDigits(member.phone) : '';
+      const allMemberPayments = payments.filter(p =>
+        p.userId === member.id ||
+        p.userId === member.uid ||
+        (memberPhoneClean && p.phone && normalizeBrazilianPhoneDigits(p.phone) === memberPhoneClean)
+      );
       const filteredPayments = showAllTime 
         ? allMemberPayments 
         : allMemberPayments.filter(p => p.month === monthKey);
@@ -264,6 +291,12 @@ export default function DetailedFinancialReport() {
 
   return (
     <div className="p-1 sm:p-2 bg-white w-full">
+      <PaymentThankYouWhatsAppModal
+        data={thankYouModalData}
+        payments={payments}
+        onClose={() => setThankYouModalData(null)}
+      />
+
       {/* Modal Chave PIX & QR Code */}
       {showPixModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">

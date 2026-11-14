@@ -255,8 +255,31 @@ export function getValidDrawSequence(
 }
 
 /**
- * Calcula e ajusta o 'Concurso Vigente' de forma inteligente considerando horário (20h),
- * domingos e feriados nacionais.
+ * Retorna a hora oficial de início do sorteio da Caixa para a data informada:
+ * - Domingo: a partir das 11h
+ * - Segunda a Sexta: a partir das 21h
+ */
+export function getDrawHourForDate(date: Date): number {
+  return date.getDay() === 0 ? 11 : 21;
+}
+
+/**
+ * Formata o horário oficial de sorteio da Caixa para exibição ('11h00' aos domingos, '21h00' nos demais dias)
+ */
+export function getDrawTimeTextForDate(date: Date): string {
+  return date.getDay() === 0 ? '11h00' : '21h00';
+}
+
+/**
+ * Retorna os dias BYDAY (RFC 5545) da recorrência semanal conforme modalidade oficial Caixa (sem sábado)
+ */
+export function getGoogleCalendarByDay(lotteryType: 'lotofacil' | 'megasena' = 'lotofacil'): string {
+  return lotteryType === 'megasena' ? 'SU,TU,TH' : 'SU,MO,TU,WE,TH,FR';
+}
+
+/**
+ * Calcula e ajusta o 'Concurso Vigente' de forma inteligente considerando horário (21h seg-sex / 11h dom),
+ * sábados sem sorteio e feriados nacionais.
  */
 export function getAdjustedActiveContestInfo(
   latestContestNum: number | null,

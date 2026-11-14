@@ -464,3 +464,160 @@ export function calculatePendingMonths(member: any): string[] {
 
   return pending;
 }
+
+const PT_BR_MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+function parseMonthYearStr(monthStr?: string | null): { month: number; year: number; value: number; formatted: string } | null {
+  if (!monthStr || typeof monthStr !== 'string') return null;
+  const trimmed = monthStr.trim();
+  const match = trimmed.match(/^(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const m = Number(match[1]);
+  const y = Number(match[2]);
+  if (m < 1 || m > 12 || y < 2000) return null;
+  return {
+    month: m,
+    year: y,
+    value: y * 12 + m,
+    formatted: `${String(m).padStart(2, '0')}/${y}`
+  };
+}
+
+export function getMonthNameYearBR(monthStr?: string | null): string {
+  const parsed = parseMonthYearStr(monthStr);
+  if (!parsed) return monthStr || '';
+  return `${PT_BR_MONTH_NAMES[parsed.month - 1]}/${parsed.year}`;
+}
+
+/**
+ * Calcula até 3 meses retroativos anteriores ao mês confirmado,
+ * identificando quais já constam como pagos para este participante.
+ */
+export function getPaymentThankYouRetroactiveData(
+  member: any,
+  payments: any[] = [],
+  confirmedMonthStr?: string | null
+): {
+  confirmedMonth: string;
+  availableRetroactiveMonths: string[];
+  preselectedRetroactiveMonths: string[];
+} {
+  const now = new Date();
+  const fallbackMonth = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  const parsedConfirmed = parseMonthYearStr(confirmedMonthStr) || parseMonthYearStr(fallbackMonth)!;
+  const confirmedMonth = parsedConfirmed.formatted;
+
+  const memberIds = new Set(
+    [member?.id, member?.uid, member?.userDocId, member?.memberDocId]
+      .filter(Boolean)
+      .map(v => String(v))
+  );
+  const memberPhone = normalizeBrazilianPhoneDigits(member?.phone || '');
+
+  const paidMonthsMap = new Map<string, number>();
+
+  if (Array.isArray(payments)) {
+    payments.forEach(p => {
+      if (!p) return;
+      const pUserId = p.userId ? String(p.userId) : '';
+      const pMemberId = p.memberId ? String(p.memberId) : '';
+      const pPhone = normalizeBrazilianPhoneDigits(p.phone || '');
+      const isSameMember =
+        (pUserId && memberIds.has(pUserId)) ||
+        (pMemberId && memberIds.has(pMemberId)) ||
+        (memberPhone && pPhone && memberPhone === pPhone);
+
+      if (!isSameMember) return;
+
+      const parsedP = parseMonthYearStr(p.month || p.referenceMonth);
+      if (parsedP && parsedP.value < parsedConfirmed.value) {
+        paidMonthsMap.set(parsedP.formatted, parsedP.value);
+      }
+    });
+  }
+
+  const parsedLastPaid = parseMonthYearStr(member?.lastPaidMonth);
+  if (parsedLastPaid && parsedLastPaid.value < parsedConfirmed.value) {
+    paidMonthsMap.set(parsedLastPaid.formatted, parsedLastPaid.value);
+  }
+
+  // Máximo 3 meses retroativos pagos (ordenados do mais recente para o mais antigo)
+  const paidRetroSorted = Array.from(paidMonthsMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([label]) => label)
+    .slice(0, 3);
+
+  // Últimos 3 meses calendário imediatamente anteriores ao mês confirmado
+  const calendarRetro3: string[] = [];
+  let iterM = parsedConfirmed.month;
+  let iterY = parsedConfirmed.year;
+  for (let i = 0; i < 3; i++) {
+    iterM--;
+    if (iterM < 1) {
+      iterM = 12;
+      iterY--;
+    }
+    calendarRetro3.push(`${String(iterM).padStart(2, '0')}/${iterY}`);
+  }
+
+  // Combina garantindo no máximo 3 meses retroativos na lista exibida
+  const availableSet = new Set<string>(paidRetroSorted);
+  for (const calM of calendarRetro3) {
+    if (availableSet.size >= 3) break;
+    availableSet.add(calM);
+  }
+
+  const availableRetroactiveMonths = Array.from(availableSet)
+    .sort((a, b) => {
+      const pa = parseMonthYearStr(a)?.value || 0;
+      const pb = parseMonthYearStr(b)?.value || 0;
+      return pb - pa;
+    })
+    .slice(0, 3);
+
+  return {
+    confirmedMonth,
+    availableRetroactiveMonths,
+    preselectedRetroactiveMonths: paidRetroSorted.slice(0, 3)
+  };
+}
+
+/**
+ * Gera mensagem de agradecimento e confirmação de quitação de mais um mês vigente via WhatsApp,
+ * incluindo no máximo 3 meses retroativos selecionados.
+ */
+export function buildPaymentThankYouMessage(params: {
+  memberName?: string | null;
+  confirmedMonth: string;
+  quotas?: number;
+  amount?: number;
+  retroactiveMonths?: string[];
+}): string {
+  const cleanName = formatFirstAndLastName(params.memberName, 'Participante');
+  const firstName = cleanName.split(' ')[0] || 'Participante';
+  const quotas = Number(params.quotas) > 0 ? Number(params.quotas) : 1;
+  const amount = typeof params.amount === 'number' && params.amount > 0 ? params.amount : quotas * 20.0;
+  const amountFormatted = amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const monthLabel = getMonthNameYearBR(params.confirmedMonth);
+  const retroLimited = Array.isArray(params.retroactiveMonths)
+    ? params.retroactiveMonths.filter(Boolean).slice(0, 3)
+    : [];
+
+  let message = `🍀 *Bolão Amigos — Confirmação de Pagamento*\n\n`;
+  message += `Olá, *${firstName}*! 👋\n`;
+  message += `Agradecemos muito pelo seu pagamento! 🙏\n\n`;
+  message += `Confirmamos a quitação de mais um mês vigente no *Bolão Amigos*:\n`;
+  message += `✅ *Mês vigente quitado:* ${monthLabel} (${params.confirmedMonth})\n`;
+  message += `🎟️ *Cotas:* ${quotas} ${quotas > 1 ? 'cotas' : 'cota'} • *Valor:* R$ ${amountFormatted}\n`;
+
+  if (retroLimited.length > 0) {
+    message += `📅 *Meses retroativos (${retroLimited.length} ${retroLimited.length === 1 ? 'mês' : 'meses'}):* ${retroLimited.join(', ')}\n`;
+  }
+
+  message += `\nSua participação está confirmada! Boa sorte nos sorteios! 🍀🎉`;
+  return message;
+}
+
